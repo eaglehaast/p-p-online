@@ -27794,10 +27794,12 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
   return precisionIntent;
 }
 
-// Step 4: wide wings widen the BENEFICIAL pickup span (96px vs 36px), so they
-// pay off only when the route sweeps MORE cargo with the wide span than without
-// — i.e. a multi-pickup run the plane couldn't make on a normal span. At least
-// this many cargo must be collected WITH wings (and strictly more than without).
+// Step 4: wide wings widen the BENEFICIAL span (96px vs 36px). That span is what
+// collects cargo AND what kills enemy planes in flight (checkPlaneHits uses
+// getPlaneBeneficialGeometry for both planes). So wings pay off only when the
+// wide span sweeps MORE targets (cargo + enemy planes) than the normal span — a
+// multi-target run the plane couldn't make otherwise. At least this many targets
+// must be reached WITH wings (and strictly more than without).
 const AI_WINGS_MIN_PICKUPS = 2;
 
 function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
@@ -27808,10 +27810,10 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
   if(!Number.isFinite(landingX) || !Number.isFinite(landingY)) return false;
 
   const pickups = Array.isArray(context?.readyCargo) ? context.readyCargo.filter(Boolean) : [];
-  if(pickups.length < AI_WINGS_MIN_PICKUPS) return false;
+  const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy && enemy.isAlive !== false) : [];
+  if(pickups.length + enemies.length < AI_WINGS_MIN_PICKUPS) return false;
 
-  // The flown path (with ricochet bounces) — unchanged by wings; only the pickup
-  // span changes.
+  // The flown path (with ricochet bounces) — unchanged by wings; only the span changes.
   const durationSec = (typeof FIELD_FLIGHT_DURATION_SEC === "number" && FIELD_FLIGHT_DURATION_SEC > 0) ? FIELD_FLIGHT_DURATION_SEC : 1;
   const move = { vx: (landingX - plane.x) / durationSec, vy: (landingY - plane.y) / durationSec };
   const path = typeof getAiPlannedMovePredictedPath === "function"
@@ -27822,15 +27824,32 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
   const widePlane = { ...plane, activeTurnBuffs: { ...(plane.activeTurnBuffs || {}), [INVENTORY_ITEM_TYPES.WINGS]: true } };
   const barePlane = { ...plane, activeTurnBuffs: { ...(plane.activeTurnBuffs || {}), [INVENTORY_ITEM_TYPES.WINGS]: false } };
 
+  // An enemy is killed when the flying plane's beneficial span sweeps over it
+  // (the same span checkPlaneHits uses). Approximate the swept overlap by the
+  // perpendicular distance from the enemy to the path vs the combined half-spans.
+  const isEnemyHitWithSpan = (enemy, attackerPlane) => {
+    const attackerHalf = getPlaneBeneficialGeometry(attackerPlane).hitbox.width / 2;
+    const enemyHalf = getPlaneBeneficialGeometry(enemy).hitbox.width / 2;
+    const threshold = attackerHalf + enemyHalf;
+    for(let i = 0; i < path.length - 1; i += 1){
+      if(getDistanceFromPointToSegment(enemy.x, enemy.y, path[i].x, path[i].y, path[i + 1].x, path[i + 1].y) <= threshold) return true;
+    }
+    return false;
+  };
+
   let wideCount = 0;
   let bareCount = 0;
   for(const cargo of pickups){
     if(doesCargoIntersectBeneficialZoneAlongPath(cargo, widePlane, path)) wideCount += 1;
     if(doesCargoIntersectBeneficialZoneAlongPath(cargo, barePlane, path)) bareCount += 1;
   }
+  for(const enemy of enemies){
+    if(isEnemyHitWithSpan(enemy, widePlane)) wideCount += 1;
+    if(isEnemyHitWithSpan(enemy, barePlane)) bareCount += 1;
+  }
 
-  // Wings are "по делу" only if the wide span turns this into a multi-pickup the
-  // normal span couldn't make (a move impossible without them).
+  // Wings are "по делу" only if the wide span turns this into a multi-target run
+  // the normal span couldn't make (a move impossible without them).
   return wideCount >= AI_WINGS_MIN_PICKUPS && wideCount > bareCount;
 }
 
