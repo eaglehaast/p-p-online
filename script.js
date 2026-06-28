@@ -27824,50 +27824,63 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
   return precisionIntent;
 }
 
+// Step 4: wide wings widen the BENEFICIAL span (96px vs 36px). That span is what
+// collects cargo AND what kills enemy planes in flight (checkPlaneHits uses
+// getPlaneBeneficialGeometry for both planes). So wings pay off only when the
+// wide span sweeps MORE targets (cargo + enemy planes) than the normal span — a
+// multi-target run the plane couldn't make otherwise. At least this many targets
+// must be reached WITH wings (and strictly more than without).
+const AI_WINGS_MIN_PICKUPS = 2;
+
 function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
   const plane = selectedPlan?.plane || null;
   if(!plane) return false;
-  const landingPoint = {
-    x: Number(selectedPlan?.landingX),
-    y: Number(selectedPlan?.landingY),
-  };
-  if(!Number.isFinite(landingPoint.x) || !Number.isFinite(landingPoint.y)) return false;
+  const landingX = Number(selectedPlan?.landingX);
+  const landingY = Number(selectedPlan?.landingY);
+  if(!Number.isFinite(landingX) || !Number.isFinite(landingY)) return false;
 
-  const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
-  const goalText = getAiSelectedPlanIntentText(selectedPlan);
-  const contactIntent = [
-    "attack", "enemy", "cargo", "pickup", "flag",
-    "gap", "ricochet", "bounce", "bank",
-  ].some((word) => goalText.includes(word) || routeClass.includes(word));
+  const pickups = Array.isArray(context?.readyCargo) ? context.readyCargo.filter(Boolean) : [];
+  const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy && enemy.isAlive !== false) : [];
+  if(pickups.length + enemies.length < AI_WINGS_MIN_PICKUPS) return false;
 
-  const pointsOfInterest = [];
-  if(Array.isArray(context?.enemies)){
-    pointsOfInterest.push(...context.enemies.filter((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y)).map((enemy) => ({ x: enemy.x, y: enemy.y })));
-  }
-  if(Array.isArray(context?.readyCargo)){
-    for(const cargo of context.readyCargo){
-      const center = typeof getCargoVisualCenter === "function" ? getCargoVisualCenter(cargo) : null;
-      if(Number.isFinite(center?.x) && Number.isFinite(center?.y)){
-        pointsOfInterest.push({ x: center.x, y: center.y });
-      }
+  // The flown path (with ricochet bounces) — unchanged by wings; only the span changes.
+  const durationSec = (typeof FIELD_FLIGHT_DURATION_SEC === "number" && FIELD_FLIGHT_DURATION_SEC > 0) ? FIELD_FLIGHT_DURATION_SEC : 1;
+  const move = { vx: (landingX - plane.x) / durationSec, vy: (landingY - plane.y) / durationSec };
+  const path = typeof getAiPlannedMovePredictedPath === "function"
+    ? getAiPlannedMovePredictedPath(plane, move)
+    : [{ x: plane.x, y: plane.y }, { x: landingX, y: landingY }];
+  if(!Array.isArray(path) || path.length < 2) return false;
+
+  const widePlane = { ...plane, activeTurnBuffs: { ...(plane.activeTurnBuffs || {}), [INVENTORY_ITEM_TYPES.WINGS]: true } };
+  const barePlane = { ...plane, activeTurnBuffs: { ...(plane.activeTurnBuffs || {}), [INVENTORY_ITEM_TYPES.WINGS]: false } };
+
+  // An enemy is killed when the flying plane's beneficial span sweeps over it
+  // (the same span checkPlaneHits uses). Approximate the swept overlap by the
+  // perpendicular distance from the enemy to the path vs the combined half-spans.
+  const isEnemyHitWithSpan = (enemy, attackerPlane) => {
+    const attackerHalf = getPlaneBeneficialGeometry(attackerPlane).hitbox.width / 2;
+    const enemyHalf = getPlaneBeneficialGeometry(enemy).hitbox.width / 2;
+    const threshold = attackerHalf + enemyHalf;
+    for(let i = 0; i < path.length - 1; i += 1){
+      if(getDistanceFromPointToSegment(enemy.x, enemy.y, path[i].x, path[i].y, path[i + 1].x, path[i + 1].y) <= threshold) return true;
     }
+    return false;
+  };
+
+  let wideCount = 0;
+  let bareCount = 0;
+  for(const cargo of pickups){
+    if(doesCargoIntersectBeneficialZoneAlongPath(cargo, widePlane, path)) wideCount += 1;
+    if(doesCargoIntersectBeneficialZoneAlongPath(cargo, barePlane, path)) bareCount += 1;
   }
-  if(Array.isArray(context?.availableEnemyFlags)){
-    pointsOfInterest.push(...context.availableEnemyFlags.filter((flag) => Number.isFinite(flag?.x) && Number.isFinite(flag?.y)).map((flag) => ({ x: flag.x, y: flag.y })));
-  }
-  const runtimeColliders = typeof colliders !== "undefined" ? colliders : null;
-  if(Array.isArray(runtimeColliders)){
-    pointsOfInterest.push(...runtimeColliders.filter((item) => Number.isFinite(item?.cx) && Number.isFinite(item?.cy)).slice(0, 32).map((item) => ({ x: item.cx, y: item.cy })));
+  for(const enemy of enemies){
+    if(isEnemyHitWithSpan(enemy, widePlane)) wideCount += 1;
+    if(isEnemyHitWithSpan(enemy, barePlane)) bareCount += 1;
   }
 
-  const nearestDistance = pointsOfInterest
-    .map((point) => dist(landingPoint, point))
-    .filter((value) => Number.isFinite(value))
-    .sort((a, b) => a - b)[0] ?? Number.POSITIVE_INFINITY;
-
-  const nearContactThresholdPx = CELL_SIZE * 2.3;
-  const nearContact = nearestDistance <= nearContactThresholdPx;
-  return nearContact || contactIntent;
+  // Wings are "по делу" only if the wide span turns this into a multi-target run
+  // the normal span couldn't make (a move impossible without them).
+  return wideCount >= AI_WINGS_MIN_PICKUPS && wideCount > bareCount;
 }
 
 function shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan){
@@ -29165,8 +29178,10 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.CROSSHAIR, reason: "selected_plan_precision_support" });
   }
 
-  if(wingsAvailable && (contactIntent || shouldAiUseWingsForSelectedPlan(context, selectedPlan))){
-    candidates.push({ itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_contact_margin" });
+  // No bare contact-intent bypass: wings are used only when they enable a
+  // multi-pickup the normal span couldn't make (see shouldAiUseWingsForSelectedPlan).
+  if(wingsAvailable && shouldAiUseWingsForSelectedPlan(context, selectedPlan)){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_multi_pickup_span" });
   }
 
   if(invisibilityAvailable && shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan)){
