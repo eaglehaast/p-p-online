@@ -27801,6 +27801,11 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
 // multi-target run the plane couldn't make otherwise. At least this many targets
 // must be reached WITH wings (and strictly more than without).
 const AI_WINGS_MIN_PICKUPS = 2;
+// ...OR a long shot (real miss-risk) that the wide span sweeps over >= MIN
+// targets: like a human throwing a complex long/ricochet run through several
+// targets and slapping on wings to widen the kill zone ("mass murder"), even if
+// the normal span might technically reach them. Long = this fraction of range.
+const AI_WINGS_LONG_SHOT_RATIO = 0.6;
 
 function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
   const plane = selectedPlan?.plane || null;
@@ -27848,9 +27853,16 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
     if(isEnemyHitWithSpan(enemy, barePlane)) bareCount += 1;
   }
 
-  // Wings are "по делу" only if the wide span turns this into a multi-target run
-  // the normal span couldn't make (a move impossible without them).
-  return wideCount >= AI_WINGS_MIN_PICKUPS && wideCount > bareCount;
+  if(wideCount < AI_WINGS_MIN_PICKUPS) return false;
+  // (1) Wings strictly enable extra targets the normal span couldn't reach.
+  if(wideCount > bareCount) return true;
+  // (2) Long shot with real miss-risk that sweeps over >= MIN targets — widen
+  //     the kill zone for the mass run even if the normal span might reach them.
+  const planDistanceVal = Number.isFinite(selectedPlan?.planDistance) ? selectedPlan.planDistance : 0;
+  const launchTravel = Math.hypot(landingX - plane.x, landingY - plane.y);
+  const effectiveRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
+  const distanceRatio = Math.max(planDistanceVal, launchTravel) / effectiveRangePx;
+  return distanceRatio >= AI_WINGS_LONG_SHOT_RATIO;
 }
 
 function shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan){
