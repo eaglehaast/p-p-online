@@ -29146,6 +29146,14 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
 // BASE range (so the base move falls short and the fuel reach is actually used).
 const AI_FUEL_MIN_REACH_RATIO = 1.0;
 
+// Step 5 follow-up: the harpy strike+retreat only earns its fuel when landing AT
+// the strike point is genuinely exposed (>= this risk) AND home is at least this
+// much safer. Otherwise the strike itself is reachable within base range and the
+// retreat buys nothing — the reported "fuel + short move" (fuel used on a move the
+// plane could have made without it).
+const AI_FUEL_HARPY_MIN_STRIKE_RISK = 0.5;
+const AI_FUEL_HARPY_MIN_SAFETY_GAIN = 0.2;
+
 function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
   if(!plane) return [];
 
@@ -29200,9 +29208,11 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
     && fuelTargetDist <= fuelBoostedRangePx * 1.05;
 
   // Harpy-strike: AI flies to its planned landing (attack/flag), then returns to home base in same turn.
-  // The fuel range constraint (round trip fits with fuel, not without) is the primary gate; we don't
-  // require strict collinearity because for at-home planes "roundTrip == 2*legOut" is the normal case
-  // and the U-turn is exactly the harpy concept.
+  // Two gates must BOTH hold: (1) the round trip fits with fuel but NOT without (so fuel is genuinely
+  // needed for the strike+return), and (2) landing at the strike point is exposed while home is safer
+  // (so the retreat is the point — not a wasted U-turn on a strike that was safe to land on anyway).
+  // We don't require strict collinearity because for at-home planes "roundTrip == 2*legOut" is the
+  // normal case and the U-turn is exactly the harpy concept.
   const harpyHome = fuelAvailable && typeof getBaseAnchor === "function"
     ? getBaseAnchor(color)
     : null;
@@ -29228,14 +29238,25 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
       const fitsWithFuel = roundTrip <= boostedRangePx * 1.02;
       const fitsWithoutFuel = roundTrip <= baseRangePx * 1.02;
       if(!fitsWithFuel || fitsWithoutFuel) return false;
-      const flagPickupIntent = goalText.includes("flag") || goalText.includes("pickup") || goalText.includes("cargo");
-      if(contactIntent || flagPickupIntent) return true;
-      if(typeof getImmediateResponseThreatMeta === "function"){
-        const baseThreat = getImmediateResponseThreatMeta(context, tgtX, tgtY, null);
-        const homeThreat = getImmediateResponseThreatMeta(context, harpyHome.x, harpyHome.y, null);
-        return (baseThreat?.count > 0) && ((homeThreat?.count ?? 0) < (baseThreat?.count ?? 0));
-      }
-      return false;
+      const usefulHarpyIntent = contactIntent
+        || goalText.includes("flag") || goalText.includes("pickup") || goalText.includes("cargo");
+      if(!usefulHarpyIntent) return false;
+      // The harpy only earns its fuel when landing AT THE STRIKE POINT is genuinely
+      // exposed AND returning home is meaningfully safer — a real "strike and retreat
+      // to safety". A strike the plane could simply land on (e.g. a lone enemy near
+      // our own base) needs no fuel: the kill is already within base range and the
+      // retreat buys nothing (the reported "fuel + short move"). selectedPlan.landingRisk
+      // already measures the strike-point exposure with the struck enemy excluded; for
+      // non-attack plans without it, read the strike-point threat fresh.
+      if(typeof getFallbackCandidateResponseRisk !== "function"
+        || typeof getImmediateResponseThreatMeta !== "function") return false;
+      const strikeRisk = Number.isFinite(selectedPlan?.landingRisk)
+        ? selectedPlan.landingRisk
+        : getFallbackCandidateResponseRisk(getImmediateResponseThreatMeta(context, tgtX, tgtY, null));
+      const homeRisk = getFallbackCandidateResponseRisk(
+        getImmediateResponseThreatMeta(context, harpyHome.x, harpyHome.y, null));
+      return strikeRisk >= AI_FUEL_HARPY_MIN_STRIKE_RISK
+        && strikeRisk > homeRisk + AI_FUEL_HARPY_MIN_SAFETY_GAIN;
     })();
 
   // Fuel is evaluated independently — it can stack with crosshair and/or wings.
