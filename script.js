@@ -15120,15 +15120,15 @@ function getAiTurnTimingSnapshot(){
 // to aim (the slingshot pull), which marks the END of the deliberation window.
 // The timer therefore measures pure thinking time only — NOT the aiming/flight
 // animation. If the AI is still thinking past AI_THINK_HOOF_THRESHOLD_MS the
-// hoof commits to a FIXED, self-contained gesture — slide in -> exactly 3
-// squeezes -> slide out — and always plays it to the end. A quick decision
+// hoof commits to a FIXED, self-contained gesture — slide in -> 2 squeezes ->
+// slide out — and always plays it to the end. A quick decision
 // (aiming starts before the threshold) cancels the still-armed timer, so the
 // hoof only ever appears on genuinely long thinks, never on a snap move.
 // Phases hand off via animationend; keyframes live in styles.css.
 // Mutable so it can be tuned live from the console via hoofThreshold(); the
 // baked-in default is what ships. AI_HOOF_THINK_SAMPLES collects real
 // thinking-window durations (ms) for hoofStats() to summarize.
-let AI_THINK_HOOF_THRESHOLD_MS = 5000;
+let AI_THINK_HOOF_THRESHOLD_MS = 4000;
 const AI_HOOF_THINK_SAMPLES = [];
 const aiThinkHoof = (() => {
   let el = null;
@@ -15154,9 +15154,9 @@ const aiThinkHoof = (() => {
         case "aiHoofSlideIn":
           if(phase !== "entering") return;
           phase = "fidgeting";
-          setPhaseClass(node, "is-fidgeting"); // CSS iteration count = 3 squeezes
+          setPhaseClass(node, "is-fidgeting"); // CSS iteration count = 2 squeezes
           break;
-        case "aiHoofFidgetOpen": // fires once, after the 3rd squeeze completes
+        case "aiHoofFidgetOpen": // fires once, after the last squeeze completes
           if(phase !== "fidgeting") return;
           leave();
           break;
@@ -15218,7 +15218,7 @@ const aiThinkHoof = (() => {
   function onTurnEnded(){
     // The goat's turn is fully over (handed to the opponent, goat goes gray).
     // Retract any hoof still on screen so it never keeps fidgeting into the
-    // idle turn. On a long think the 3 squeezes have usually finished by now;
+    // idle turn. On a long think the squeezes have usually finished by now;
     // on a shorter move this trims the gesture to a clean slide-out instead of
     // letting it bleed past the end of the turn.
     if(phase === "armed"){
