@@ -15125,7 +15125,11 @@ function getAiTurnTimingSnapshot(){
 // (aiming starts before the threshold) cancels the still-armed timer, so the
 // hoof only ever appears on genuinely long thinks, never on a snap move.
 // Phases hand off via animationend; keyframes live in styles.css.
-const AI_THINK_HOOF_THRESHOLD_MS = 5000;
+// Mutable so it can be tuned live from the console via hoofThreshold(); the
+// baked-in default is what ships. AI_HOOF_THINK_SAMPLES collects real
+// thinking-window durations (ms) for hoofStats() to summarize.
+let AI_THINK_HOOF_THRESHOLD_MS = 5000;
+const AI_HOOF_THINK_SAMPLES = [];
 const aiThinkHoof = (() => {
   let el = null;
   let armTimer = 0;
@@ -15194,15 +15198,14 @@ const aiThinkHoof = (() => {
     armTimer = setTimeout(() => { armTimer = 0; enter(); }, AI_THINK_HOOF_THRESHOLD_MS);
   }
   function onAimingStarted(){
-    // The thinking window ends the instant the AI starts to aim. Log its real
-    // duration so the threshold can be tuned from data instead of guessed.
+    // The thinking window ends the instant the AI starts to aim. Record its
+    // real duration so hoofStats() can summarize it and suggest a threshold.
     if(armedAt){
       const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
       const windowMs = Math.round(now - armedAt);
       armedAt = 0;
-      try {
-        console.log(`[hoof] AI think window ${windowMs}ms (threshold ${AI_THINK_HOOF_THRESHOLD_MS}ms) -> ${windowMs >= AI_THINK_HOOF_THRESHOLD_MS ? "SHOW" : "skip"}`);
-      } catch (_) {}
+      AI_HOOF_THINK_SAMPLES.push(windowMs);
+      if(AI_HOOF_THINK_SAMPLES.length > 300) AI_HOOF_THINK_SAMPLES.shift();
     }
     // If the hoof hasn't committed yet (still just armed), cancel it — a quick
     // decision never extracts the hoof. If it already committed (a genuinely
@@ -15226,6 +15229,51 @@ const aiThinkHoof = (() => {
     }
   }
   return { arm, onAimingStarted, onTurnEnded };
+})();
+
+// --- Console tuning kit for the thinking hoof ----------------------------
+// In the browser console:
+//   hoofStats()       -> summary of collected AI thinking-window durations and
+//                        a suggested threshold (widest gap between the "short
+//                        move" cluster and the "long think" cluster).
+//   hoofThreshold(ms) -> set the appearance threshold live (no reload), so you
+//                        can feel a value before we bake it into the code.
+//   hoofReset()       -> clear the collected samples and start fresh.
+(function setupHoofTuningConsole(){
+  if(typeof window === "undefined") return;
+  const fmt = (arr) => arr.map((n) => Math.round(n)).join(", ");
+  window.hoofStats = function hoofStats(){
+    const s = AI_HOOF_THINK_SAMPLES.slice().sort((a, b) => a - b);
+    const n = s.length;
+    if(n === 0){ console.log("[hoof] пока нет замеров — сыграй несколько ходов ИИ."); return; }
+    let gapLo = s[0], gapHi = s[0], gap = 0;
+    for(let i = 1; i < n; i++){
+      const d = s[i] - s[i - 1];
+      if(d > gap){ gap = d; gapLo = s[i - 1]; gapHi = s[i]; }
+    }
+    const suggested = Math.round((gapLo + gapHi) / 2);
+    const showNow = s.filter((x) => x >= AI_THINK_HOOF_THRESHOLD_MS).length;
+    const showSug = s.filter((x) => x >= suggested).length;
+    console.log(
+      `[hoof] ${n} замеров (мс): ${fmt(s)}\n` +
+      `мин ${s[0]} | медиана ${s[Math.floor(n / 2)]} | макс ${s[n - 1]}\n` +
+      `текущий порог ${AI_THINK_HOOF_THRESHOLD_MS}мс -> копыто на ${showNow}/${n} ходов\n` +
+      `самый широкий разрыв: ${Math.round(gapLo)} .. ${Math.round(gapHi)}мс (ширина ${Math.round(gap)}мс)\n` +
+      `совет: порог ~${suggested}мс -> копыто на ${showSug}/${n} (самое раннее появление, всё ещё без коротких ходов)\n` +
+      `применить вживую: hoofThreshold(${suggested})`
+    );
+    return { n, min: s[0], median: s[Math.floor(n / 2)], max: s[n - 1], suggested, current: AI_THINK_HOOF_THRESHOLD_MS };
+  };
+  window.hoofThreshold = function hoofThreshold(ms){
+    const v = Number(ms);
+    if(!Number.isFinite(v) || v < 0){ console.log("[hoof] так: hoofThreshold(миллисекунды), напр. hoofThreshold(3200)"); return; }
+    AI_THINK_HOOF_THRESHOLD_MS = v;
+    console.log(`[hoof] порог = ${v}мс (со следующего хода ИИ). Скажи мне это число — зашью в код.`);
+  };
+  window.hoofReset = function hoofReset(){
+    AI_HOOF_THINK_SAMPLES.length = 0;
+    console.log("[hoof] замеры очищены.");
+  };
 })();
 
 function markAiTurnStarted(reason = "unspecified", now = performance.now()){
