@@ -2980,7 +2980,7 @@ function getPlaneAtBoardPoint(color, x, y){
   ) ?? null;
 }
 
-function applyItemToOwnPlane(type, color, plane){
+function applyItemToOwnPlane(type, color, plane, options){
   const normalizedType = normalizeInventoryItemType(type);
   if(!plane || !normalizedType) return false;
   if(
@@ -2992,6 +2992,12 @@ function applyItemToOwnPlane(type, color, plane){
       plane.activeTurnBuffs = {};
     }
 
+    // silent=true is used by AI range/harpy simulations that apply a buff only
+    // to measure flight range and then restore activeTurnBuffs. They must NOT
+    // leave the visual "buff applied" FX fields set, otherwise the coloured ring
+    // (orange for fuel) flashes on the plane for a buff that was never used.
+    const silent = options != null && options.silent === true;
+
     // Per-plane visual feedback timestamp. Read by drawPlaneBuffAppliedFx in renderPlane.
     // Inlined (not factored out) so tools that vm-extract this single function still work
     // (see scripts/smoke-ai-prelaunch-*.js, which load applyItemToOwnPlane in isolation).
@@ -3002,16 +3008,20 @@ function applyItemToOwnPlane(type, color, plane){
     if(normalizedType === INVENTORY_ITEM_TYPES.WINGS && plane.activeTurnBuffs[normalizedType] === true){
       // Повторное применение обновляет эффект до 1 хода (текущая модель баффов = флаг на ход).
       plane.activeTurnBuffs[normalizedType] = true;
-      plane.buffAppliedAtMs = nowForFx;
-      plane.buffAppliedType = normalizedType;
-      plane.buffAppliedDurationMs = 600;
+      if(!silent){
+        plane.buffAppliedAtMs = nowForFx;
+        plane.buffAppliedType = normalizedType;
+        plane.buffAppliedDurationMs = 600;
+      }
       return true;
     }
 
     plane.activeTurnBuffs[normalizedType] = true;
-    plane.buffAppliedAtMs = nowForFx;
-    plane.buffAppliedType = normalizedType;
-    plane.buffAppliedDurationMs = 600;
+    if(!silent){
+      plane.buffAppliedAtMs = nowForFx;
+      plane.buffAppliedType = normalizedType;
+      plane.buffAppliedDurationMs = 600;
+    }
     return true;
   }
 
@@ -29200,7 +29210,7 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
       ? { ...plane.activeTurnBuffs }
       : {};
     let boosted = baseRangePx;
-    if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, color, plane)){
+    if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, color, plane, { silent: true })){
       boosted = getEffectiveFlightRangeCells(plane) * CELL_SIZE;
     }
     plane.activeTurnBuffs = previousBuffs;
@@ -29239,7 +29249,7 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
         ? { ...plane.activeTurnBuffs }
         : {};
       let boostedRangePx = baseRangePx;
-      if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, color, plane)){
+      if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, color, plane, { silent: true })){
         boostedRangePx = getEffectiveFlightRangeCells(plane) * CELL_SIZE;
       }
       plane.activeTurnBuffs = previousBuffs;
