@@ -2051,11 +2051,11 @@ body, button {
    Slow, calm rhythm: the closed (rest) frame is held longer than the open
    squeeze, so it reads as unhurried beard-stroking, not a nervous twitch. */
 #aiThinkHoof.is-fidgeting .ai-think-hoof__frame--close {
-  animation: aiHoofFidgetClose 1.5s steps(1, end) 3;
+  animation: aiHoofFidgetClose 1.5s steps(1, end) 2;
 }
 
 #aiThinkHoof.is-fidgeting .ai-think-hoof__frame--open {
-  animation: aiHoofFidgetOpen 1.5s steps(1, end) 3;
+  animation: aiHoofFidgetOpen 1.5s steps(1, end) 2;
 }
 
 @keyframes aiHoofFidgetClose {
