@@ -15125,10 +15125,11 @@ function getAiTurnTimingSnapshot(){
 // (aiming starts before the threshold) cancels the still-armed timer, so the
 // hoof only ever appears on genuinely long thinks, never on a snap move.
 // Phases hand off via animationend; keyframes live in styles.css.
-const AI_THINK_HOOF_THRESHOLD_MS = 2500;
+const AI_THINK_HOOF_THRESHOLD_MS = 5000;
 const aiThinkHoof = (() => {
   let el = null;
   let armTimer = 0;
+  let armedAt = 0; // perf timestamp of the turn start, for the diagnostic log
   let phase = "idle"; // idle | armed | entering | fidgeting | leaving
   let wired = false;
 
@@ -15189,13 +15190,23 @@ const aiThinkHoof = (() => {
     if(phase !== "idle"){ setPhaseClass(node, null); phase = "idle"; }
     if(!isGoatTurn()) return;
     phase = "armed";
+    armedAt = (typeof performance !== "undefined" ? performance.now() : Date.now());
     armTimer = setTimeout(() => { armTimer = 0; enter(); }, AI_THINK_HOOF_THRESHOLD_MS);
   }
   function onAimingStarted(){
-    // The thinking window ends the instant the AI starts to aim. If the hoof
-    // hasn't committed yet (still just armed), cancel it — a quick decision
-    // never extracts the hoof. If it already committed (a genuinely long
-    // think), let the gesture keep playing through aiming.
+    // The thinking window ends the instant the AI starts to aim. Log its real
+    // duration so the threshold can be tuned from data instead of guessed.
+    if(armedAt){
+      const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+      const windowMs = Math.round(now - armedAt);
+      armedAt = 0;
+      try {
+        console.log(`[hoof] AI think window ${windowMs}ms (threshold ${AI_THINK_HOOF_THRESHOLD_MS}ms) -> ${windowMs >= AI_THINK_HOOF_THRESHOLD_MS ? "SHOW" : "skip"}`);
+      } catch (_) {}
+    }
+    // If the hoof hasn't committed yet (still just armed), cancel it — a quick
+    // decision never extracts the hoof. If it already committed (a genuinely
+    // long think), let the gesture keep playing through aiming.
     if(phase === "armed"){
       if(armTimer){ clearTimeout(armTimer); armTimer = 0; }
       phase = "idle";
