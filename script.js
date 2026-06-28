@@ -29146,13 +29146,21 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
 // BASE range (so the base move falls short and the fuel reach is actually used).
 const AI_FUEL_MIN_REACH_RATIO = 1.0;
 
-// Step 5 follow-up: the harpy strike+retreat only earns its fuel when landing AT
-// the strike point is genuinely exposed (>= this risk) AND home is at least this
-// much safer. Otherwise the strike itself is reachable within base range and the
-// retreat buys nothing — the reported "fuel + short move" (fuel used on a move the
-// plane could have made without it).
+// Step 5 follow-up: when to spend fuel on a harpy strike+retreat. EITHER (a) the
+// strike lands somewhere exposed (>= MIN_STRIKE_RISK) and home is meaningfully
+// safer (gain > MIN_SAFETY_GAIN) — a genuine escape; OR (b) the strike reaches
+// deep forward (>= DEEP_FORWARD_RATIO of base range) so the retreat brings the
+// plane back from far in the field. The original waste — a SHALLOW safe strike
+// near our own base — clears neither gate, so fuel is not spent there.
 const AI_FUEL_HARPY_MIN_STRIKE_RISK = 0.5;
 const AI_FUEL_HARPY_MIN_SAFETY_GAIN = 0.2;
+const AI_FUEL_HARPY_DEEP_FORWARD_RATIO = 0.8;
+
+// Step 5 follow-up: fuel doubles range, so flying the doubled distance along the
+// same launch line can sweep targets the base move stops short of. Spend fuel when
+// at least this many enemies/cargo sit in the EXTENSION band (beyond base range,
+// within fuel range) on the launch line — they are unreachable without it.
+const AI_FUEL_EXTEND_MIN_EXTRA_TARGETS = 1;
 
 function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
   if(!plane) return [];
@@ -29208,11 +29216,11 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
     && fuelTargetDist <= fuelBoostedRangePx * 1.05;
 
   // Harpy-strike: AI flies to its planned landing (attack/flag), then returns to home base in same turn.
-  // Two gates must BOTH hold: (1) the round trip fits with fuel but NOT without (so fuel is genuinely
-  // needed for the strike+return), and (2) landing at the strike point is exposed while home is safer
-  // (so the retreat is the point — not a wasted U-turn on a strike that was safe to land on anyway).
-  // We don't require strict collinearity because for at-home planes "roundTrip == 2*legOut" is the
-  // normal case and the U-turn is exactly the harpy concept.
+  // The round trip must fit with fuel but NOT without (so fuel is genuinely needed for the strike+return),
+  // AND the retreat must be worth it: either the strike reaches deep forward, or landing at the strike
+  // point is exposed while home is safer. A shallow safe strike near our own base clears neither and is
+  // skipped (the reported waste). We don't require strict collinearity because for at-home planes
+  // "roundTrip == 2*legOut" is the normal case and the U-turn is exactly the harpy concept.
   const harpyHome = fuelAvailable && typeof getBaseAnchor === "function"
     ? getBaseAnchor(color)
     : null;
@@ -29248,6 +29256,14 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
       // retreat buys nothing (the reported "fuel + short move"). selectedPlan.landingRisk
       // already measures the strike-point exposure with the struck enemy excluded; for
       // non-attack plans without it, read the strike-point threat fresh.
+      // (b) A deep forward strike (near the edge of base range) is worth retreating
+      // from regardless of who is nearby — the plane is far in the field and fuel
+      // brings it home in the same turn.
+      const deepForwardStrike = legOut >= baseRangePx * AI_FUEL_HARPY_DEEP_FORWARD_RATIO;
+      if(deepForwardStrike) return true;
+      // (a) Otherwise only when landing at the strike point is genuinely exposed AND
+      // home is meaningfully safer (the struck enemy is excluded from landingRisk, so
+      // a lone enemy near our own base scores 0 here and is correctly skipped).
       if(typeof getFallbackCandidateResponseRisk !== "function"
         || typeof getImmediateResponseThreatMeta !== "function") return false;
       const strikeRisk = Number.isFinite(selectedPlan?.landingRisk)
@@ -29259,15 +29275,65 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
         && strikeRisk > homeRisk + AI_FUEL_HARPY_MIN_SAFETY_GAIN;
     })();
 
+  // Capture more targets: flying the doubled distance along the SAME launch line can
+  // sweep enemies/cargo the base move stops short of. Count targets whose footpoint
+  // on the launch ray lies in the EXTENSION band (beyond base range, within fuel
+  // range) and within the sweep half-width, with a clear line to them. >=1 such
+  // target is reachable ONLY with fuel — a concrete extra capture. Direct routes
+  // only: a ricochet's extended flight is not a straight line.
+  const fuelExtendCapturesMoreTargets = fuelAvailable
+    && !routeClass.includes("ricochet")
+    && (Number(selectedPlan?.bounceCount) || 0) === 0
+    && Number.isFinite(selectedPlan?.landingX) && Number.isFinite(selectedPlan?.landingY)
+    && (() => {
+      const dx = selectedPlan.landingX - plane.x;
+      const dy = selectedPlan.landingY - plane.y;
+      const len = Math.hypot(dx, dy);
+      if(!(len > 0)) return false;
+      const ux = dx / len;
+      const uy = dy / len;
+      const beneficialWidth = typeof getPlaneBeneficialGeometry === "function"
+        ? getPlaneBeneficialGeometry(plane)?.hitbox?.width
+        : null;
+      const halfWidth = (Number.isFinite(beneficialWidth) ? beneficialWidth / 2 : CELL_SIZE) + CELL_SIZE * 0.5;
+      const points = [];
+      for(const e of (context?.enemies || [])){
+        if(e?.isAlive && Number.isFinite(e.x) && Number.isFinite(e.y)) points.push({ x: e.x, y: e.y });
+      }
+      for(const c of (context?.readyCargo || [])){
+        const ctr = typeof getCargoVisualCenter === "function" ? getCargoVisualCenter(c) : c;
+        if(Number.isFinite(ctr?.x) && Number.isFinite(ctr?.y)) points.push({ x: ctr.x, y: ctr.y });
+      }
+      let extraInBand = 0;
+      for(const p of points){
+        const px = p.x - plane.x;
+        const py = p.y - plane.y;
+        const proj = px * ux + py * uy;                 // distance along the launch ray
+        if(proj <= baseRangePx) continue;               // base move already reaches this far
+        if(proj > fuelBoostedRangePx) continue;         // beyond even fuel range
+        const perp = Math.abs(px * uy - py * ux);        // perpendicular distance to the ray
+        if(perp > halfWidth) continue;                   // not on the sweep line
+        const footX = plane.x + ux * proj;
+        const footY = plane.y + uy * proj;
+        if(typeof isPathClear === "function" && !isPathClear(plane.x, plane.y, footX, footY)) continue;
+        extraInBand += 1;
+        if(extraInBand >= AI_FUEL_EXTEND_MIN_EXTRA_TARGETS) return true;
+      }
+      return false;
+    })();
+
   // Fuel is evaluated independently — it can stack with crosshair and/or wings.
   // Only spend it when it buys real extra reach (advantage over not using it):
-  // an attack-then-retreat, or reaching a target the base move can't.
+  // an attack-then-retreat, sweeping more targets with the doubled range, or
+  // reaching a target the base move can't.
   if(harpyStrikeOpportunity){
     candidates.push({
       itemType: INVENTORY_ITEM_TYPES.FUEL,
       reason: "harpy_strike_return",
       harpyReturnTarget: { x: harpyHome.x, y: harpyHome.y, label: "harpy_return_home" },
     });
+  } else if(fuelExtendCapturesMoreTargets){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "extend_range_more_targets" });
   } else if(fuelReachesDistantTarget && usefulIntent){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_reach_distant_target" });
   }
