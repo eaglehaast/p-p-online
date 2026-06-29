@@ -51,7 +51,6 @@ const context = {
   AI_FUEL_MIN_REACH_RATIO: 1.0,             // module-scope consts in script.js
   AI_FUEL_HARPY_MIN_STRIKE_RISK: 0.5,
   AI_FUEL_HARPY_MIN_SAFETY_GAIN: 0.2,
-  AI_FUEL_HARPY_DEEP_FORWARD_RATIO: 0.8,
   AI_FUEL_EXTEND_MIN_EXTRA_TARGETS: 1,
   INVENTORY_ITEM_TYPES,
   getEffectiveFlightRangeCells: (p) => (p?.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.FUEL] ? 60 : 30),
@@ -98,10 +97,11 @@ assert(fuelReason(300, 300, { home: 0 }) === null, '1: a within-range move must 
 assert(fuelReason(420, 420, { home: 0, landingRisk: 0.0, homeRisk: 0.0 }) === null,
   '2: a shallow, safe strike must NOT spend fuel (the reported waste).');
 
-// 3. DEEP forward strike (>= 0.8 of base range) -> harpy strike+retreat, even with a
-//    safe landing: the plane is far in the field and fuel brings it home this turn.
-assert(fuelReason(540, 540, { home: 0, landingRisk: 0.0 }) === 'harpy_strike_return',
-  '3: a deep forward strike should use fuel to strike and retreat home.');
+// 3. DEEP but CALM strike that just darts out from base and back (safe landing) ->
+//    NO fuel. The retreat protects nothing; the kill is within base range. This is
+//    exactly the "out-and-back from base" waste we stopped spending fuel on.
+assert(fuelReason(540, 540, { home: 0, landingRisk: 0.0 }) === null,
+  '3: a deep but calm out-and-back from base must NOT spend fuel.');
 
 // 4. Mid-range strike that is EXPOSED, with a safe home -> harpy (escape branch).
 assert(fuelReason(420, 420, { home: 0, landingRisk: 0.8, homeRisk: 0.1 }) === 'harpy_strike_return',
@@ -135,4 +135,4 @@ assert(fuelReason(800, 600, { home: -700 }) === 'selected_plan_reach_distant_tar
 // 10. Target beyond even the fuel-boosted range -> unreachable, NO fuel.
 assert(fuelReason(1300, 600, { home: -700 }) === null, '10: do not spend fuel on an unreachable target.');
 
-console.log('Smoke test passed: fuel spent to retreat (deep/exposed), to sweep extra targets on the line, or to reach a distant target; never on a shallow safe move the base range already covers.');
+console.log('Smoke test passed: fuel spent only to retreat from an EXPOSED strike to a safer home, to sweep extra targets on the line, or to reach a distant target; never on a calm out-and-back the base range already covers.');

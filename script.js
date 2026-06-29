@@ -16056,7 +16056,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       if(fuelOnHand && typeof applyItemToOwnPlane === "function"){
         const prevBuffs = plane.activeTurnBuffs && typeof plane.activeTurnBuffs === "object" ? { ...plane.activeTurnBuffs } : {};
         let boostedSim = null;
-        if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, sweepColor, plane)){
+        // silent: this is a RANGE PROBE, not a real use — must not flash the orange
+        // "fuel applied" ring on every plane the sweep evaluates.
+        if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, sweepColor, plane, { silent: true })){
           boostedSim = simulateAIShot(plane, { dx: best.nx, dy: best.ny, scale: 1 }, { maxBounces: AI_SWEEP_MAX_BOUNCES });
         }
         plane.activeTurnBuffs = prevBuffs;
@@ -29203,15 +29205,13 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
 // BASE range (so the base move falls short and the fuel reach is actually used).
 const AI_FUEL_MIN_REACH_RATIO = 1.0;
 
-// Step 5 follow-up: when to spend fuel on a harpy strike+retreat. EITHER (a) the
-// strike lands somewhere exposed (>= MIN_STRIKE_RISK) and home is meaningfully
-// safer (gain > MIN_SAFETY_GAIN) — a genuine escape; OR (b) the strike reaches
-// deep forward (>= DEEP_FORWARD_RATIO of base range) so the retreat brings the
-// plane back from far in the field. The original waste — a SHALLOW safe strike
-// near our own base — clears neither gate, so fuel is not spent there.
+// Step 5 follow-up: spend fuel on a harpy strike+retreat ONLY for a genuine escape —
+// landing at the strike point is exposed (>= MIN_STRIKE_RISK) AND home is meaningfully
+// safer (gain > MIN_SAFETY_GAIN). A calm strike the plane could just land on — even a
+// deep dart out from our base and straight back — buys nothing and is skipped (that
+// "out-and-back from base" was the reported fuel-on-a-short-move waste).
 const AI_FUEL_HARPY_MIN_STRIKE_RISK = 0.5;
 const AI_FUEL_HARPY_MIN_SAFETY_GAIN = 0.2;
-const AI_FUEL_HARPY_DEEP_FORWARD_RATIO = 0.8;
 
 // Step 5 follow-up: fuel doubles range, so flying the doubled distance along the
 // same launch line can sweep targets the base move stops short of. Spend fuel when
@@ -29308,19 +29308,12 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
       if(!usefulHarpyIntent) return false;
       // The harpy only earns its fuel when landing AT THE STRIKE POINT is genuinely
       // exposed AND returning home is meaningfully safer — a real "strike and retreat
-      // to safety". A strike the plane could simply land on (e.g. a lone enemy near
-      // our own base) needs no fuel: the kill is already within base range and the
-      // retreat buys nothing (the reported "fuel + short move"). selectedPlan.landingRisk
-      // already measures the strike-point exposure with the struck enemy excluded; for
-      // non-attack plans without it, read the strike-point threat fresh.
-      // (b) A deep forward strike (near the edge of base range) is worth retreating
-      // from regardless of who is nearby — the plane is far in the field and fuel
-      // brings it home in the same turn.
-      const deepForwardStrike = legOut >= baseRangePx * AI_FUEL_HARPY_DEEP_FORWARD_RATIO;
-      if(deepForwardStrike) return true;
-      // (a) Otherwise only when landing at the strike point is genuinely exposed AND
-      // home is meaningfully safer (the struck enemy is excluded from landingRisk, so
-      // a lone enemy near our own base scores 0 here and is correctly skipped).
+      // to safety". A strike the plane could simply land on — including a deep but
+      // calm dart out from our own base and straight back — needs no fuel: the kill
+      // is within base range and the retreat buys nothing (the reported "fuel + short
+      // move"). selectedPlan.landingRisk already measures the strike-point exposure
+      // with the struck enemy excluded (so a lone enemy near our base scores 0 here);
+      // for non-attack plans without it, read the strike-point threat fresh.
       if(typeof getFallbackCandidateResponseRisk !== "function"
         || typeof getImmediateResponseThreatMeta !== "function") return false;
       const strikeRisk = Number.isFinite(selectedPlan?.landingRisk)
