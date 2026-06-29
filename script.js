@@ -16042,6 +16042,42 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         ? getFallbackCandidateResponseRisk(getImmediateResponseThreatMeta({ ...aiExecutionContext, plane }, end.x, end.y, null))
         : 0;
       const ricochet = best.bounceCount > 0;
+      // Step 6: would FUEL (doubled range) sweep MORE targets along this EXACT launch
+      // line? Re-simulate the winning direction at the fuel-boosted range and count.
+      // If strictly more targets land on the longer bounce path, mark the plan so the
+      // inventory picker spends fuel; on launch forceFuelMoveToMaxRange flies this same
+      // angle to max range — i.e. precisely this boosted multikill route. Cheap: one
+      // extra sim, and only when fuel is actually on hand.
+      let aiFuelRicochetExtend = null;
+      const sweepColor = plane.color || aiColor;
+      const fuelOnHand = typeof evaluateInventoryState === "function"
+        && Number(evaluateInventoryState(sweepColor)?.counts?.[INVENTORY_ITEM_TYPES.FUEL] ?? 0) > 0
+        && !plane.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.FUEL];
+      if(fuelOnHand && typeof applyItemToOwnPlane === "function"){
+        const prevBuffs = plane.activeTurnBuffs && typeof plane.activeTurnBuffs === "object" ? { ...plane.activeTurnBuffs } : {};
+        let boostedSim = null;
+        if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, sweepColor, plane)){
+          boostedSim = simulateAIShot(plane, { dx: best.nx, dy: best.ny, scale: 1 }, { maxBounces: AI_SWEEP_MAX_BOUNCES });
+        }
+        plane.activeTurnBuffs = prevBuffs;
+        if(boostedSim && Array.isArray(boostedSim.predictedPath) && boostedSim.predictedPath.length >= 2){
+          let boostedCargo = 0;
+          let boostedEnemy = 0;
+          for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, plane, boostedSim.predictedPath)) boostedCargo += 1; }
+          for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, boostedSim.predictedPath)) boostedEnemy += 1; }
+          const boostedCount = boostedCargo + boostedEnemy;
+          if(boostedCount > best.count){
+            aiFuelRicochetExtend = {
+              baseCount: best.count,
+              boostedCount,
+              boostedCargo,
+              boostedEnemy,
+              boostedBounceCount: boostedSim.bounceCount,
+              boostedTravel: Number.isFinite(boostedSim.travelDistance) ? boostedSim.travelDistance : null,
+            };
+          }
+        }
+      }
       return {
         plane,
         landingX,
@@ -16057,6 +16093,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         multiTargetEnemy: best.enemyHit,
         landingRisk,
         travel: best.travel,
+        aiFuelRicochetExtend,
       };
     };
 
@@ -16495,6 +16532,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           }, selectedPlan)
         : []);
     selectedPlan.selectedInventorySequence = selectedPlanEnhancementSequence;
+    // Step 6: a fuel-extended ricochet multikill must keep its EXACT launch angle and
+    // only reach max range (forceFuelMoveToMaxRange). Mark the plan replan-done so the
+    // fuel replan below is skipped — it would aim at home/an enemy and divert the
+    // carefully simulated multikill line.
+    if(Array.isArray(selectedPlanEnhancementSequence)
+      && selectedPlanEnhancementSequence.some((entry) =>
+        entry?.itemType === INVENTORY_ITEM_TYPES.FUEL && entry?.reason === "ricochet_sweep_extend_more_targets")){
+      selectedPlan.fuelReplanned = true;
+    }
     aiThinkingTimingStageEnd("inventory_enhance");
 
     // Defensive mine planner (Layer A). One async call returns 0..2 placements
@@ -16893,6 +16939,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       entry?.itemType === INVENTORY_ITEM_TYPES.FUEL
     ));
     if(willApplyFuel
+      && !selectedPlan.fuelReplanned
       && typeof buildFuelReplannedMoveAsync === "function"
       && selectedPlan.plane
       && Number.isFinite(selectedPlan.landingX)
@@ -29332,11 +29379,24 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
       return false;
     })();
 
+  // Step 6: fuel extends a RICOCHET multi-target sweep into a bigger multikill. The
+  // sweep builder already proved (by re-simulating the winning line at boosted range)
+  // that the doubled range catches strictly MORE targets along the bounces; spend fuel
+  // to fly that longer route. forceFuelMoveToMaxRange flies the same launch angle to
+  // max range, which is exactly the boosted route that was counted.
+  const ricochetSweepExtends = fuelAvailable
+    && selectedPlan?.aiFuelRicochetExtend
+    && Number(selectedPlan.aiFuelRicochetExtend.boostedCount) > Number(selectedPlan.aiFuelRicochetExtend.baseCount);
+
   // Fuel is evaluated independently — it can stack with crosshair and/or wings.
   // Only spend it when it buys real extra reach (advantage over not using it):
-  // an attack-then-retreat, sweeping more targets with the doubled range, or
-  // reaching a target the base move can't.
-  if(harpyStrikeOpportunity){
+  // extending a ricochet sweep to a bigger multikill, an attack-then-retreat,
+  // sweeping more targets along a direct line, or reaching a target the base move
+  // can't. Multikill-extend is checked first: for a sweep the kills are the point,
+  // so it wins over a retreat (whose home replan would abandon the multikill line).
+  if(ricochetSweepExtends){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "ricochet_sweep_extend_more_targets" });
+  } else if(harpyStrikeOpportunity){
     candidates.push({
       itemType: INVENTORY_ITEM_TYPES.FUEL,
       reason: "harpy_strike_return",
