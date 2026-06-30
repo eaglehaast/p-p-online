@@ -44161,11 +44161,11 @@ function handleMineForPlane(p, fp){
 
     mines.splice(i, 1);
 
-    // Self-detonation rule: stepping on your own mine destroys your plane,
-    // but does not grant a score point to the owner.
-    if(mine.owner && mine.owner !== p.color && canAwardKillPointForPlane(p)){
+    // Blowing up on a mine — anyone's, including your own — hands a point to
+    // the other player. Standard penalty: you detonated, the opponent scores.
+    if(canAwardKillPointForPlane(p)){
       markPlaneKillPointAwarded(p);
-      awardPoint(mine.owner);
+      awardPoint(p.color === "blue" ? "green" : "blue");
     }
     checkVictory();
 
