@@ -40,7 +40,9 @@ const context = {
   Math,
   Number,
   CELL_SIZE: 20,
-  AI_CROSSHAIR_MIN_DISTANCE_RATIO: 0.6, // module-scope const in script.js
+  AI_CROSSHAIR_MIN_DISTANCE_RATIO: 0.6, // module-scope consts in script.js
+  AI_CROSSHAIR_ABUNDANCE_RELAX: 0.15,
+  AI_CROSSHAIR_BOLD_RATIO_FLOOR: 0.2,
   INVENTORY_ITEM_TYPES,
   getEffectiveFlightRangeCells: () => 30, // effectiveRangePx = 600
   getAiSelectedPlanIntentText: (plan) =>

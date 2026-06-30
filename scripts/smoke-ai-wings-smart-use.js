@@ -45,6 +45,9 @@ const context = {
   FIELD_FLIGHT_DURATION_SEC: 1,
   AI_WINGS_MIN_PICKUPS: 2,    // module-scope consts in script.js
   AI_WINGS_LONG_SHOT_RATIO: 0.6,
+  AI_WINGS_ABUNDANCE_RELAX: 0.15,
+  AI_WINGS_BOLD_RATIO_FLOOR: 0.2,
+  AI_WINGS_BOLD_SINGLE_TARGET_COUNT: 3,
   INVENTORY_ITEM_TYPES,
   getEffectiveFlightRangeCells: () => 30,
   getAiSelectedPlanIntentText: (plan) =>

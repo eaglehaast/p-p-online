@@ -27912,8 +27912,14 @@ function logTacticalItemFinalDecision(itemType, details = {}){
 // often under-powers its launches — so 0.8 fired almost never. 0.6 = a genuinely
 // long shot; tune up toward 0.8 for max-only, down for more frequent use.
 const AI_CROSSHAIR_MIN_DISTANCE_RATIO = 0.6;
+// Boldness: a crosshair only guarantees a hit (no downside but spending one), so when
+// they are plentiful, hoarding them while shooting timidly is itself a waste. Each
+// spare beyond the first lowers the distance bar by RELAX, down to FLOOR — with a
+// stack the AI guarantees even mid/short aimed shots.
+const AI_CROSSHAIR_ABUNDANCE_RELAX = 0.15;
+const AI_CROSSHAIR_BOLD_RATIO_FLOOR = 0.2;
 
-function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
+function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan, options = {}){
   const plane = selectedPlan?.plane || null;
   if(!plane) return false;
   const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
@@ -27928,8 +27934,14 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
   const moveDistance = Math.max(planDistance, launchTravel);
   const effectiveRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
   const distanceRatio = moveDistance / effectiveRangePx;
-  // Distance gate: nothing below a genuinely long shot justifies a crosshair.
-  if(distanceRatio < AI_CROSSHAIR_MIN_DISTANCE_RATIO) return false;
+  // Distance gate: nothing below a genuinely long shot justifies a crosshair — but a
+  // stack of spare crosshairs lowers that bar (bolder use when they are plentiful).
+  const availableCount = Math.max(1, Math.trunc(Number(options?.availableCount) || 1));
+  const minDistanceRatio = Math.max(
+    AI_CROSSHAIR_BOLD_RATIO_FLOOR,
+    AI_CROSSHAIR_MIN_DISTANCE_RATIO - (availableCount - 1) * AI_CROSSHAIR_ABUNDANCE_RELAX,
+  );
+  if(distanceRatio < minDistanceRatio) return false;
   // Near-max shot: use it only for a meaningful aimed shot (attack / pickup /
   // flag / precision route), not an aimless long drift to center.
   const precisionIntent = [
@@ -27951,17 +27963,37 @@ const AI_WINGS_MIN_PICKUPS = 2;
 // targets and slapping on wings to widen the kill zone ("mass murder"), even if
 // the normal span might technically reach them. Long = this fraction of range.
 const AI_WINGS_LONG_SHOT_RATIO = 0.6;
+// Boldness: each spare wing beyond the first lowers the long-shot bar by RELAX (down
+// to FLOOR), and with a full stack wings are worth slapping onto even a SINGLE target
+// on a long uncertain shot — the wide span is miss-insurance so an imperfect long aim
+// still connects. Hoarding wings while playing safe is itself a waste.
+const AI_WINGS_ABUNDANCE_RELAX = 0.15;
+const AI_WINGS_BOLD_RATIO_FLOOR = 0.2;
+const AI_WINGS_BOLD_SINGLE_TARGET_COUNT = 3;
 
-function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
+function shouldAiUseWingsForSelectedPlan(context, selectedPlan, options = {}){
   const plane = selectedPlan?.plane || null;
   if(!plane) return false;
   const landingX = Number(selectedPlan?.landingX);
   const landingY = Number(selectedPlan?.landingY);
   if(!Number.isFinite(landingX) || !Number.isFinite(landingY)) return false;
 
+  // Boldness from a stack of spare wings: lower the long-shot bar, and (when plentiful)
+  // accept a single target on a long shot as miss-insurance.
+  const availableCount = Math.max(1, Math.trunc(Number(options?.availableCount) || 1));
+  const longShotRatio = Math.max(
+    AI_WINGS_BOLD_RATIO_FLOOR,
+    AI_WINGS_LONG_SHOT_RATIO - (availableCount - 1) * AI_WINGS_ABUNDANCE_RELAX,
+  );
+  const planDistanceVal = Number.isFinite(selectedPlan?.planDistance) ? selectedPlan.planDistance : 0;
+  const launchTravelEarly = Math.hypot(landingX - plane.x, landingY - plane.y);
+  const effectiveRangeEarly = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
+  const isLongShot = (Math.max(planDistanceVal, launchTravelEarly) / effectiveRangeEarly) >= longShotRatio;
+  const minPickups = (availableCount >= AI_WINGS_BOLD_SINGLE_TARGET_COUNT && isLongShot) ? 1 : AI_WINGS_MIN_PICKUPS;
+
   const pickups = Array.isArray(context?.readyCargo) ? context.readyCargo.filter(Boolean) : [];
   const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy && enemy.isAlive !== false) : [];
-  if(pickups.length + enemies.length < AI_WINGS_MIN_PICKUPS) return false;
+  if(pickups.length + enemies.length < minPickups) return false;
 
   // The flown path (with ricochet bounces) — unchanged by wings; only the span changes.
   const durationSec = (typeof FIELD_FLIGHT_DURATION_SEC === "number" && FIELD_FLIGHT_DURATION_SEC > 0) ? FIELD_FLIGHT_DURATION_SEC : 1;
@@ -27998,16 +28030,13 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
     if(isEnemyHitWithSpan(enemy, barePlane)) bareCount += 1;
   }
 
-  if(wideCount < AI_WINGS_MIN_PICKUPS) return false;
+  if(wideCount < minPickups) return false;
   // (1) Wings strictly enable extra targets the normal span couldn't reach.
   if(wideCount > bareCount) return true;
-  // (2) Long shot with real miss-risk that sweeps over >= MIN targets — widen
-  //     the kill zone for the mass run even if the normal span might reach them.
-  const planDistanceVal = Number.isFinite(selectedPlan?.planDistance) ? selectedPlan.planDistance : 0;
-  const launchTravel = Math.hypot(landingX - plane.x, landingY - plane.y);
-  const effectiveRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
-  const distanceRatio = Math.max(planDistanceVal, launchTravel) / effectiveRangePx;
-  return distanceRatio >= AI_WINGS_LONG_SHOT_RATIO;
+  // (2) A long shot with real miss-risk that the wide span sweeps over — widen the kill
+  //     zone for the run (a multi-target mass, or with a stack of spares even a single
+  //     target as miss-insurance). The long-shot bar already accounts for abundance.
+  return isLongShot;
 }
 
 function shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan){
@@ -29405,13 +29434,18 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
   // The distance gate now lives entirely in shouldAiUseCrosshairForSelectedPlan
   // (crosshair only near max range). No precision-route bypass — a short
   // ricochet/gap must clear the distance gate too.
-  if(crosshairAvailable && shouldAiUseCrosshairForSelectedPlan(context, planForAimBuffs)){
+  if(crosshairAvailable && shouldAiUseCrosshairForSelectedPlan(context, planForAimBuffs, {
+    availableCount: Number(availableCounts?.[INVENTORY_ITEM_TYPES.CROSSHAIR] ?? 0),
+  })){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.CROSSHAIR, reason: "selected_plan_precision_support" });
   }
 
-  // No bare contact-intent bypass: wings are used only when they enable a
-  // multi-pickup the normal span couldn't make (see shouldAiUseWingsForSelectedPlan).
-  if(wingsAvailable && shouldAiUseWingsForSelectedPlan(context, planForAimBuffs)){
+  // No bare contact-intent bypass: wings are used only when they enable a multi-pickup
+  // the normal span couldn't make — OR, with a stack of spares, as miss-insurance on a
+  // long single-target shot (see shouldAiUseWingsForSelectedPlan).
+  if(wingsAvailable && shouldAiUseWingsForSelectedPlan(context, planForAimBuffs, {
+    availableCount: Number(availableCounts?.[INVENTORY_ITEM_TYPES.WINGS] ?? 0),
+  })){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_multi_pickup_span" });
   }
 
