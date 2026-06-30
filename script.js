@@ -29377,17 +29377,41 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_reach_distant_target" });
   }
 
+  // Combo synergy: when fuel is being applied, the launch stretches this move to the
+  // boosted max range along the SAME launch angle (forceFuelMoveToMaxRange). So
+  // crosshair and wings must be judged on that EXTENDED move, not the short base one:
+  // the shot becomes long (crosshair earns its keep) and the bouncy path becomes
+  // longer (wings sweep more). Without this, a base-short fuel move hides the combo —
+  // crosshair/wings would be denied even though the move the plane actually flies is
+  // long. (Only the aim/span buffs use this view; fuel already decided above.)
+  const fuelWillApply = candidates.some((c) => c.itemType === INVENTORY_ITEM_TYPES.FUEL);
+  const planForAimBuffs = (() => {
+    if(!fuelWillApply) return selectedPlan;
+    const dx = Number(selectedPlan?.landingX) - plane.x;
+    const dy = Number(selectedPlan?.landingY) - plane.y;
+    const len = Math.hypot(dx, dy);
+    if(!Number.isFinite(len) || len <= 0) return selectedPlan;
+    const ux = dx / len;
+    const uy = dy / len;
+    return {
+      ...selectedPlan,
+      landingX: plane.x + ux * fuelBoostedRangePx,
+      landingY: plane.y + uy * fuelBoostedRangePx,
+      planDistance: Math.max(Number(selectedPlan?.planDistance) || 0, fuelBoostedRangePx),
+    };
+  })();
+
   // Crosshair and wings are evaluated independently and can combine with each other and with fuel.
   // The distance gate now lives entirely in shouldAiUseCrosshairForSelectedPlan
   // (crosshair only near max range). No precision-route bypass — a short
   // ricochet/gap must clear the distance gate too.
-  if(crosshairAvailable && shouldAiUseCrosshairForSelectedPlan(context, selectedPlan)){
+  if(crosshairAvailable && shouldAiUseCrosshairForSelectedPlan(context, planForAimBuffs)){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.CROSSHAIR, reason: "selected_plan_precision_support" });
   }
 
   // No bare contact-intent bypass: wings are used only when they enable a
   // multi-pickup the normal span couldn't make (see shouldAiUseWingsForSelectedPlan).
-  if(wingsAvailable && shouldAiUseWingsForSelectedPlan(context, selectedPlan)){
+  if(wingsAvailable && shouldAiUseWingsForSelectedPlan(context, planForAimBuffs)){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_multi_pickup_span" });
   }
 
