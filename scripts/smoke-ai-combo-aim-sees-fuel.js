@@ -44,6 +44,8 @@ const context = {
   AI_FUEL_MIN_REACH_RATIO: 1.0,
   AI_FUEL_EXTEND_MIN_EXTRA_TARGETS: 1,
   AI_CROSSHAIR_MIN_DISTANCE_RATIO: 0.6,
+  AI_CROSSHAIR_ABUNDANCE_RELAX: 0.15,
+  AI_CROSSHAIR_BOLD_RATIO_FLOOR: 0.2,
   INVENTORY_ITEM_TYPES,
   getEffectiveFlightRangeCells: (p) => (p?.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.FUEL] ? 60 : 30),
   getAiSelectedPlanIntentText: (plan) =>
