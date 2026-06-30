@@ -31354,14 +31354,14 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       actualReturnSafetyScore: plannedMove.aiFuelTacticalDecision.actualReturnSafetyScore,
       rejectedScenarios: plannedMove.aiFuelTacticalDecision.rejectedScenarios,
       rejectionReason: plannedMove.aiFuelTacticalDecision.rejectionReason,
-      fuelApplied: effectiveItemUsed && consumedItemType === INVENTORY_ITEM_TYPES.FUEL,
+      fuelApplied: effectiveItemUsed && consumedItemTypes.includes(INVENTORY_ITEM_TYPES.FUEL),
       consumedItemType: consumedItemType || null,
     });
   }
 
   const pendingFuelTrainingAttempt = getLatestPendingAiFuelTrainingAttempt();
   if(pendingFuelTrainingAttempt){
-    const usedFuel = effectiveItemUsed && consumedItemType === INVENTORY_ITEM_TYPES.FUEL;
+    const usedFuel = effectiveItemUsed && consumedItemTypes.includes(INVENTORY_ITEM_TYPES.FUEL);
     const reason = usedFuel
       ? "fuel_used_on_next_ai_turn"
       : (
@@ -31378,8 +31378,14 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
   }
 
+  // Fuel was used if it is ANYWHERE in the consumed sequence — not only if it was the
+  // LAST item applied. pickAiBuffs returns fuel before crosshair/wings, so a combo
+  // applies fuel first and a buff last; keying on the last item (consumedItemType)
+  // skipped this whole block for combos, leaving the move un-extended — fuel consumed
+  // but the plane flew a base-range (<30-cell) move. Match the dynamite pattern above
+  // and test the full list.
   if(effectiveItemUsed
-    && consumedItemType === INVENTORY_ITEM_TYPES.FUEL
+    && consumedItemTypes.includes(INVENTORY_ITEM_TYPES.FUEL)
     && plannedMove?.plane
     && Number.isFinite(plannedMove.vx)
     && Number.isFinite(plannedMove.vy)){
