@@ -16071,7 +16071,48 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         .map((enemy) => ({ enemy, d: dist(plane, enemy) }))
         .sort((a, b) => a.d - b.d)
         .slice(0, 4);
-      if(sweepCargos.length + sweepEnemies.length < AI_MULTI_TARGET_PAIR_MIN) return null;
+      // B1: enemy flags that are SAFE to grab this turn become sweep targets, so a run
+      // that also picks up the flag "on the way" is preferred. Gate each by
+      // evaluateFlagPickupContinuation.hasSafeEscape so the sweep is never lured toward a
+      // flag it couldn't safely take (the actual grab is still gated at fly-over).
+      const sweepFlags = (() => {
+        const flags = aiExecutionContext?.availableEnemyFlags;
+        if(!Array.isArray(flags) || flags.length === 0) return [];
+        if(typeof getFlagInteractionTarget !== "function" || typeof evaluateFlagPickupContinuation !== "function"
+          || typeof getPlaneBeneficialGeometry !== "function") return [];
+        const homeBase = typeof getBaseAnchor === "function" ? getBaseAnchor(plane.color) : null;
+        const enemiesForFlag = sweepEnemies.map((e) => e.enemy);
+        const halfWidth = (getPlaneBeneficialGeometry(plane)?.hitbox?.width || CELL_SIZE) / 2;
+        const out = [];
+        for(const flag of flags){
+          if(!flag || flag.carrier) continue;
+          const target = getFlagInteractionTarget(flag);
+          const anchor = target?.anchor;
+          if(!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) continue;
+          if(dist(plane, anchor) > maxFlightDistancePx * 1.5) continue; // out of realistic reach
+          const continuation = evaluateFlagPickupContinuation(plane, anchor, {
+            homeBase,
+            enemies: enemiesForFlag,
+            context: { ...aiExecutionContext, plane },
+            goalName: "sweep_flag_grab",
+          });
+          if(continuation?.hasSafeEscape !== true) continue; // don't chase an unsafe grab
+          out.push({ anchor, sweepRadius: (Number.isFinite(target?.radius) ? target.radius : CELL_SIZE) + halfWidth });
+        }
+        return out;
+      })();
+      if(sweepCargos.length + sweepEnemies.length + sweepFlags.length < AI_MULTI_TARGET_PAIR_MIN) return null;
+
+      const countFlagsOnPath = (path) => {
+        if(!sweepFlags.length || !Array.isArray(path) || path.length < 2) return 0;
+        let hits = 0;
+        for(const f of sweepFlags){
+          for(let i = 0; i < path.length - 1; i += 1){
+            if(getDistanceFromPointToSegment(f.anchor.x, f.anchor.y, path[i].x, path[i].y, path[i + 1].x, path[i + 1].y) <= f.sweepRadius){ hits += 1; break; }
+          }
+        }
+        return hits;
+      };
 
       const directions = [];
       const pushDir = (tx, ty) => {
@@ -16082,6 +16123,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       };
       for(const c of sweepCargos) pushDir(c.center.x, c.center.y);
       for(const e of sweepEnemies) pushDir(e.enemy.x, e.enemy.y);
+      for(const f of sweepFlags) pushDir(f.anchor.x, f.anchor.y);
       // Coarse angle sweep for ricochet-only routes that bounce into a cluster.
       for(let deg = 0; deg < 360; deg += AI_SWEEP_ANGLE_STEP_DEG){
         const rad = deg * Math.PI / 180;
@@ -16102,15 +16144,20 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           let cargoHit = 0, enemyHit = 0;
           for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, plane, sim.predictedPath)) cargoHit += 1; }
           for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, sim.predictedPath)) enemyHit += 1; }
-          const count = cargoHit + enemyHit;
-          if(count < AI_MULTI_TARGET_PAIR_MIN) continue;
+          const flagHit = countFlagsOnPath(sim.predictedPath);
+          // rawCount drives the pair/dominate tiers (flag = ONE target, so it can't force
+          // an ignore-safety dominate by itself); value picks the best DIRECTION, where a
+          // safe flag outweighs a single cargo/kill.
+          const rawCount = cargoHit + enemyHit + flagHit;
+          if(rawCount < AI_MULTI_TARGET_PAIR_MIN) continue;
+          const value = cargoHit + enemyHit + flagHit * AI_FLAG_SWEEP_TARGET_WEIGHT;
           const travel = Number.isFinite(sim.travelDistance) ? sim.travelDistance : Number.POSITIVE_INFINITY;
           const better = !best
-            || count > best.count
-            || (count === best.count && sim.bounceCount < best.bounceCount)
-            || (count === best.count && sim.bounceCount === best.bounceCount && travel < best.travel);
+            || value > best.value
+            || (value === best.value && sim.bounceCount < best.bounceCount)
+            || (value === best.value && sim.bounceCount === best.bounceCount && travel < best.travel);
           if(better){
-            best = { nx: dir.nx, ny: dir.ny, scale, count, cargoHit, enemyHit, bounceCount: sim.bounceCount, travel, end: sim.predictedPath[sim.predictedPath.length - 1] };
+            best = { nx: dir.nx, ny: dir.ny, scale, count: rawCount, value, cargoHit, enemyHit, flagHit, bounceCount: sim.bounceCount, travel, end: sim.predictedPath[sim.predictedPath.length - 1] };
           }
         }
       }
@@ -16149,13 +16196,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           let boostedEnemy = 0;
           for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, plane, boostedSim.predictedPath)) boostedCargo += 1; }
           for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, boostedSim.predictedPath)) boostedEnemy += 1; }
-          const boostedCount = boostedCargo + boostedEnemy;
+          const boostedFlag = countFlagsOnPath(boostedSim.predictedPath);
+          const boostedCount = boostedCargo + boostedEnemy + boostedFlag;
           if(boostedCount > best.count){
             aiFuelRicochetExtend = {
               baseCount: best.count,
               boostedCount,
               boostedCargo,
               boostedEnemy,
+              boostedFlag,
               boostedBounceCount: boostedSim.bounceCount,
               boostedTravel: Number.isFinite(boostedSim.travelDistance) ? boostedSim.travelDistance : null,
             };
@@ -16169,12 +16218,13 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         targetPoint: { x: end.x, y: end.y },
         decisionReason: ricochet ? "simple_step2_multi_target_ricochet" : "simple_step2_multi_target_direct",
         goalName: "simple_step2_multi_target",
-        whyChosen: `sweep_${best.count}_targets_${best.cargoHit}c_${best.enemyHit}e_bounces_${best.bounceCount}`,
+        whyChosen: `sweep_${best.count}_targets_${best.cargoHit}c_${best.enemyHit}e_${best.flagHit || 0}f_bounces_${best.bounceCount}`,
         routeClass: ricochet ? "ricochet" : "direct",
         bounceCount: best.bounceCount,
         multiTargetCount: best.count,
         multiTargetCargo: best.cargoHit,
         multiTargetEnemy: best.enemyHit,
+        multiTargetFlag: best.flagHit || 0,
         landingRisk,
         travel: best.travel,
         aiFuelRicochetExtend,
@@ -20108,6 +20158,12 @@ const AI_ATTACK_LANDING_RISK_DEMOTE = 0.8;
 //     (danger hitbox is 36px wide).
 const AI_MULTI_TARGET_DOMINATE_MIN = 3;
 const AI_MULTI_TARGET_PAIR_MIN = 2;
+// B1 (opportunistic flag grab): a safely-grabbable enemy flag on the sweep line is
+// worth ~5 points, so it OUTWEIGHS a single cargo/kill when choosing the best
+// direction. It still counts as ONE raw target for the pair/dominate gates, so the
+// flag alone never forces an ignore-safety dominate — it only tips the choice toward a
+// route that also grabs it.
+const AI_FLAG_SWEEP_TARGET_WEIGHT = 3;
 const AI_SWEEP_ANGLE_STEP_DEG = 20;
 const AI_SWEEP_MAX_BOUNCES = 2;
 const AI_SWEEP_ANCHOR_SCALES = [1, 0.7];

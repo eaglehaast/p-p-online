@@ -120,6 +120,7 @@ const context = {
   // Step 2: multi-target sweep constants + reused geometry/sim fns (module-scope).
   AI_MULTI_TARGET_DOMINATE_MIN: 3,
   AI_MULTI_TARGET_PAIR_MIN: 2,
+  AI_FLAG_SWEEP_TARGET_WEIGHT: 3,
   AI_SWEEP_ANGLE_STEP_DEG: 90,        // coarse (fewer sims) for the test
   AI_SWEEP_MAX_BOUNCES: 2,
   AI_SWEEP_ANCHOR_SCALES: [1],
