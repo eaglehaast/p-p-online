@@ -52,6 +52,7 @@ function buildContext(overrides = {}){
     settings: { flagsMode: false },
     markAiTurnStarted: () => {},
     hasAnimatingCargo: () => false,
+    tryBuildAiFlagDeliveryPlan: () => null,
     getBaseAnchor: () => ({ x: 0, y: 0 }),
     getAvailableFlagsByColor: () => [],
     isPlaneLaunchStateReady: () => true,

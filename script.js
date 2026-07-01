@@ -15506,6 +15506,88 @@ function isAiTurnStillApplicable(){
   return !isGameOver && gameMode === "computer" && turnColors?.[turnIndex] === "blue";
 }
 
+// TOP-priority plan: deliver a carried enemy (green) flag to our base THIS turn — a
+// sure +5 that beats any multikill. Returns a planTier -1 move when the planned route
+// genuinely lands in the base zone (so delivery is certain): a base-range route home
+// (direct or ricochet, flown as planned), or — if home is beyond base range — a DIRECT
+// fuel-boosted route, aimed at base so the inventory picker spends fuel (reach_distant)
+// and forceFuelMoveToMaxRange flies the launch angle straight through home. Returns null
+// when the plane carries no enemy flag or cannot reach base this turn (let normal logic
+// run). Extracted from buildBestPlanForPlane so it can be unit-tested.
+function tryBuildAiFlagDeliveryPlan(plane, options = {}){
+  if(!plane || options?.flagsMode !== true) return null;
+  if(typeof getFlagById !== "function" || typeof getBaseAnchor !== "function"
+    || typeof getBaseInteractionTarget !== "function" || typeof getAiMoveLandingPoint !== "function"
+    || typeof planPathWithSpecialRouteProbe !== "function" || typeof doesPlaneZoneIntersectTargetZone !== "function"){
+    return null;
+  }
+  const carriedFlag = plane.carriedFlagId ? getFlagById(plane.carriedFlagId) : null;
+  if(!carriedFlag || carriedFlag.color !== "green") return null;
+
+  const homeAnchor = getBaseAnchor(plane.color);
+  const baseTarget = getBaseInteractionTarget(plane.color);
+  if(!homeAnchor || !Number.isFinite(homeAnchor.x) || !Number.isFinite(homeAnchor.y) || !baseTarget) return null;
+
+  const reachesBase = (move) => {
+    if(!move) return false;
+    const landing = getAiMoveLandingPoint(move);
+    if(!landing || !Number.isFinite(landing.x) || !Number.isFinite(landing.y)) return false;
+    return doesPlaneZoneIntersectTargetZone({ ...plane, x: landing.x, y: landing.y }, baseTarget);
+  };
+
+  let deliverMove = planPathWithSpecialRouteProbe(plane, homeAnchor.x, homeAnchor.y, {
+    goalName: "return_with_flag",
+    decisionReason: "return_with_flag_deliver",
+    specialAttemptBudget: 2,
+    specialRouteClasses: ["gap", "ricochet"],
+    compareLabel: ["return_with_flag", plane?.id ?? ""],
+  });
+  let deliverUsesFuel = false;
+  if(!reachesBase(deliverMove)){
+    // Home beyond base range — spend fuel to reach it, but only on a DIRECT line
+    // (forceFuelMoveToMaxRange extends the launch angle straight through home; a
+    // ricochet's bounce path would not be preserved by that extension).
+    const boosted = planPathWithSpecialRouteProbe(plane, homeAnchor.x, homeAnchor.y, {
+      goalName: "return_with_flag",
+      decisionReason: "return_with_flag_deliver_fuel",
+      useFuelBoostedRange: true,
+      specialAttemptBudget: 0,
+      compareLabel: ["return_with_flag_fuel", plane?.id ?? ""],
+    });
+    if(reachesBase(boosted) && (Number(boosted?.bounceCount) || 0) === 0){
+      deliverMove = boosted;
+      deliverUsesFuel = true;
+    } else {
+      deliverMove = null;
+    }
+  }
+  if(!deliverMove) return null;
+
+  const deliverLanding = getAiMoveLandingPoint(deliverMove);
+  if(typeof logAiDecision === "function"){
+    logAiDecision("flag_delivery_route", {
+      planeId: plane?.id ?? null,
+      homeBase: { x: Number(homeAnchor.x.toFixed(1)), y: Number(homeAnchor.y.toFixed(1)) },
+      usesFuel: deliverUsesFuel,
+      bounceCount: Number(deliverMove.bounceCount) || 0,
+      routeClass: deliverMove.routeClass || "direct",
+      landing: deliverLanding ? { x: Number(deliverLanding.x.toFixed(1)), y: Number(deliverLanding.y.toFixed(1)) } : null,
+    });
+  }
+  return {
+    ...deliverMove,
+    plane,
+    goalName: "return_with_flag",
+    decisionReason: deliverUsesFuel ? "return_with_flag_deliver_fuel" : "return_with_flag_deliver",
+    routeClass: deliverMove.routeClass || "direct",
+    targetPoint: { x: homeAnchor.x, y: homeAnchor.y, kind: "home_base" },
+    planTier: -1,
+    planDistance: Number.isFinite(deliverMove.totalDist) ? deliverMove.totalDist : 0,
+    hasDirectEnemy: false,
+    readyCargoCount: Number.isFinite(options?.readyCargoCount) ? options.readyCargoCount : 0,
+  };
+}
+
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
   if(
     isGameOver
@@ -16138,6 +16220,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       // near-zero-cost microtask unless the 6ms frame budget is exceeded.
       await aiCoopMaybeYield();
       if(!isAiTurnStillApplicable()) return null;
+
+      // === TOP priority: deliver a carried enemy flag to our base THIS turn = a sure
+      // +5. Nothing — not even a fat multikill — beats landing the flag, so this returns
+      // ABOVE the dominate sweep (planTier -1). See tryBuildAiFlagDeliveryPlan. ===
+      const flagDeliveryPlan = tryBuildAiFlagDeliveryPlan(launchReadyPlane, {
+        flagsMode: aiExecutionContext?.shouldUseFlagsMode === true,
+        readyCargoCount: readyCargo.length,
+      });
+      if(flagDeliveryPlan) return flagDeliveryPlan;
 
       // === Priority layer: dominate multi-target route (cargo + enemies, incl.
       // ricochets). Additive — only fires when a fat route exists; otherwise the

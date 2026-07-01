@@ -134,6 +134,7 @@ const context = {
 
   // world helpers
   hasAnimatingCargo: () => false,
+  tryBuildAiFlagDeliveryPlan: () => null, // no flag carrier in these scenarios
   getBaseAnchor: () => ({ x: 50, y: 100 }),
   getAvailableFlagsByColor: () => [],
   isPlaneLaunchStateReady: () => true,
