@@ -15588,6 +15588,99 @@ function tryBuildAiFlagDeliveryPlan(plane, options = {}){
   };
 }
 
+// B2: a fuel-powered flag capture, framed as an attack variant. With fuel we launch AT a
+// flag, and the doubled range lets the flight grab it and carry on toward base. Success is
+// DELIVER (the flight crosses our base after the grab) OR ADVANCE (the flight ends with the
+// flag meaningfully closer to base) — even a "miss" that only advances the flag is a big
+// help, so this is low-risk. We SIMULATE a fan of launch angles toward the flag at the
+// boosted range and take the best (deliver > big advance); the plan carries aiFlagFuelCapture
+// so pickAiBuffs spends fuel and forceFuelMoveToMaxRange flies exactly this simulated route
+// (same proven pattern as the ricochet multikill — not the fragile harpy replan). Returns
+// null when no launch grabs the flag and gets it closer to base (never a suicide for nothing).
+function tryBuildAiFlagFuelCapturePlan(plane, options = {}){
+  if(!plane || options?.flagsMode !== true || options?.fuelAvailable !== true) return null;
+  if(plane.carriedFlagId) return null; // already carrying -> the delivery plan handles it
+  if(typeof getBaseAnchor !== "function" || typeof getBaseInteractionTarget !== "function"
+    || typeof getFlagInteractionTarget !== "function" || typeof simulateAIShot !== "function"
+    || typeof doesPlaneZoneIntersectTargetZone !== "function" || typeof applyItemToOwnPlane !== "function"
+    || typeof getPlaneEffectiveRangePx !== "function") return null;
+  const flags = Array.isArray(options?.availableEnemyFlags) ? options.availableEnemyFlags.filter((f) => f && !f.carrier) : [];
+  if(!flags.length) return null;
+  const homeAnchor = getBaseAnchor(plane.color);
+  const baseTarget = getBaseInteractionTarget(plane.color);
+  if(!homeAnchor || !Number.isFinite(homeAnchor.x) || !Number.isFinite(homeAnchor.y) || !baseTarget) return null;
+
+  // Simulate with the fuel buff active so simulateAIShot flies the BOOSTED range.
+  const prevBuffs = plane.activeTurnBuffs && typeof plane.activeTurnBuffs === "object" ? { ...plane.activeTurnBuffs } : {};
+  let boostedRangePx = 0;
+  if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, plane.color, plane, { silent: true })){
+    boostedRangePx = getPlaneEffectiveRangePx(plane);
+  }
+  const zoneHitsAt = (path, target, fromIndex = 0) => {
+    for(let i = fromIndex; i < path.length; i += 1){
+      if(doesPlaneZoneIntersectTargetZone({ ...plane, x: path[i].x, y: path[i].y }, target)) return i;
+    }
+    return -1;
+  };
+  let best = null; // { dx, dy, delivers, advanceGain, bounceCount }
+  if(boostedRangePx > 0){
+    for(const flag of flags){
+      const flagTarget = getFlagInteractionTarget(flag);
+      const flagAnchor = flagTarget?.anchor;
+      if(!flagAnchor || !Number.isFinite(flagAnchor.x) || !Number.isFinite(flagAnchor.y)) continue;
+      if(dist(plane, flagAnchor) > boostedRangePx * 1.05) continue; // flag not reachable even boosted
+      const flagFromBase = Math.hypot(flagAnchor.x - homeAnchor.x, flagAnchor.y - homeAnchor.y);
+      const baseAngle = Math.atan2(flagAnchor.y - plane.y, flagAnchor.x - plane.x);
+      for(let off = -AI_FLAG_FUEL_CAPTURE_FAN_DEG; off <= AI_FLAG_FUEL_CAPTURE_FAN_DEG; off += AI_FLAG_FUEL_CAPTURE_ANGLE_STEP_DEG){
+        const rad = baseAngle + (off * Math.PI / 180);
+        const dx = Math.cos(rad);
+        const dy = Math.sin(rad);
+        const sim = simulateAIShot(plane, { dx, dy, scale: 1 }, { maxBounces: AI_FLAG_FUEL_CAPTURE_MAX_BOUNCES });
+        if(!sim || !Array.isArray(sim.predictedPath) || sim.predictedPath.length < 2) continue;
+        const grabIndex = zoneHitsAt(sim.predictedPath, flagTarget, 0);
+        if(grabIndex < 0) continue; // this launch never grabs the flag
+        const delivers = zoneHitsAt(sim.predictedPath, baseTarget, grabIndex + 1) >= 0;
+        const end = sim.predictedPath[sim.predictedPath.length - 1];
+        const advanceGain = flagFromBase - Math.hypot(end.x - homeAnchor.x, end.y - homeAnchor.y);
+        if(!delivers && advanceGain < AI_FLAG_FUEL_CAPTURE_MIN_ADVANCE_PX) continue; // no net progress
+        const better = !best
+          || (delivers && !best.delivers)
+          || (delivers === best.delivers && advanceGain > best.advanceGain)
+          || (delivers === best.delivers && advanceGain === best.advanceGain && sim.bounceCount < best.bounceCount);
+        if(better) best = { dx, dy, delivers, advanceGain, bounceCount: sim.bounceCount };
+      }
+    }
+  }
+  plane.activeTurnBuffs = prevBuffs; // undo the range probe
+
+  if(!best) return null;
+  const landingX = plane.x + best.dx * boostedRangePx;
+  const landingY = plane.y + best.dy * boostedRangePx;
+  if(typeof logAiDecision === "function"){
+    logAiDecision("flag_fuel_capture_route", {
+      planeId: plane?.id ?? null,
+      delivers: best.delivers,
+      advanceGainPx: Number(best.advanceGain.toFixed(1)),
+      bounceCount: best.bounceCount,
+    });
+  }
+  return {
+    plane,
+    landingX,
+    landingY,
+    goalName: "capture_enemy_flag",
+    decisionReason: best.delivers ? "flag_fuel_capture_deliver" : "flag_fuel_capture_advance",
+    routeClass: best.bounceCount > 0 ? "ricochet" : "direct",
+    bounceCount: best.bounceCount,
+    targetPoint: { x: homeAnchor.x, y: homeAnchor.y, kind: "home_base" },
+    aiFlagFuelCapture: true, // pickAiBuffs spends fuel; scheduler marks fuelReplanned
+    planTier: best.delivers ? -1 : 0,
+    planDistance: boostedRangePx,
+    hasDirectEnemy: false,
+    readyCargoCount: Number.isFinite(options?.readyCargoCount) ? options.readyCargoCount : 0,
+  };
+}
+
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
   if(
     isGameOver
@@ -16280,6 +16373,22 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       });
       if(flagDeliveryPlan) return flagDeliveryPlan;
 
+      // === With FUEL, launch AT a flag to grab it and reach base (deliver = sure +5,
+      // tier -1) or at least carry it much closer to base (advance, tier 0). Even a miss
+      // that only advances the flag is a big help. See tryBuildAiFlagFuelCapturePlan. ===
+      const flagFuelOnHand = typeof evaluateInventoryState === "function"
+        && Number(evaluateInventoryState(launchReadyPlane.color || aiColor)?.counts?.[INVENTORY_ITEM_TYPES.FUEL] ?? 0) > 0
+        && !launchReadyPlane.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.FUEL];
+      const flagFuelCapturePlan = flagFuelOnHand
+        ? tryBuildAiFlagFuelCapturePlan(launchReadyPlane, {
+            flagsMode: aiExecutionContext?.shouldUseFlagsMode === true,
+            fuelAvailable: true,
+            availableEnemyFlags: aiExecutionContext?.availableEnemyFlags,
+            readyCargoCount: readyCargo.length,
+          })
+        : null;
+      if(flagFuelCapturePlan) return flagFuelCapturePlan;
+
       // === Priority layer: dominate multi-target route (cargo + enemies, incl.
       // ricochets). Additive — only fires when a fat route exists; otherwise the
       // existing attack/cargo/center logic below runs unchanged. ===
@@ -16675,13 +16784,14 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           }, selectedPlan)
         : []);
     selectedPlan.selectedInventorySequence = selectedPlanEnhancementSequence;
-    // Step 6: a fuel-extended ricochet multikill must keep its EXACT launch angle and
-    // only reach max range (forceFuelMoveToMaxRange). Mark the plan replan-done so the
-    // fuel replan below is skipped — it would aim at home/an enemy and divert the
-    // carefully simulated multikill line.
+    // Step 6 / B2: a fuel-extended ricochet multikill AND a fuel flag capture must keep
+    // their EXACT simulated launch angle and only reach max range (forceFuelMoveToMaxRange).
+    // Mark the plan replan-done so the fuel replan below is skipped — it would aim at
+    // home/an enemy and divert the carefully simulated line.
     if(Array.isArray(selectedPlanEnhancementSequence)
       && selectedPlanEnhancementSequence.some((entry) =>
-        entry?.itemType === INVENTORY_ITEM_TYPES.FUEL && entry?.reason === "ricochet_sweep_extend_more_targets")){
+        entry?.itemType === INVENTORY_ITEM_TYPES.FUEL
+        && (entry?.reason === "ricochet_sweep_extend_more_targets" || entry?.reason === "flag_capture_fuel"))){
       selectedPlan.fuelReplanned = true;
     }
     aiThinkingTimingStageEnd("inventory_enhance");
@@ -20164,6 +20274,14 @@ const AI_MULTI_TARGET_PAIR_MIN = 2;
 // flag alone never forces an ignore-safety dominate — it only tips the choice toward a
 // route that also grabs it.
 const AI_FLAG_SWEEP_TARGET_WEIGHT = 3;
+// B2 (fuel flag capture, as an "attack variant"): with fuel, launch AT a flag, grab it,
+// and try to reach base. Success is DELIVER (crosses base) OR ADVANCE (the flag lands
+// meaningfully closer to base) — even a miss that only advances the flag is a big help,
+// which is what makes this low-risk. Search a fan of launch angles toward the flag.
+const AI_FLAG_FUEL_CAPTURE_ANGLE_STEP_DEG = 15;
+const AI_FLAG_FUEL_CAPTURE_FAN_DEG = 75;
+const AI_FLAG_FUEL_CAPTURE_MAX_BOUNCES = 3;
+const AI_FLAG_FUEL_CAPTURE_MIN_ADVANCE_PX = 120; // 6 cells closer to base = worth it
 const AI_SWEEP_ANGLE_STEP_DEG = 20;
 const AI_SWEEP_MAX_BOUNCES = 2;
 const AI_SWEEP_ANCHOR_SCALES = [1, 0.7];
@@ -29532,14 +29650,19 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
   const ricochetSweepExtends = fuelAvailable
     && selectedPlan?.aiFuelRicochetExtend
     && Number(selectedPlan.aiFuelRicochetExtend.boostedCount) > Number(selectedPlan.aiFuelRicochetExtend.baseCount);
+  // B2: a fuel flag capture was chosen (the plan simulated a boosted launch that grabs
+  // the flag and heads to base). Spend the fuel; forceFuelMoveToMaxRange flies exactly
+  // that simulated route (fuelReplanned is set in the scheduler for this reason).
+  const flagFuelCapture = fuelAvailable && selectedPlan?.aiFlagFuelCapture === true;
 
   // Fuel is evaluated independently — it can stack with crosshair and/or wings.
   // Only spend it when it buys real extra reach (advantage over not using it):
-  // extending a ricochet sweep to a bigger multikill, an attack-then-retreat,
-  // sweeping more targets along a direct line, or reaching a target the base move
-  // can't. Multikill-extend is checked first: for a sweep the kills are the point,
-  // so it wins over a retreat (whose home replan would abandon the multikill line).
-  if(ricochetSweepExtends){
+  // grabbing a flag toward base, extending a ricochet sweep to a bigger multikill, an
+  // attack-then-retreat, sweeping more targets along a direct line, or reaching a target
+  // the base move can't. The flag capture is the point when it was chosen, so it wins.
+  if(flagFuelCapture){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "flag_capture_fuel" });
+  } else if(ricochetSweepExtends){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "ricochet_sweep_extend_more_targets" });
   } else if(harpyStrikeOpportunity){
     candidates.push({
