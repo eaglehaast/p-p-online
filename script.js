@@ -11598,6 +11598,264 @@ function aiFailFastBuildSnapshot(source, details, stage){
 const AI_LAST_MOVES_BUFFER = [];
 const AI_LAST_MOVES_MAX = 10;
 
+// ===== Reproducible AI move dump =====
+// AI_LAST_MOVES_BUFFER above is a *diagnostic summary* (decision logs, reject
+// reasons, a rounded focus-plane position) — great for reading WHY the AI
+// reasoned as it did, but it cannot rebuild the board. This buffer is the
+// complement: a *reproducible* snapshot of the exact pre-launch state the
+// selector acted on (every plane/cargo/flag/mine position, both inventories,
+// the static walls, both bases, the range settings) PLUS the fully-finalized
+// plan it committed to. The tester sees an idiotic move, calls aiDumpBadMove()
+// in the console, sends the JSON over, and we turn it into a regression test:
+// rebuild this state, run the selector, assert the idiocy is gone.
+//   aiDumpBadMove();             // most recent move as JSON (also to clipboard)
+//   aiDumpBadMove({ index: 1 }); // one move before the most recent
+//   aiDumpBadMove({ limit: 3 }); // the last N moves as an array
+//   aiDumpBadMove({ clear: true });
+const AI_MOVE_DUMP_BUFFER = [];
+const AI_MOVE_DUMP_MAX = 12;
+// Colliders (walls) are static per map; serialize the array once and reuse the
+// result by identity so every dump doesn't re-walk the whole geometry.
+let aiMoveDumpCollidersCacheRef = null;
+let aiMoveDumpCollidersCacheJson = null;
+
+function aiDumpNum(v){
+  return Number.isFinite(v) ? Math.round(v * 100) / 100 : null;
+}
+
+// Bounded, JSON-safe deep clone: drops functions / DOM nodes / cycles and caps
+// depth and array/object breadth so a diagnostic can never loop forever or blow
+// up the buffer. Used for the free-form bits (buffs, plan fields, colliders).
+function aiDumpSafeClone(value, maxDepth = 6, maxItems = 400, _seen){
+  if(value === null || value === undefined) return value;
+  const t = typeof value;
+  if(t === "number") return Number.isFinite(value) ? value : null;
+  if(t === "string" || t === "boolean") return value;
+  if(t === "function" || t === "symbol" || t === "bigint") return undefined;
+  if(t !== "object") return undefined;
+  if(typeof Node !== "undefined" && value instanceof Node) return undefined;
+  if(typeof HTMLElement !== "undefined" && value instanceof HTMLElement) return undefined;
+  if(maxDepth <= 0) return undefined;
+  const seen = _seen || new Set();
+  if(seen.has(value)) return undefined; // cycle
+  seen.add(value);
+  try {
+    if(Array.isArray(value)){
+      const out = [];
+      const n = Math.min(value.length, maxItems);
+      for(let i = 0; i < n; i += 1){
+        const cloned = aiDumpSafeClone(value[i], maxDepth - 1, maxItems, seen);
+        if(cloned !== undefined) out.push(cloned);
+      }
+      if(value.length > maxItems) out.push(`…(+${value.length - maxItems} more)`);
+      return out;
+    }
+    const out = {};
+    let count = 0;
+    for(const key in value){
+      if(!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      if(count >= maxItems) break;
+      const cloned = aiDumpSafeClone(value[key], maxDepth - 1, maxItems, seen);
+      if(cloned !== undefined){ out[key] = cloned; count += 1; }
+    }
+    return out;
+  } finally {
+    seen.delete(value);
+  }
+}
+
+// A compact, stable reference to a plane (by index in `points` + id + color +
+// position) so the dump can point at a plane without re-embedding it.
+function aiDumpPlaneRef(plane, allPlanes){
+  if(!plane || typeof plane !== "object") return null;
+  const index = Array.isArray(allPlanes) ? allPlanes.indexOf(plane) : -1;
+  return {
+    index: index >= 0 ? index : null,
+    id: plane.id ?? null,
+    color: plane.color ?? null,
+    x: aiDumpNum(plane.x),
+    y: aiDumpNum(plane.y),
+  };
+}
+
+function aiDumpSerializePlane(plane, index){
+  if(!plane || typeof plane !== "object") return null;
+  return {
+    index: Number.isFinite(index) ? index : null,
+    id: plane.id ?? null,
+    color: plane.color ?? null,
+    x: aiDumpNum(plane.x),
+    y: aiDumpNum(plane.y),
+    angle: aiDumpNum(plane.angle),
+    homeX: aiDumpNum(plane.homeX),
+    homeY: aiDumpNum(plane.homeY),
+    homeAngle: aiDumpNum(plane.homeAngle),
+    isAlive: plane.isAlive === true,
+    burning: plane.burning === true,
+    lifeState: plane.lifeState ?? null,
+    respawnState: plane.respawnState ?? null,
+    carriedFlagId: plane.carriedFlagId ?? null,
+    flagColor: plane.flagColor ?? null,
+    shieldActive: plane.shieldActive === true,
+    activeTurnBuffs: aiDumpSafeClone(plane.activeTurnBuffs || {}, 2, 20),
+    launchReady: (typeof isPlaneLaunchStateReady === "function") ? (isPlaneLaunchStateReady(plane) === true) : null,
+    effectiveRangePx: (typeof getPlaneEffectiveRangePx === "function") ? aiDumpNum(getPlaneEffectiveRangePx(plane)) : null,
+  };
+}
+
+function aiDumpSerializeCargo(cargo, index){
+  if(!cargo || typeof cargo !== "object") return null;
+  let center = null;
+  if(typeof getCargoVisualCenter === "function"){
+    try {
+      const cc = getCargoVisualCenter(cargo);
+      if(cc) center = { x: aiDumpNum(cc.x), y: aiDumpNum(cc.y) };
+    } catch (_) { /* keep null */ }
+  }
+  return {
+    index: Number.isFinite(index) ? index : null,
+    id: cargo.id ?? null,
+    state: cargo.state ?? null,
+    x: aiDumpNum(cargo.x),
+    y: aiDumpNum(cargo.y),
+    center,
+    heldBy: cargo.heldBy ?? null,
+    pickedAt: cargo.pickedAt ?? null,
+  };
+}
+
+function aiDumpSerializeFlag(flag, index, allPlanes){
+  if(!flag || typeof flag !== "object") return null;
+  let anchor = null;
+  if(typeof getFlagAnchor === "function"){
+    try {
+      const a = getFlagAnchor(flag);
+      if(a) anchor = { x: aiDumpNum(a.x), y: aiDumpNum(a.y) };
+    } catch (_) { /* keep null */ }
+  }
+  return {
+    index: Number.isFinite(index) ? index : null,
+    id: flag.id ?? null,
+    color: flag.color ?? null,
+    state: flag.state ?? null,
+    anchor,
+    droppedAt: flag.droppedAt ? { x: aiDumpNum(flag.droppedAt.x), y: aiDumpNum(flag.droppedAt.y) } : null,
+    carrier: flag.carrier ? aiDumpPlaneRef(flag.carrier, allPlanes) : null,
+  };
+}
+
+function aiDumpSerializeMine(mine){
+  if(!mine || typeof mine !== "object") return null;
+  return {
+    id: mine.id ?? null,
+    owner: mine.owner ?? null,
+    x: aiDumpNum(mine.x),
+    y: aiDumpNum(mine.y),
+    cellX: Number.isFinite(mine.cellX) ? mine.cellX : null,
+    cellY: Number.isFinite(mine.cellY) ? mine.cellY : null,
+  };
+}
+
+function aiDumpSerializeColliders(){
+  const arr = (typeof colliders !== "undefined" && Array.isArray(colliders)) ? colliders : [];
+  if(aiMoveDumpCollidersCacheRef === arr && aiMoveDumpCollidersCacheJson){
+    return aiMoveDumpCollidersCacheJson;
+  }
+  const serialized = aiDumpSafeClone(arr, 4, 600);
+  aiMoveDumpCollidersCacheRef = arr;
+  aiMoveDumpCollidersCacheJson = serialized;
+  return serialized;
+}
+
+// Serialize the chosen plan without re-embedding heavy plane refs. Every plan
+// field is captured (future-proof) except `plane` / `targetEnemy`, which are
+// replaced by compact plane references, then bounded-cloned to strip anything
+// unserializable.
+function aiDumpSerializePlan(selectedPlan, allPlanes){
+  if(!selectedPlan || typeof selectedPlan !== "object") return null;
+  const shallow = {};
+  for(const key in selectedPlan){
+    if(!Object.prototype.hasOwnProperty.call(selectedPlan, key)) continue;
+    if(key === "plane"){ shallow.plane = aiDumpPlaneRef(selectedPlan.plane, allPlanes); continue; }
+    if(key === "targetEnemy"){ shallow.targetEnemy = aiDumpPlaneRef(selectedPlan.targetEnemy, allPlanes); continue; }
+    shallow[key] = selectedPlan[key];
+  }
+  // Seed the cycle guard with the original plan so any field referencing the
+  // plan back (a self-cycle) is stripped rather than partially expanded.
+  return aiDumpSafeClone(shallow, 6, 250, new Set([selectedPlan]));
+}
+
+function buildAiMoveDumpDynamic(selectedPlan){
+  const allPlanes = (typeof points !== "undefined" && Array.isArray(points)) ? points : [];
+  const runtimeTurnColors = (typeof turnColors !== "undefined") ? turnColors : null;
+  const runtimeTurnIndex = (typeof turnIndex !== "undefined") ? turnIndex : 0;
+  const aiColor = selectedPlan?.plane?.color
+    || selectedPlan?.color
+    || runtimeTurnColors?.[runtimeTurnIndex]
+    || "blue";
+  const enemyColor = aiColor === "blue" ? "green" : "blue";
+
+  const dump = {
+    schema: "ai-move-dump/v1",
+    meta: {
+      t: Date.now(),
+      at: (typeof safeNowIso === "function") ? safeNowIso() : new Date().toISOString(),
+      turn: (typeof aiRoundState !== "undefined" && Number.isFinite(aiRoundState?.turnNumber)) ? aiRoundState.turnNumber : null,
+      round: (typeof roundNumber !== "undefined" && Number.isFinite(roundNumber)) ? roundNumber : null,
+      gameMode: (typeof gameMode !== "undefined") ? gameMode : null,
+      aiColor,
+      enemyColor,
+    },
+    settings: {
+      flightRangeCells: (typeof settings !== "undefined" && Number.isFinite(settings?.flightRangeCells)) ? settings.flightRangeCells : null,
+      flagsMode: (typeof isFlagsModeEnabled === "function") ? (isFlagsModeEnabled() === true) : null,
+      cellSize: (typeof CELL_SIZE !== "undefined") ? CELL_SIZE : null,
+      maxDragDistance: (typeof MAX_DRAG_DISTANCE !== "undefined") ? MAX_DRAG_DISTANCE : null,
+      flightDurationSec: (typeof FIELD_FLIGHT_DURATION_SEC !== "undefined") ? FIELD_FLIGHT_DURATION_SEC : null,
+      field: {
+        left: (typeof FIELD_LEFT !== "undefined") ? aiDumpNum(FIELD_LEFT) : null,
+        top: (typeof FIELD_TOP !== "undefined") ? aiDumpNum(FIELD_TOP) : null,
+        width: (typeof FIELD_WIDTH !== "undefined") ? aiDumpNum(FIELD_WIDTH) : null,
+        height: (typeof FIELD_HEIGHT !== "undefined") ? aiDumpNum(FIELD_HEIGHT) : null,
+      },
+    },
+    bases: {
+      blue: (typeof getBaseInteractionTarget === "function") ? aiDumpSafeClone(getBaseInteractionTarget("blue"), 4, 20) : null,
+      green: (typeof getBaseInteractionTarget === "function") ? aiDumpSafeClone(getBaseInteractionTarget("green"), 4, 20) : null,
+    },
+    inventory: {
+      blue: (typeof evaluateInventoryState === "function") ? aiDumpSafeClone(evaluateInventoryState("blue")?.counts || {}, 3, 20) : null,
+      green: (typeof evaluateInventoryState === "function") ? aiDumpSafeClone(evaluateInventoryState("green")?.counts || {}, 3, 20) : null,
+    },
+    planes: allPlanes.map((p, i) => aiDumpSerializePlane(p, i)),
+    cargo: (typeof cargoState !== "undefined" && Array.isArray(cargoState)) ? cargoState.map((c, i) => aiDumpSerializeCargo(c, i)) : [],
+    flags: (typeof flags !== "undefined" && Array.isArray(flags)) ? flags.map((f, i) => aiDumpSerializeFlag(f, i, allPlanes)) : [],
+    mines: (typeof mines !== "undefined" && Array.isArray(mines)) ? mines.map((m) => aiDumpSerializeMine(m)) : [],
+    colliders: aiDumpSerializeColliders(),
+    decision: aiDumpSerializePlan(selectedPlan, allPlanes),
+  };
+
+  // Optional explanatory tail of the structured decision log — only populated
+  // when aiDebug logging is on. The state above is what a regression test needs;
+  // this just helps read the AI's reasoning if the tester had logging enabled.
+  if(typeof getBufferedAiDecisionEvents === "function"){
+    try {
+      const tail = getBufferedAiDecisionEvents(40);
+      dump.decisionLogTail = Array.isArray(tail) ? aiDumpSafeClone(tail, 6, 60) : [];
+    } catch (_) { dump.decisionLogTail = []; }
+  }
+  return dump;
+}
+
+function recordAiMoveDump(selectedPlan){
+  try {
+    const dump = buildAiMoveDumpDynamic(selectedPlan);
+    if(!dump) return;
+    AI_MOVE_DUMP_BUFFER.push(dump);
+    if(AI_MOVE_DUMP_BUFFER.length > AI_MOVE_DUMP_MAX) AI_MOVE_DUMP_BUFFER.shift();
+  } catch (_) { /* a diagnostic must never break the AI */ }
+}
+
 // ===== AI thinking-time diagnostics =====
 // Цель: измерить сколько времени AI "думает" между турном-старт и launch-release,
 // и где конкретно он зависает (sync-chunk'и между cooperative yield'ами).
@@ -11749,6 +12007,35 @@ if(typeof window !== "undefined"){
     const limit = Number.isFinite(opts?.limit) ? Math.max(1, Math.floor(opts.limit)) : 1;
     const tail = AI_LAST_MOVES_BUFFER.slice(-limit);
     return JSON.stringify(limit === 1 ? (tail[0] ?? null) : tail, null, 2);
+  };
+  // Reproducible bad-move dump. See a ДОЛБОËБСКИЙ (idiotic) AI move → call this
+  // in the console to get a JSON snapshot of the exact pre-launch board state +
+  // the plan the AI committed to, and send it over. It becomes a regression test.
+  //   aiDumpBadMove();             // most recent move (returned + copied to clipboard)
+  //   aiDumpBadMove({ index: 1 }); // one move before the most recent
+  //   aiDumpBadMove({ limit: 3 }); // the last N moves as an array
+  //   aiDumpBadMove({ clear: true });
+  window.aiDumpBadMove = function(opts){
+    if(opts && opts.clear){ AI_MOVE_DUMP_BUFFER.length = 0; return "cleared"; }
+    if(AI_MOVE_DUMP_BUFFER.length === 0) return "no AI moves recorded yet";
+    let payload;
+    if(Number.isFinite(opts?.limit)){
+      const limit = Math.max(1, Math.floor(opts.limit));
+      payload = AI_MOVE_DUMP_BUFFER.slice(-limit);
+    } else {
+      const index = Number.isFinite(opts?.index) ? Math.max(0, Math.floor(opts.index)) : 0;
+      payload = AI_MOVE_DUMP_BUFFER[AI_MOVE_DUMP_BUFFER.length - 1 - index] ?? null;
+    }
+    const json = JSON.stringify(payload, null, 2);
+    try {
+      if(navigator?.clipboard?.writeText){
+        navigator.clipboard.writeText(json).then(
+          () => { try { console.log(`[aiDumpBadMove] copied to clipboard (${json.length} chars)`); } catch (_) {} },
+          () => {}
+        );
+      }
+    } catch (_) { /* clipboard is best-effort */ }
+    return json;
   };
   window.aiThinkingDebug = function(opts){
     if(opts && opts.clear){ AI_THINKING_TIMING_BUFFER.length = 0; return "cleared"; }
@@ -17277,6 +17564,12 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     await aiYieldToNextFrame();
     if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
     aiCoopResetBudget();
+
+    // Reproducible bad-move capture: the plan is now fully finalized (selector +
+    // inventory + mine/dynamite/fuel replans) and the board is still at its
+    // pre-launch state — exactly what a regression test rebuilds. Ring-buffered;
+    // read the latest with aiDumpBadMove() in the console.
+    recordAiMoveDump(selectedPlan);
 
     let launchResult = tryIssueAiMoveWithInventory({
       plane: selectedPlan.plane || launchReadyPlane,
