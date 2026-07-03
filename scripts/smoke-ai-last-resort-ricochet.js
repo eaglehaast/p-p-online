@@ -135,6 +135,7 @@ const context = {
 
   // world helpers
   hasAnimatingCargo: () => false,
+  recordAiMoveDump: () => {}, // diagnostic hook; no-op in tests
   tryBuildAiFlagDeliveryPlan: () => null, // no flag carrier in these scenarios
   getBaseAnchor: () => ({ x: 50, y: 100 }),
   getAvailableFlagsByColor: () => [],

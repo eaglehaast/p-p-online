@@ -60,6 +60,7 @@ const context = {
   },
   markAiTurnStarted: () => {},
   hasAnimatingCargo: () => false,
+  recordAiMoveDump: () => {},
   tryBuildAiFlagDeliveryPlan: () => null,
   getBaseAnchor: () => ({ x: 10, y: 90 }),
   getAvailableFlagsByColor: () => [],
