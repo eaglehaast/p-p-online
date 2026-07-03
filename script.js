@@ -48509,9 +48509,33 @@ function buildMapSpriteColliders(map){
     throw error;
   }
 
-  return sprites
+  const built = sprites
     .map((sprite, index) => buildSpriteCollider(sprite, index))
     .filter(Boolean);
+
+  // Collider ids MUST be unique. The whole ignore-by-id system — dynamite corridor
+  // clearing (withTemporarilyIgnoredColliderIds / isPathClearIgnoringColliderById)
+  // and the dynamite-augmented planner's blocker matching — filters colliders by
+  // `id`. When several map sprites declare the same id (e.g. every interior brick
+  // in a map shares id "brick1"), ignoring that id removes ALL of them at once, so
+  // the AI plans as if one dynamite clears the whole interior — while detonation
+  // (removeBrickSpriteForDynamite) actually removes only the ONE sprite it hit.
+  // That desync makes the AI fly through walls that are still there. Suffix any
+  // repeated id so each collider maps 1:1 to its brick, matching reality. Sprite
+  // ids in the map data are untouched (execution resolves bricks by position/ref).
+  const usedIds = new Set();
+  for(const collider of built){
+    if(!collider || collider.id == null) continue;
+    let candidate = collider.id;
+    if(usedIds.has(candidate)){
+      let n = 1;
+      do { candidate = `${collider.id}#${n}`; n += 1; } while(usedIds.has(candidate));
+      collider.id = candidate;
+    }
+    usedIds.add(candidate);
+  }
+
+  return built;
 }
 
 function normalizeMapForRendering(map){
