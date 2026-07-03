@@ -53,6 +53,7 @@ function buildContext(overrides = {}){
     markAiTurnStarted: () => {},
     hasAnimatingCargo: () => false,
     recordAiMoveDump: () => {},
+    extendDirectMoveToMaxTargets: async () => false,
     tryBuildAiFlagDeliveryPlan: () => null,
     getBaseAnchor: () => ({ x: 0, y: 0 }),
     getAvailableFlagsByColor: () => [],
