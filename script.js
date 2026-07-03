@@ -24547,6 +24547,34 @@ function countTargetsAndSafetyOnSegment(plane, landingX, landingY, color, contex
   return stats;
 }
 
+// Decides whether a dynamite-augmented alternative should REPLACE the base plan.
+// Split out (and unit-tested) because the base plan's landing is often the
+// straight-line projection of a RICOCHET sweep — frequently off-field — which
+// countTargetsAndSafetyOnSegment then undercounts, since it measures a straight
+// segment, not the bounced path. So we ALSO trust the plan's own reported
+// multi-target coverage (multiTargetCount / multiTargetEnemy); we never let a
+// score win fire against a degenerate 0-score baseline (a sweep usually reports
+// score 0); and we never spend a dynamite to trade AWAY a kill the base plan
+// already lines up (a cargo grab that drops the sweep's kill is a downgrade).
+function evaluateDynamiteAugmentedAcceptance(altStats, altAdjustedScore, currentPlan, currentStats){
+  const currentScore = Number.isFinite(currentPlan?.score) ? currentPlan.score : 0;
+  const reportedPickups = Number.isFinite(currentPlan?.multiTargetCount) ? currentPlan.multiTargetCount : 0;
+  const reportedKills = Number.isFinite(currentPlan?.multiTargetEnemy) ? currentPlan.multiTargetEnemy : 0;
+  const currentPickups = Math.max(currentStats?.totalPickups || 0, reportedPickups);
+  const currentKills = Math.max(currentStats?.enemyHits || 0, reportedKills);
+  const altPickups = altStats?.totalPickups || 0;
+  const altKills = altStats?.enemyHits || 0;
+  const acceptanceThreshold = 1.01;
+
+  const collectsMore = altPickups > currentPickups;
+  const sameCollectsButSafer = altPickups === currentPickups
+    && (altStats?.threatsNearLanding || 0) < (currentStats?.threatsNearLanding || 0);
+  const scoreSignificantlyBetter = currentScore > 0 && altAdjustedScore > currentScore * acceptanceThreshold;
+  const dropsAKill = altKills < currentKills;
+  const accepted = !dropsAKill && (collectsMore || sameCollectsButSafer || scoreSignificantlyBetter);
+  return { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, dropsAKill };
+}
+
 async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context, currentPlan, dynamiteCharges){
   if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return null;
   if(!Number.isFinite(dynamiteCharges) || dynamiteCharges <= 0) return null;
@@ -24727,11 +24755,8 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
   const currentStats = countTargetsAndSafetyOnSegment(plane, currentLandingX, currentLandingY, color, context, aliveEnemies);
 
   const acceptanceThreshold = 1.01;
-  const collectsMore = bestAlt.altStats.totalPickups > currentStats.totalPickups;
-  const sameCollectsButSafer = bestAlt.altStats.totalPickups === currentStats.totalPickups
-    && bestAlt.altStats.threatsNearLanding < currentStats.threatsNearLanding;
-  const scoreSignificantlyBetter = bestAlt.adjustedScore > currentScore * acceptanceThreshold;
-  const accepted = collectsMore || sameCollectsButSafer || scoreSignificantlyBetter;
+  const { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, dropsAKill } =
+    evaluateDynamiteAugmentedAcceptance(bestAlt.altStats, bestAlt.adjustedScore, currentPlan, currentStats);
 
   logDynamiteDebug("dynamite_augmented_plan_evaluation", {
     planeId: plane?.id ?? null,
@@ -24748,6 +24773,7 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
       collectsMore,
       sameCollectsButSafer,
       scoreSignificantlyBetter,
+      dropsAKill,
     },
   });
   if(!accepted) return null;
