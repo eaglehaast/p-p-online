@@ -61,6 +61,7 @@ const context = {
   markAiTurnStarted: () => {},
   hasAnimatingCargo: () => false,
   recordAiMoveDump: () => {},
+  extendDirectMoveToMaxTargets: async () => false,
   tryBuildAiFlagDeliveryPlan: () => null,
   getBaseAnchor: () => ({ x: 10, y: 90 }),
   getAvailableFlagsByColor: () => [],

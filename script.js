@@ -17565,6 +17565,14 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
     aiCoopResetBudget();
 
+    // "Don't stop short": a straight launch that lands ON its target with range to
+    // spare is extended along the same line to full range when doing so sweeps an
+    // extra target (more cargo, or a kill). Runs last so it flies through any
+    // dynamite-opened corridor. See extendDirectMoveToMaxTargets.
+    await extendDirectMoveToMaxTargets(selectedPlan, aiExecutionContext, readyCargo);
+    if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+    aiCoopResetBudget();
+
     // Reproducible bad-move capture: the plan is now fully finalized (selector +
     // inventory + mine/dynamite/fuel replans) and the board is still at its
     // pre-launch state — exactly what a regression test rebuilds. Ring-buffered;
@@ -20579,6 +20587,7 @@ const AI_SWEEP_ANGLE_STEP_DEG = 20;
 const AI_SWEEP_MAX_BOUNCES = 2;
 const AI_SWEEP_ANCHOR_SCALES = [1, 0.7];
 const AI_SWEEP_ENEMY_HIT_TOLERANCE_PX = CELL_SIZE; // ~ danger half-width (18) + margin
+const AI_EXTEND_MOVE_MIN_GAIN_PX = CELL_SIZE * 2; // skip extension when <2 cells of range are unused
 const AI_CARGO_RISK_YELLOW_ZONE_MARGIN = 0.12;
 const AI_CARGO_FAVORABLE_DISTANCE = MAX_DRAG_DISTANCE * 0.72;
 const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
@@ -24744,6 +24753,145 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
   if(!accepted) return null;
 
   return bestAlt;
+}
+
+// "Don't stop short on the target." A straight launch that lands ON its target (a
+// cargo or an enemy) often leaves half the flight range unused — when flying the
+// SAME line to full range would sweep whatever else lines up past it: extra cargo,
+// or a KILL. A longer launch on the same angle is a strict superset of the short
+// one (same first segment, then more), so extending can only ADD targets. We
+// extend only when the longer line genuinely adds one, and — for a cargo-only
+// gain — only when the farther landing stays safe. A gained KILL is worth an
+// exposed landing (bold play, and this is often the AI's last plane), so a kill
+// accepts the longer landing regardless of its risk.
+//
+// Runs post-finalization (after inventory/dynamite/fuel), so the extension flies
+// through any corridor a dynamite just opened: the plan's dynamited colliders are
+// ignored while simulating, matching how the augmented route itself was planned.
+// Mutates selectedPlan in place; returns true if it extended. Never throws — a
+// launch enhancement must not break the launch.
+async function extendDirectMoveToMaxTargets(selectedPlan, context, readyCargoList){
+  try {
+    if(!selectedPlan || !selectedPlan.plane) return false;
+    if(typeof simulateAIShot !== "function") return false;
+    // Only straight launches: a bounce route isn't a single line to lengthen, and
+    // its landing already encodes a post-bounce point rather than the launch angle.
+    if(Number(selectedPlan.bounceCount || 0) !== 0) return false;
+
+    const plane = selectedPlan.plane;
+    if(!Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return false;
+    if(!Number.isFinite(selectedPlan.landingX) || !Number.isFinite(selectedPlan.landingY)) return false;
+
+    const dirX = selectedPlan.landingX - plane.x;
+    const dirY = selectedPlan.landingY - plane.y;
+    const currentDist = Math.hypot(dirX, dirY);
+    if(!(currentDist > 1e-3)) return false;
+
+    const maxRange = (typeof getPlaneEffectiveRangePx === "function") ? getPlaneEffectiveRangePx(plane) : 0;
+    if(!(maxRange > currentDist + AI_EXTEND_MOVE_MIN_GAIN_PX)) return false; // no meaningful range left
+
+    const nx = dirX / currentDist;
+    const ny = dirY / currentDist;
+
+    const enemies = Array.isArray(context?.enemies)
+      ? context.enemies.filter((e) => e && e.isAlive !== false && Number.isFinite(e.x) && Number.isFinite(e.y))
+      : [];
+    const cargos = Array.isArray(readyCargoList)
+      ? readyCargoList.filter((c) => c && c.state === "ready")
+      : [];
+    if(enemies.length === 0 && cargos.length === 0) return false;
+
+    const enemyTol = (typeof AI_SWEEP_ENEMY_HIT_TOLERANCE_PX === "number") ? AI_SWEEP_ENEMY_HIT_TOLERANCE_PX : CELL_SIZE;
+    const maxBounces = (typeof AI_SWEEP_MAX_BOUNCES === "number") ? AI_SWEEP_MAX_BOUNCES : 2;
+
+    const countOnPath = (path) => {
+      const out = { cargoHit: 0, enemyHit: 0 };
+      if(!Array.isArray(path) || path.length < 2) return out;
+      for(const c of cargos){
+        if(typeof doesCargoIntersectBeneficialZoneAlongPath === "function"
+          && doesCargoIntersectBeneficialZoneAlongPath(c, plane, path)) out.cargoHit += 1;
+      }
+      for(const e of enemies){
+        for(let i = 0; i < path.length - 1; i += 1){
+          if(getDistanceFromPointToSegment(e.x, e.y, path[i].x, path[i].y, path[i + 1].x, path[i + 1].y) <= enemyTol){ out.enemyHit += 1; break; }
+        }
+      }
+      return out;
+    };
+
+    // If a dynamite in this plan opened the corridor, simulate with those colliders
+    // removed so the extension sees the same clear line the run will actually fly.
+    const dynamiteColliderIds = [];
+    if(Array.isArray(selectedPlan.selectedInventorySequence)){
+      for(const entry of selectedPlan.selectedInventorySequence){
+        const id = (entry && entry.itemType === INVENTORY_ITEM_TYPES.DYNAMITE) ? entry?.target?.colliderId : null;
+        if(id != null) dynamiteColliderIds.push(id);
+      }
+    }
+
+    const runSims = () => ({
+      currentSim: simulateAIShot(plane, { dx: nx, dy: ny, scale: Math.min(1, currentDist / maxRange) }, { maxBounces: 0 }),
+      boostedSim: simulateAIShot(plane, { dx: nx, dy: ny, scale: 1 }, { maxBounces }),
+    });
+    let sims;
+    if(dynamiteColliderIds.length > 0 && typeof withTemporarilyIgnoredColliderIdsAsync === "function"){
+      sims = await withTemporarilyIgnoredColliderIdsAsync(dynamiteColliderIds, async () => runSims());
+    } else {
+      sims = runSims();
+    }
+    const currentSim = sims?.currentSim || null;
+    const boostedSim = sims?.boostedSim || null;
+    if(!boostedSim || !Array.isArray(boostedSim.predictedPath) || boostedSim.predictedPath.length < 2) return false;
+
+    const cur = countOnPath(currentSim?.predictedPath);
+    const boosted = countOnPath(boostedSim.predictedPath);
+    const newEnemies = boosted.enemyHit - cur.enemyHit;
+    const newCargo = boosted.cargoHit - cur.cargoHit;
+    if(newEnemies <= 0 && newCargo <= 0) return false; // flying on gains nothing
+
+    // Keep the SAME launch angle at full power; physics flies the real (possibly
+    // bouncing) path. Landing encodes the launch vector — like the sweep does —
+    // not the post-bounce endpoint.
+    const extLandingX = plane.x + nx * maxRange;
+    const extLandingY = plane.y + ny * maxRange;
+
+    if(newEnemies <= 0){
+      // Cargo-only extension must keep a safe landing (no free kill to justify exposure).
+      const boostedEnd = boostedSim.predictedPath[boostedSim.predictedPath.length - 1];
+      const risk = (typeof getImmediateResponseThreatMeta === "function" && typeof getFallbackCandidateResponseRisk === "function")
+        ? getFallbackCandidateResponseRisk(getImmediateResponseThreatMeta({ ...context, plane }, boostedEnd.x, boostedEnd.y, null))
+        : 0;
+      const allowed = (typeof getAiAllowedMoveRisk === "function") ? getAiAllowedMoveRisk(context) : 1;
+      if(risk > allowed) return false;
+    }
+
+    const prevLandingX = selectedPlan.landingX;
+    const prevLandingY = selectedPlan.landingY;
+    selectedPlan.landingX = extLandingX;
+    selectedPlan.landingY = extLandingY;
+    selectedPlan.planDistance = maxRange;
+    selectedPlan.moveExtendedToMaxTargets = {
+      fromDistPx: Math.round(currentDist),
+      toDistPx: Math.round(maxRange),
+      addedCargo: newCargo,
+      addedEnemyKills: newEnemies,
+    };
+    if(Number.isFinite(selectedPlan.multiTargetCount)){
+      selectedPlan.multiTargetCount = Math.max(selectedPlan.multiTargetCount, boosted.cargoHit + boosted.enemyHit);
+    }
+    if(typeof logAiDecision === "function"){
+      logAiDecision("move_extended_to_max_targets", {
+        planeId: plane?.id ?? null,
+        fromLanding: { x: Math.round(prevLandingX), y: Math.round(prevLandingY) },
+        toLanding: { x: Math.round(extLandingX), y: Math.round(extLandingY) },
+        addedCargo: newCargo,
+        addedEnemyKills: newEnemies,
+      });
+    }
+    return true;
+  } catch (_) {
+    return false; // a launch enhancement must never break the launch
+  }
 }
 
 function findFallbackRicochetPreparationMove(plane, enemy){
