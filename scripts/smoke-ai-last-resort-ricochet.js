@@ -137,6 +137,8 @@ const context = {
   hasAnimatingCargo: () => false,
   recordAiMoveDump: () => {}, // diagnostic hook; no-op in tests
   extendDirectMoveToMaxTargets: async () => false, // launch enhancer; no-op in tests
+  isDefensiveIntruderThreat: () => false, // no intruder promotion in these scenarios
+  AI_DEFENSIVE_KILL_INTRUDER_PX: 240,
   tryBuildAiFlagDeliveryPlan: () => null, // no flag carrier in these scenarios
   getBaseAnchor: () => ({ x: 50, y: 100 }),
   getAvailableFlagsByColor: () => [],
