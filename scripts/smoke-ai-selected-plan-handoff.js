@@ -64,6 +64,8 @@ const context = {
   extendDirectMoveToMaxTargets: async () => false,
   isDefensiveIntruderThreat: () => false,
   AI_DEFENSIVE_KILL_INTRUDER_PX: 240,
+  getAiSelfSabotageLandingPenalty: () => 0,
+  AI_SELF_SABOTAGE_LANDING_PENALTY: 400,
   tryBuildAiFlagDeliveryPlan: () => null,
   getBaseAnchor: () => ({ x: 10, y: 90 }),
   getAvailableFlagsByColor: () => [],

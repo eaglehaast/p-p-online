@@ -139,6 +139,8 @@ const context = {
   extendDirectMoveToMaxTargets: async () => false, // launch enhancer; no-op in tests
   isDefensiveIntruderThreat: () => false, // no intruder promotion in these scenarios
   AI_DEFENSIVE_KILL_INTRUDER_PX: 240,
+  getAiSelfSabotageLandingPenalty: () => 0, // no self-sabotage penalty in these scenarios
+  AI_SELF_SABOTAGE_LANDING_PENALTY: 400,
   tryBuildAiFlagDeliveryPlan: () => null, // no flag carrier in these scenarios
   getBaseAnchor: () => ({ x: 50, y: 100 }),
   getAvailableFlagsByColor: () => [],
