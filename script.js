@@ -28759,6 +28759,23 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan, options = {}
     && routeClass === "direct"
     && `${selectedPlan?.predictedOutcome || ""}` === "target_hit_direct";
   if(isPlainGuaranteedDirectHit) return false;
+  // Precision's highest-value use is a MULTI-TARGET shot — a sweep that chains
+  // several kills / pickups (often with ricochets), where perfect aim is what
+  // makes the whole chain land. PRIORITIZE those: bypass the plain distance gate
+  // so a multi-target move always gets the crosshair (this is where precision
+  // earns "envy", not "pity"). Fuel-extended sweeps count too — fuel just
+  // lengthens the same multi-target line (aiFuelRicochetExtend), and precision +
+  // fuel is the ideal multikill; both buffs stack in pickAiBuffs. (Single
+  // ricochets still go through the distance gate below — a SHORT bounce has too
+  // little spread to be worth a crosshair.)
+  const multiTargetCount = Number.isFinite(selectedPlan?.multiTargetCount) ? selectedPlan.multiTargetCount : 0;
+  const fuelExtend = selectedPlan?.aiFuelRicochetExtend;
+  const fuelExtendsMoreTargets = Boolean(fuelExtend)
+    && Number.isFinite(fuelExtend.boostedCount) && Number.isFinite(fuelExtend.baseCount)
+    && fuelExtend.boostedCount > fuelExtend.baseCount;
+  if(multiTargetCount >= 2 || fuelExtendsMoreTargets){
+    return true;
+  }
   const goalText = getAiSelectedPlanIntentText(selectedPlan);
   // Use the longer of: straight-line distance to the target, and the actual
   // launch travel (landingX/landingY encode the launch vector). The latter
