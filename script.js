@@ -16709,6 +16709,17 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         .sort((a, b) => a.enemyDistance - b.enemyDistance)
         .slice(0, shotSimulationQuality.maxEnemyCandidatesPerPlane);
 
+      // Anti-self-sabotage context: penalize a shot that lands our plane deep in
+      // the enemy's base, scaled by how few planes we have left (see
+      // getAiSelfSabotageLandingPenalty). Keeps the AI from flying its LAST plane
+      // across the field to kill one and die when a safer kill exists.
+      const enemyColorForSabotage = aiColor === "blue" ? "green" : "blue";
+      const enemyBaseForSabotage = (typeof getBaseAnchor === "function") ? getBaseAnchor(enemyColorForSabotage) : null;
+      const midYForSabotage = (typeof FIELD_TOP === "number" && typeof FIELD_HEIGHT === "number") ? FIELD_TOP + FIELD_HEIGHT / 2 : null;
+      const ownAliveCountForSabotage = Array.isArray(points)
+        ? points.filter((candidatePlane) => candidatePlane && candidatePlane.color === aiColor && candidatePlane.isAlive && !candidatePlane.burning).length
+        : Number.POSITIVE_INFINITY;
+
       const attackCandidates = [];
       aiThinkingTimingStageStart("attack_sim");
       for(const entry of prioritizedEnemiesForPlane){
@@ -16716,11 +16727,19 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("attack_sim"); return null; }
         const move = await buildSimulatedEnemyCandidate(launchReadyPlane, entry.enemy, maxFlightDistancePx, shotSimulationQuality);
         if(!move) continue;
-        attackCandidates.push({ enemy: entry.enemy, move, enemyDistance: entry.enemyDistance, score: move.score });
+        const selfSabotagePenalty = getAiSelfSabotageLandingPenalty(
+          move.landingX, move.landingY, enemyBaseForSabotage, midYForSabotage,
+          ownAliveCountForSabotage, AI_SELF_SABOTAGE_LANDING_PENALTY,
+        );
+        attackCandidates.push({ enemy: entry.enemy, move, enemyDistance: entry.enemyDistance, score: move.score, selfSabotagePenalty });
       }
       aiThinkingTimingStageEnd("attack_sim");
       attackCandidates.sort((a, b) => {
-        const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
+        // Effective score folds in the self-sabotage penalty so a clean-but-suicidal
+        // far shot loses to a comparable shot that leaves the plane alive.
+        const aEff = (a.score ?? 0) - (a.selfSabotagePenalty || 0);
+        const bEff = (b.score ?? 0) - (b.selfSabotagePenalty || 0);
+        const scoreDiff = bEff - aEff;
         // Comparable hit quality -> prefer the less-exposed landing, then closer enemy.
         if(Math.abs(scoreDiff) > AI_ATTACK_SCORE_TOLERANCE) return scoreDiff;
         const riskDiff = (a.move?.landingRisk ?? 0) - (b.move?.landingRisk ?? 0);
@@ -20621,6 +20640,7 @@ const AI_SWEEP_ANCHOR_SCALES = [1, 0.7];
 const AI_SWEEP_ENEMY_HIT_TOLERANCE_PX = CELL_SIZE; // ~ danger half-width (18) + margin
 const AI_EXTEND_MOVE_MIN_GAIN_PX = CELL_SIZE * 2; // skip extension when <2 cells of range are unused
 const AI_DEFENSIVE_KILL_INTRUDER_PX = CELL_SIZE * 12; // enemy this close to our flag/base (in our half) = promote-the-kill intruder
+const AI_SELF_SABOTAGE_LANDING_PENALTY = 400; // max attack-score penalty for landing our LAST plane deep in the enemy's base
 const AI_CARGO_RISK_YELLOW_ZONE_MARGIN = 0.12;
 const AI_CARGO_FAVORABLE_DISTANCE = MAX_DRAG_DISTANCE * 0.72;
 const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
@@ -24600,6 +24620,26 @@ function isDefensiveIntruderThreat(enemy, ownBase, ownFlagAnchors, midY, thresho
     }
   }
   return false;
+}
+
+// Penalty (in attack-score points) for a shot that LANDS our plane deep in the
+// enemy's half toward their base — the "flew across the field to kill one and die"
+// self-sabotage. Scaled by how deep the landing sits in enemy territory (0 at the
+// midline, full at their base row) AND by how few planes we have left: with a full
+// fleet an aggressive push is barely penalized, but throwing away our LAST plane
+// deep in the enemy base is penalized hard, so a safer kill/cargo can win instead.
+// Pure + unit-tested; never vetoes an attack, only re-ranks it.
+function getAiSelfSabotageLandingPenalty(landingX, landingY, enemyBase, midY, ownAliveCount, maxPenalty){
+  if(!Number.isFinite(landingY) || !enemyBase || !Number.isFinite(enemyBase.y)) return 0;
+  if(!Number.isFinite(midY) || !Number.isFinite(maxPenalty) || maxPenalty <= 0) return 0;
+  const enemyHalfSpan = Math.abs(enemyBase.y - midY);
+  if(!(enemyHalfSpan > 0)) return 0;
+  const depthRaw = (enemyBase.y > midY) ? (landingY - midY) : (midY - landingY);
+  const depth = Math.max(0, Math.min(1, depthRaw / enemyHalfSpan));
+  if(depth <= 0) return 0;
+  const alive = Number.isFinite(ownAliveCount) ? ownAliveCount : 3;
+  const scarcity = alive <= 1 ? 1 : (alive === 2 ? 0.5 : 0.2);
+  return maxPenalty * depth * scarcity;
 }
 
 // Decides whether a dynamite-augmented alternative should REPLACE the base plan.
@@ -28710,6 +28750,15 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan, options = {}
   const plane = selectedPlan?.plane || null;
   if(!plane) return false;
   const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
+  // Precision is for shots that can MISS — ricochets, gap threads, multi-target
+  // sweeps. A plain straight shot that already connects cleanly (direct, zero-
+  // bounce, predicted a direct hit) doesn't need a crosshair; spending one there
+  // is waste. Keep it for the bouncy / multi-target routes where aim is hard.
+  const bounceCount = Number.isFinite(selectedPlan?.bounceCount) ? selectedPlan.bounceCount : 0;
+  const isPlainGuaranteedDirectHit = bounceCount === 0
+    && routeClass === "direct"
+    && `${selectedPlan?.predictedOutcome || ""}` === "target_hit_direct";
+  if(isPlainGuaranteedDirectHit) return false;
   const goalText = getAiSelectedPlanIntentText(selectedPlan);
   // Use the longer of: straight-line distance to the target, and the actual
   // launch travel (landingX/landingY encode the launch vector). The latter
