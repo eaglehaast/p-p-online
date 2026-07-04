@@ -54,6 +54,8 @@ function buildContext(overrides = {}){
     hasAnimatingCargo: () => false,
     recordAiMoveDump: () => {},
     extendDirectMoveToMaxTargets: async () => false,
+    isDefensiveIntruderThreat: () => false,
+    AI_DEFENSIVE_KILL_INTRUDER_PX: 240,
     tryBuildAiFlagDeliveryPlan: () => null,
     getBaseAnchor: () => ({ x: 0, y: 0 }),
     getAvailableFlagsByColor: () => [],

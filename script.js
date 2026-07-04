@@ -16758,6 +16758,32 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }
       }
 
+      // Defensive-kill promotion. A clean kill of an enemy INTRUDER — one that has
+      // pushed into our half and sits within striking distance of our flag or base
+      // — outranks grabbing a cargo: that plane threatens a flag-steal and our back
+      // line, so removing it is worth more than a box. Promote to tier 0 (above
+      // cargo/attack tier 1) and shield it from the cargo/sweep overrides below.
+      // Tightly gated (own half + near flag/base + a non-demoted shot) so ordinary
+      // attack-vs-cargo balance — where preferring cargo is fine — is untouched.
+      if(bestAttackCandidate?.move && planTier === 1){
+        const intruder = bestAttackCandidate.enemy;
+        const ownBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(launchReadyPlane.color) : null;
+        const midY = (typeof FIELD_TOP === "number" && typeof FIELD_HEIGHT === "number") ? FIELD_TOP + FIELD_HEIGHT / 2 : null;
+        const ownFlagAnchors = (typeof getActiveFlagsByColor === "function" && typeof getFlagAnchor === "function")
+          ? getActiveFlagsByColor(launchReadyPlane.color).map((flag) => getFlagAnchor(flag))
+          : [];
+        if(isDefensiveIntruderThreat(intruder, ownBase, ownFlagAnchors, midY, AI_DEFENSIVE_KILL_INTRUDER_PX)){
+          planTier = 0;
+          selectedPlan.decisionReason = "simple_step2_defensive_intruder_kill";
+          selectedPlan.whyChosen = "kill_enemy_intruder_threatening_flag_or_base";
+          logAiDecision("defensive_intruder_kill_promoted", {
+            planeId: launchReadyPlane?.id ?? null,
+            enemyId: intruder?.id ?? null,
+            enemyPos: { x: Math.round(intruder.x), y: Math.round(intruder.y) },
+          });
+        }
+      }
+
       let lastResortAttackFound = false;
       if(!selectedPlan && prioritizedEnemiesForPlane.length){
         // No normal (<=3 bounce) shot connected. Before degrading to a dumb straight
@@ -16889,10 +16915,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               : null,
           };
 
-          const cargoPlanDistance = Number.isFinite(bestCargoCandidate.move.totalDist)
+          // A "gap"-class cargo route can report totalDist 0, and a plan claiming
+          // distance 0 sorts ahead of everything (including a point-blank kill).
+          // Fall back to the real distance to the cargo when totalDist isn't positive.
+          const cargoPlanDistance = (Number.isFinite(bestCargoCandidate.move.totalDist) && bestCargoCandidate.move.totalDist > 0)
             ? bestCargoCandidate.move.totalDist
             : bestCargoEntry.d;
-          const shouldPreferCargoOverAttack = !bestAttackCandidate || cargoPlanDistance <= planDistance + CELL_SIZE * 0.25;
+          // planTier 0 is a promoted defensive intruder kill — cargo must not override it.
+          const shouldPreferCargoOverAttack = planTier > 0
+            && (!bestAttackCandidate || cargoPlanDistance <= planDistance + CELL_SIZE * 0.25);
 
           if(shouldPreferCargoOverAttack){
             selectedPlan = cargoMove;
@@ -16946,7 +16977,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       // safety-aware (only >=3 ignores landing exposure). Subsumes the old
       // "extend a cargo line to the 3rd" idea — the sweep already maximises
       // targets (cargo + enemy) on the chosen line, including ricochets.
-      if(sweepCandidate
+      if(planTier > 0
+        && sweepCandidate
         && sweepCandidate.multiTargetCount >= AI_MULTI_TARGET_PAIR_MIN
         && sweepCandidate.multiTargetCount < AI_MULTI_TARGET_DOMINATE_MIN
         && (sweepCandidate.landingRisk ?? 0) <= getAiAllowedMoveRisk(aiExecutionContext)){
@@ -20588,6 +20620,7 @@ const AI_SWEEP_MAX_BOUNCES = 2;
 const AI_SWEEP_ANCHOR_SCALES = [1, 0.7];
 const AI_SWEEP_ENEMY_HIT_TOLERANCE_PX = CELL_SIZE; // ~ danger half-width (18) + margin
 const AI_EXTEND_MOVE_MIN_GAIN_PX = CELL_SIZE * 2; // skip extension when <2 cells of range are unused
+const AI_DEFENSIVE_KILL_INTRUDER_PX = CELL_SIZE * 12; // enemy this close to our flag/base (in our half) = promote-the-kill intruder
 const AI_CARGO_RISK_YELLOW_ZONE_MARGIN = 0.12;
 const AI_CARGO_FAVORABLE_DISTANCE = MAX_DRAG_DISTANCE * 0.72;
 const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
@@ -24545,6 +24578,28 @@ function countTargetsAndSafetyOnSegment(plane, landingX, landingY, color, contex
   }
 
   return stats;
+}
+
+// An enemy is a "defensive intruder" when it has pushed into OUR half and sits
+// within striking distance of our flag or base — a flag-steal + back-line threat
+// worth killing over a cargo grab. Pure + unit-tested; the selector promotes a
+// clean kill of such an enemy above cargo. `midY` is the field midline; `ownBase`
+// decides which half is ours; `ownFlagAnchors` are our own flag positions (may be
+// empty when flags mode is off — the base check still covers the intrusion).
+function isDefensiveIntruderThreat(enemy, ownBase, ownFlagAnchors, midY, thresholdPx){
+  if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) return false;
+  if(!ownBase || !Number.isFinite(ownBase.x) || !Number.isFinite(ownBase.y)) return false;
+  if(!Number.isFinite(midY) || !Number.isFinite(thresholdPx)) return false;
+  const enemyInOwnHalf = (ownBase.y < midY) ? (enemy.y < midY) : (enemy.y > midY);
+  if(!enemyInOwnHalf) return false;
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  if(d(enemy, ownBase) <= thresholdPx) return true;
+  if(Array.isArray(ownFlagAnchors)){
+    for(const anchor of ownFlagAnchors){
+      if(anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y) && d(enemy, anchor) <= thresholdPx) return true;
+    }
+  }
+  return false;
 }
 
 // Decides whether a dynamite-augmented alternative should REPLACE the base plan.
