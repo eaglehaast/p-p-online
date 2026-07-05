@@ -9805,6 +9805,15 @@ function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget, routeCla
   const cargoPickedOnPath = Array.isArray(predictedPath) && predictedPath.length >= 2
     ? doesCargoIntersectBeneficialZoneAlongPath(cargo, plane, predictedPath)
     : doesCargoIntersectBeneficialZoneAlongSegment(cargo, plane, plane, landingPoint);
+  // Mines aren't colliders, so planPathToPoint threads a "gap" route straight
+  // through one — the plane self-detonates on the way to the cargo. Flag it so the
+  // selector drops this route (no cargo is worth ramming a mine).
+  const minePath = (Array.isArray(predictedPath) && predictedPath.length >= 2)
+    ? predictedPath
+    : [{ x: plane.x, y: plane.y }, landingPoint];
+  const pathCrossesMine = (typeof doesFlightPathCrossMine === "function")
+    ? doesFlightPathCrossMine(minePath, plane)
+    : false;
   const homeBase = getAiCargoHomeBase(context);
   const cargoCenter = getCargoVisualCenter(cargo);
   const cargoDistanceToBase = homeBase ? dist(cargoCenter, homeBase) : Number.POSITIVE_INFINITY;
@@ -9829,6 +9838,7 @@ function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget, routeCla
     routeTarget,
     requestedRouteClass,
     cargoPickedOnPath,
+    pathCrossesMine,
     endsCloserToHomeBase,
     usedRicochet,
     usefulCarryAfterPickup,
@@ -16899,6 +16909,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           cachedCargoCandidates.push({ entry: cargoEntry, candidates: cargoRouteCandidates });
           const candidate = cargoRouteCandidates
             .filter((c) => {
+              if(c?.pathCrossesMine) return false; // never route to a cargo through a mine
               const riskInfo = c?.riskInfo;
               const favorableInfo = c?.favorableInfo;
               const acceptedByBaseRisk = Boolean(riskInfo?.isSafePath) && Number.isFinite(riskInfo?.totalRisk) && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE;
@@ -16976,6 +16987,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           for(const { entry, candidates } of cachedCargoCandidates){
             const best = candidates
               .filter((c) => c?.move
+                && !c?.pathCrossesMine // the relaxed cargo-reach still must not drive into a mine
                 && Boolean(c?.riskInfo?.isSafePath)
                 && (!Number.isFinite(c?.riskInfo?.totalRisk) || c.riskInfo.totalRisk <= AI_CARGO_REACH_RISK_ACCEPTANCE))
               .sort((a, b) => (a?.move?.totalDist || Number.POSITIVE_INFINITY) - (b?.move?.totalDist || Number.POSITIVE_INFINITY))[0] || null;
