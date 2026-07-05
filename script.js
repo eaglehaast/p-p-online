@@ -17059,6 +17059,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               planeId: launchReadyPlane?.id ?? null,
               fromGoal: selectedPlan.goalName || null,
               toLanding: { x: Math.round(escape.landingX), y: Math.round(escape.landingY) },
+              opensLane: Boolean(escape.opensLane),
+              whyChosen: escape.whyChosen || null,
             });
             selectedPlan = escape;
             planTier = 2;
@@ -22444,15 +22446,16 @@ const AI_MINE_ESCAPE_THREAD_MARGIN_PX = 22;
 
 // "Slip out of a mine trap." Edge case: a player can box the AI in by flooding the
 // field with mines, so every sensible move gets rejected for crossing one and the AI
-// would otherwise ram a mine on a blind fallback. Sample a fan of directions and pick
-// the MINE-FREE (and wall-safe, via the shot sim's real bounced path) hop that lands
-// in the most OPEN spot — genuinely far from BOTH mines and field walls. That is the
-// key to actually BREAKING OUT instead of shuffling: a landing tucked against the
-// same wall the mines pin us to scores low even if it is far from a mine, so the AI
-// prefers to thread through a gap toward open field where it regains mobility. When
-// the chosen hop threads a tight corridor, flag it so precision (crosshair) is spent
-// to keep aim spread from nudging it into a mine. Best-effort: returns null only if
-// EVERY direction is mined (truly sealed), in which case the caller keeps its move.
+// would otherwise ram a mine on a blind fallback. Sample a fan of MINE-FREE (and
+// wall-safe, via the shot sim's real bounced path) hops and pick one PURPOSEFULLY:
+// prefer the landing from which a mine-free, in-range firing line OPENS onto a real
+// objective (enemy / cargo / flag), so next turn the normal planner just takes that
+// shot — that is "get out, then keep playing" instead of drifting to empty space and
+// re-escaping every turn. When no line can be opened this turn, advance toward the
+// fight (and stay clear of mines/walls) rather than shuffle in place. When the winning
+// hop threads a tight corridor, flag it so precision (crosshair) is spent to keep aim
+// spread from nudging it into a mine. Best-effort: returns null only if EVERY
+// direction is mined (truly sealed), in which case the caller keeps its move.
 function buildAiMineEscapeMove(plane, context){
   if(!plane || typeof simulateAIShot !== "function" || typeof doesFlightPathCrossMine !== "function") return null;
   const mineList = (typeof mines !== "undefined" && Array.isArray(mines)) ? mines : [];
@@ -22483,6 +22486,39 @@ function buildAiMineEscapeMove(plane, context){
     }
     return nearest;
   };
+  // Objectives worth lining up a shot on next turn: enemy planes (kill = highest),
+  // ready cargo (pickup), enemy flags (grab). A hop that lands where a mine-free,
+  // in-range, wall-clear line onto one of these OPENS is a purposeful escape.
+  const objectives = [];
+  const enemyList = Array.isArray(context?.enemies) ? context.enemies : [];
+  for(const e of enemyList){
+    if(e && e.isAlive !== false && Number.isFinite(e.x) && Number.isFinite(e.y)){
+      objectives.push({ x: e.x, y: e.y, value: 3 });
+    }
+  }
+  const cargoList = (typeof cargoState !== "undefined" && Array.isArray(cargoState)) ? cargoState : [];
+  for(const c of cargoList){
+    if(!c || (c.state !== "ready" && c.state !== "animating")) continue;
+    const ctr = (typeof getCargoVisualCenter === "function") ? getCargoVisualCenter(c) : c;
+    if(ctr && Number.isFinite(ctr.x) && Number.isFinite(ctr.y)) objectives.push({ x: ctr.x, y: ctr.y, value: 2 });
+  }
+  const flagList = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags : [];
+  for(const f of flagList){
+    if(f && Number.isFinite(f.x) && Number.isFinite(f.y)) objectives.push({ x: f.x, y: f.y, value: 2 });
+  }
+  // "Action point" to advance toward when nothing can be lined up this turn: the
+  // nearest objective, else the enemy base — so a blocked plane creeps toward the
+  // fight instead of shuffling in place.
+  const enemyColor = (plane.color === "green") ? "blue" : "green";
+  const enemyBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(enemyColor) : null;
+  let actionAnchor = null;
+  for(const obj of objectives){
+    const d = Math.hypot(obj.x - plane.x, obj.y - plane.y);
+    if(!actionAnchor || d < actionAnchor.d) actionAnchor = { x: obj.x, y: obj.y, d };
+  }
+  if(!actionAnchor && enemyBase && Number.isFinite(enemyBase.x) && Number.isFinite(enemyBase.y)){
+    actionAnchor = { x: enemyBase.x, y: enemyBase.y, d: Math.hypot(enemyBase.x - plane.x, enemyBase.y - plane.y) };
+  }
   const scales = [0.3, 0.5, 0.7, 0.9]; // short..long hops; finer depth to land in the open
   let best = null;
   for(let deg = 0; deg < 360; deg += 15){ // 15deg fan (24 dirs) resolves narrow gap corridors
@@ -22504,13 +22540,27 @@ function buildAiMineEscapeMove(plane, context){
         end.x - fieldLeft, fieldLeft + fieldW - end.x,
         end.y - fieldTop, fieldTop + fieldH - end.y,
       ));
-      // Openness = the TIGHTER of mine-clearance and wall-clearance (the worst axis of
-      // being boxed in). Maximizing it makes the plane leave the trapped wall and reach
-      // genuinely open field; a small +sum tie-break prefers the roomier of equals.
       const openness = Math.min(nearestMine, wallClearance);
-      const score = openness + (nearestMine + wallClearance) * 0.1;
+      // Which objectives get an OPEN firing line (mine-free, in-range, wall-clear) from
+      // this landing? That is what makes the escape purposeful.
+      let laneValue = 0; let laneCount = 0;
+      for(const obj of objectives){
+        if(Math.hypot(obj.x - end.x, obj.y - end.y) > range) continue; // not reachable next turn
+        if(doesFlightPathCrossMine([{ x: end.x, y: end.y }, { x: obj.x, y: obj.y }], plane)) continue;
+        if(typeof isPathClear === "function" && !isPathClear(end.x, end.y, obj.x, obj.y)) continue;
+        laneValue = Math.max(laneValue, obj.value);
+        laneCount += 1;
+      }
+      // Progress toward the fight: did this hop get CLOSER to the action point? Rewards
+      // advancing, penalizes retreating into a corner.
+      const progress = actionAnchor
+        ? (actionAnchor.d - Math.hypot(end.x - actionAnchor.x, end.y - actionAnchor.y))
+        : 0;
+      // Opening a real firing lane DOMINATES; among equals, advance toward the fight,
+      // then stay clear of mines/walls.
+      const score = laneValue * 1000 + laneCount * 40 + progress * 1.0 + openness * 1.0;
       if(!best || score > best.score){
-        best = { score, nx, ny, scale, path: sim.predictedPath };
+        best = { score, nx, ny, scale, path: sim.predictedPath, laneValue, laneCount };
       }
     }
   }
@@ -22521,6 +22571,7 @@ function buildAiMineEscapeMove(plane, context){
   const pathClearance = minPathClearanceToMines(best.path);
   const threadsMineGap = Number.isFinite(pathClearance)
     && pathClearance <= triggerRadius + AI_MINE_ESCAPE_THREAD_MARGIN_PX;
+  const opensLane = best.laneValue > 0;
   return {
     plane,
     landingX: plane.x + best.nx * travelPx,
@@ -22529,10 +22580,13 @@ function buildAiMineEscapeMove(plane, context){
     vy: best.ny * travelPx / dur,
     goalName: "simple_step2_mine_escape",
     decisionReason: "mine_escape_reposition",
-    whyChosen: threadsMineGap ? "thread_out_of_mine_trap" : "slip_out_of_mine_trap",
+    whyChosen: opensLane
+      ? "reposition_to_open_firing_lane"
+      : (threadsMineGap ? "thread_out_of_mine_trap" : "advance_out_of_mine_trap"),
     routeClass: "direct",
     bounceCount: 0,
     threadsMineGap,
+    opensLane,
   };
 }
 
