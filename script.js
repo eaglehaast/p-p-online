@@ -16388,6 +16388,18 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }, aiCoopMaybeYield);
         const sim = simulated?.sim;
         if(!sim || !sim.hitTarget) return null;
+        // Mines are invisible to the shot simulator (they aren't colliders), so a
+        // "best" shot can fly straight through one and self-detonate mid-flight —
+        // the plane dies before it even reaches the target. Reject any shot whose
+        // path crosses a mine; a kill is never worth ramming a mine, so the AI
+        // falls back to another target / route instead of driving into it.
+        if(typeof doesFlightPathCrossMine === "function" && doesFlightPathCrossMine(sim.predictedPath, plane)){
+          logAiDecision("attack_shot_rejected_path_crosses_mine", {
+            planeId: plane?.id ?? null,
+            enemyId: enemy?.id ?? null,
+          });
+          return null;
+        }
         const launchScale = Math.max(0.1, Math.min(1, Number.isFinite(sim.launchVector?.scale) ? sim.launchVector.scale : 1));
         const launchDx = Number(sim.launchVector?.dx);
         const launchDy = Number(sim.launchVector?.dy);
@@ -16521,6 +16533,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           }
           const sim = simulateAIShot(plane, { dx: dir.nx, dy: dir.ny, scale }, { maxBounces: AI_SWEEP_MAX_BOUNCES });
           if(!sim || !Array.isArray(sim.predictedPath) || sim.predictedPath.length < 2) continue;
+          // A sweep line that rams a mine self-detonates mid-flight — no targets are
+          // worth that. Skip the direction (mines aren't colliders, so the sim flew
+          // straight through it).
+          if(typeof doesFlightPathCrossMine === "function" && doesFlightPathCrossMine(sim.predictedPath, plane)) continue;
           let cargoHit = 0, enemyHit = 0;
           for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, plane, sim.predictedPath)) cargoHit += 1; }
           for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, sim.predictedPath)) enemyHit += 1; }
@@ -22355,6 +22371,31 @@ function getMineThreatMetaForSegment(startX, startY, endX, endY, plane = null, o
     triggeringMine,
     triggerRadius: mineTriggerRadius,
   };
+}
+
+// Does a flown path (a polyline of {x,y} points, e.g. a shot's predictedPath)
+// pass within trigger range of ANY mine? Mines are NOT colliders, so the shot
+// simulator flies straight through them — a "best" shot can ram a mine mid-flight
+// and self-detonate. Owner-agnostic on purpose: a plane detonates any mine it
+// touches (its own team's included), which is exactly the "AI drives into mines"
+// bug. Used to reject such routes before they're chosen.
+function doesFlightPathCrossMine(path, plane){
+  if(!Array.isArray(path) || path.length < 2) return false;
+  const mineList = (typeof mines !== "undefined" && Array.isArray(mines)) ? mines : [];
+  if(mineList.length === 0) return false;
+  const triggerRadius = (plane && typeof getMineEffectiveTriggerRadius === "function")
+    ? getMineEffectiveTriggerRadius(plane)
+    : (typeof MINE_TRIGGER_RADIUS === "number" ? MINE_TRIGGER_RADIUS : 28);
+  for(const mine of mineList){
+    if(!mine || !Number.isFinite(mine.x) || !Number.isFinite(mine.y)) continue;
+    for(let i = 0; i < path.length - 1; i += 1){
+      const a = path[i];
+      const b = path[i + 1];
+      if(!a || !b) continue;
+      if(getDistanceFromPointToSegment(mine.x, mine.y, a.x, a.y, b.x, b.y) <= triggerRadius) return true;
+    }
+  }
+  return false;
 }
 
 function getMineControlSummaryForPlane(plane, context = {}, options = {}){
