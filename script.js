@@ -22436,13 +22436,23 @@ function doesFlightPathCrossMine(path, plane){
   return false;
 }
 
-// "Slip out of a mine trap." Edge case: a player can box the AI in by flooding
-// the field with mines, so every sensible move gets rejected for crossing one and
-// the AI would otherwise ram a mine on a blind fallback. Instead, sample a fan of
-// directions and take the safest MINE-FREE (and wall-safe, via the shot sim's real
-// bounced path) hop — preferring a landing far from mines and back toward our own
-// base. Best-effort, not guaranteed: returns null only if EVERY direction is mined
-// (truly sealed), in which case the caller keeps its original move.
+// Margin above the raw trigger radius within which an accepted (mine-free) hop is
+// still "threading a tight gap" — close enough that in-game aim spread could push
+// the plane into a mine. Those hops are exactly where a crosshair (precision) earns
+// its keep, so we flag them (threadsMineGap) for the buff picker.
+const AI_MINE_ESCAPE_THREAD_MARGIN_PX = 22;
+
+// "Slip out of a mine trap." Edge case: a player can box the AI in by flooding the
+// field with mines, so every sensible move gets rejected for crossing one and the AI
+// would otherwise ram a mine on a blind fallback. Sample a fan of directions and pick
+// the MINE-FREE (and wall-safe, via the shot sim's real bounced path) hop that lands
+// in the most OPEN spot — genuinely far from BOTH mines and field walls. That is the
+// key to actually BREAKING OUT instead of shuffling: a landing tucked against the
+// same wall the mines pin us to scores low even if it is far from a mine, so the AI
+// prefers to thread through a gap toward open field where it regains mobility. When
+// the chosen hop threads a tight corridor, flag it so precision (crosshair) is spent
+// to keep aim spread from nudging it into a mine. Best-effort: returns null only if
+// EVERY direction is mined (truly sealed), in which case the caller keeps its move.
 function buildAiMineEscapeMove(plane, context){
   if(!plane || typeof simulateAIShot !== "function" || typeof doesFlightPathCrossMine !== "function") return null;
   const mineList = (typeof mines !== "undefined" && Array.isArray(mines)) ? mines : [];
@@ -22450,10 +22460,32 @@ function buildAiMineEscapeMove(plane, context){
   const range = (typeof getPlaneEffectiveRangePx === "function") ? getPlaneEffectiveRangePx(plane) : 0;
   if(!(range > 0)) return null;
   const dur = (typeof FIELD_FLIGHT_DURATION_SEC === "number" && FIELD_FLIGHT_DURATION_SEC > 0) ? FIELD_FLIGHT_DURATION_SEC : 1;
-  const ownBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(plane.color) : null;
-  const scales = [0.35, 0.6, 0.9]; // short / medium / long hops
+  const triggerRadius = (typeof getMineEffectiveTriggerRadius === "function")
+    ? getMineEffectiveTriggerRadius(plane)
+    : (typeof MINE_TRIGGER_RADIUS === "number" ? MINE_TRIGGER_RADIUS : 28);
+  // Field bounds so "openness" can measure clearance to the walls, not just to mines
+  // (a spot far from every mine but jammed in a corner is NOT an escape).
+  const fieldLeft = (typeof FIELD_LEFT === "number") ? FIELD_LEFT : 0;
+  const fieldTop = (typeof FIELD_TOP === "number") ? FIELD_TOP : 0;
+  const worldW = (typeof WORLD === "object" && WORLD && Number.isFinite(WORLD.width)) ? WORLD.width : 360;
+  const worldH = (typeof WORLD === "object" && WORLD && Number.isFinite(WORLD.height)) ? WORLD.height : 640;
+  const fieldW = (typeof FIELD_WIDTH === "number" && FIELD_WIDTH > 0) ? FIELD_WIDTH : worldW;
+  const fieldH = (typeof FIELD_HEIGHT === "number" && FIELD_HEIGHT > 0) ? FIELD_HEIGHT : worldH;
+  const minPathClearanceToMines = (path) => {
+    let nearest = Number.POSITIVE_INFINITY;
+    for(const m of mineList){
+      if(!m || !Number.isFinite(m.x) || !Number.isFinite(m.y)) continue;
+      for(let i = 0; i < path.length - 1; i += 1){
+        const a = path[i]; const b = path[i + 1];
+        if(!a || !b) continue;
+        nearest = Math.min(nearest, getDistanceFromPointToSegment(m.x, m.y, a.x, a.y, b.x, b.y));
+      }
+    }
+    return nearest;
+  };
+  const scales = [0.3, 0.5, 0.7, 0.9]; // short..long hops; finer depth to land in the open
   let best = null;
-  for(let deg = 0; deg < 360; deg += 30){
+  for(let deg = 0; deg < 360; deg += 15){ // 15deg fan (24 dirs) resolves narrow gap corridors
     const rad = deg * Math.PI / 180;
     const nx = Math.cos(rad);
     const ny = Math.sin(rad);
@@ -22467,16 +22499,28 @@ function buildAiMineEscapeMove(plane, context){
         if(!m || !Number.isFinite(m.x) || !Number.isFinite(m.y)) continue;
         nearestMine = Math.min(nearestMine, Math.hypot(end.x - m.x, end.y - m.y));
       }
-      const distToBase = ownBase ? Math.hypot(end.x - ownBase.x, end.y - ownBase.y) : 0;
-      // Safer = farther from every mine; tie-break back toward our own base.
-      const score = nearestMine - distToBase * 0.25;
+      // Clearance to the nearest field wall — a landing hugging a wall is still boxed.
+      const wallClearance = Math.max(0, Math.min(
+        end.x - fieldLeft, fieldLeft + fieldW - end.x,
+        end.y - fieldTop, fieldTop + fieldH - end.y,
+      ));
+      // Openness = the TIGHTER of mine-clearance and wall-clearance (the worst axis of
+      // being boxed in). Maximizing it makes the plane leave the trapped wall and reach
+      // genuinely open field; a small +sum tie-break prefers the roomier of equals.
+      const openness = Math.min(nearestMine, wallClearance);
+      const score = openness + (nearestMine + wallClearance) * 0.1;
       if(!best || score > best.score){
-        best = { score, nx, ny, scale };
+        best = { score, nx, ny, scale, path: sim.predictedPath };
       }
     }
   }
   if(!best) return null;
   const travelPx = range * best.scale;
+  // Did the winning hop thread a tight corridor (mine-free but only just)? If so, a
+  // crosshair keeps aim spread from nudging it into a mine.
+  const pathClearance = minPathClearanceToMines(best.path);
+  const threadsMineGap = Number.isFinite(pathClearance)
+    && pathClearance <= triggerRadius + AI_MINE_ESCAPE_THREAD_MARGIN_PX;
   return {
     plane,
     landingX: plane.x + best.nx * travelPx,
@@ -22485,9 +22529,10 @@ function buildAiMineEscapeMove(plane, context){
     vy: best.ny * travelPx / dur,
     goalName: "simple_step2_mine_escape",
     decisionReason: "mine_escape_reposition",
-    whyChosen: "slip_out_of_mine_trap",
+    whyChosen: threadsMineGap ? "thread_out_of_mine_trap" : "slip_out_of_mine_trap",
     routeClass: "direct",
     bounceCount: 0,
+    threadsMineGap,
   };
 }
 
@@ -28893,6 +28938,12 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan, options = {}
     && routeClass === "direct"
     && `${selectedPlan?.predictedOutcome || ""}` === "target_hit_direct";
   if(isPlainGuaranteedDirectHit) return false;
+  // A mine-trap escape that THREADS a tight corridor between mines is precision's
+  // other high-value use: the hop is mine-free but only just, so in-game aim spread
+  // could nudge it into a mine. Guarantee the thread — bypass the distance gate (a
+  // threading escape is often short). Wings are deliberately NOT requested here: they
+  // WIDEN the mine trigger radius, which would close the very gap we are threading.
+  if(selectedPlan?.threadsMineGap === true) return true;
   // Precision's highest-value use is a MULTI-TARGET shot — a sweep that chains
   // several kills / pickups (often with ricochets), where perfect aim is what
   // makes the whole chain land. PRIORITIZE those: bypass the plain distance gate
