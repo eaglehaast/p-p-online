@@ -17041,6 +17041,32 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         });
       }
 
+      // Mine-trap escape guard (edge case). Attack/cargo/sweep already reject
+      // mine-crossing routes, but the fallbacks (center approach / last resort)
+      // don't — so if the chosen move would STILL drive through a mine (the player
+      // sealed us in with mines), swap it for the safest mine-free reposition we
+      // can find. Best-effort: if every direction is mined, keep the original.
+      if(selectedPlan
+        && typeof mines !== "undefined" && Array.isArray(mines) && mines.length > 0
+        && typeof doesFlightPathCrossMine === "function"){
+        const planPath = (Number.isFinite(selectedPlan.vx) && Number.isFinite(selectedPlan.vy) && typeof getAiPlannedMovePredictedPath === "function")
+          ? getAiPlannedMovePredictedPath(launchReadyPlane, selectedPlan)
+          : [{ x: launchReadyPlane.x, y: launchReadyPlane.y }, { x: selectedPlan.landingX, y: selectedPlan.landingY }];
+        if(doesFlightPathCrossMine(planPath, launchReadyPlane)){
+          const escape = (typeof buildAiMineEscapeMove === "function") ? buildAiMineEscapeMove(launchReadyPlane, aiExecutionContext) : null;
+          if(escape){
+            logAiDecision("mine_escape_reposition", {
+              planeId: launchReadyPlane?.id ?? null,
+              fromGoal: selectedPlan.goalName || null,
+              toLanding: { x: Math.round(escape.landingX), y: Math.round(escape.landingY) },
+            });
+            selectedPlan = escape;
+            planTier = 2;
+            planDistance = Math.hypot(escape.landingX - launchReadyPlane.x, escape.landingY - launchReadyPlane.y);
+          }
+        }
+      }
+
       if(!selectedPlan) return null;
       return {
         ...selectedPlan,
@@ -22408,6 +22434,61 @@ function doesFlightPathCrossMine(path, plane){
     }
   }
   return false;
+}
+
+// "Slip out of a mine trap." Edge case: a player can box the AI in by flooding
+// the field with mines, so every sensible move gets rejected for crossing one and
+// the AI would otherwise ram a mine on a blind fallback. Instead, sample a fan of
+// directions and take the safest MINE-FREE (and wall-safe, via the shot sim's real
+// bounced path) hop — preferring a landing far from mines and back toward our own
+// base. Best-effort, not guaranteed: returns null only if EVERY direction is mined
+// (truly sealed), in which case the caller keeps its original move.
+function buildAiMineEscapeMove(plane, context){
+  if(!plane || typeof simulateAIShot !== "function" || typeof doesFlightPathCrossMine !== "function") return null;
+  const mineList = (typeof mines !== "undefined" && Array.isArray(mines)) ? mines : [];
+  if(mineList.length === 0) return null;
+  const range = (typeof getPlaneEffectiveRangePx === "function") ? getPlaneEffectiveRangePx(plane) : 0;
+  if(!(range > 0)) return null;
+  const dur = (typeof FIELD_FLIGHT_DURATION_SEC === "number" && FIELD_FLIGHT_DURATION_SEC > 0) ? FIELD_FLIGHT_DURATION_SEC : 1;
+  const ownBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(plane.color) : null;
+  const scales = [0.35, 0.6, 0.9]; // short / medium / long hops
+  let best = null;
+  for(let deg = 0; deg < 360; deg += 30){
+    const rad = deg * Math.PI / 180;
+    const nx = Math.cos(rad);
+    const ny = Math.sin(rad);
+    for(const scale of scales){
+      const sim = simulateAIShot(plane, { dx: nx, dy: ny, scale }, { maxBounces: 1 });
+      if(!sim || !Array.isArray(sim.predictedPath) || sim.predictedPath.length < 2) continue;
+      if(doesFlightPathCrossMine(sim.predictedPath, plane)) continue; // this hop still rams a mine
+      const end = sim.predictedPath[sim.predictedPath.length - 1];
+      let nearestMine = Number.POSITIVE_INFINITY;
+      for(const m of mineList){
+        if(!m || !Number.isFinite(m.x) || !Number.isFinite(m.y)) continue;
+        nearestMine = Math.min(nearestMine, Math.hypot(end.x - m.x, end.y - m.y));
+      }
+      const distToBase = ownBase ? Math.hypot(end.x - ownBase.x, end.y - ownBase.y) : 0;
+      // Safer = farther from every mine; tie-break back toward our own base.
+      const score = nearestMine - distToBase * 0.25;
+      if(!best || score > best.score){
+        best = { score, nx, ny, scale };
+      }
+    }
+  }
+  if(!best) return null;
+  const travelPx = range * best.scale;
+  return {
+    plane,
+    landingX: plane.x + best.nx * travelPx,
+    landingY: plane.y + best.ny * travelPx,
+    vx: best.nx * travelPx / dur,
+    vy: best.ny * travelPx / dur,
+    goalName: "simple_step2_mine_escape",
+    decisionReason: "mine_escape_reposition",
+    whyChosen: "slip_out_of_mine_trap",
+    routeClass: "direct",
+    bounceCount: 0,
+  };
 }
 
 function getMineControlSummaryForPlane(plane, context = {}, options = {}){
