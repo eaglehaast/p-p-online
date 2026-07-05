@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 
-// Smoke test: buildAiMineEscapeMove — the "slip out of a mine trap" fallback.
-// When a player seals the AI in with mines and every sensible move is rejected for
-// crossing one, the AI should take the safest MINE-FREE hop toward the most OPEN
-// spot (far from BOTH mines and field walls) — so it actually BREAKS OUT of the trap
-// instead of shuffling along the wall it is pinned to. It returns a mine-free
-// reposition when any direction is open, null only when every sampled direction is
-// sealed, and flags threadsMineGap when the winning hop squeezes through a tight
-// corridor (so precision can be spent to keep aim spread from nudging it into a mine).
+// Smoke test: buildAiMineEscapeMove — the "slip out of a mine trap" fallback, made
+// PURPOSEFUL. When a player boxes the AI in with mines and every sensible move is
+// rejected for crossing one, the escape must not shuffle in empty space and re-escape
+// forever. It picks a MINE-FREE hop that, ideally, OPENS a mine-free in-range firing
+// line onto a real objective (enemy / cargo / flag) — so next turn the normal planner
+// takes that shot ("get out, then keep playing"). When no line can open this turn it
+// advances toward the fight instead of shuffling. It flags a tight thread so precision
+// can be spent, and returns null only when every sampled direction is sealed.
 
 const fs = require('fs');
 const vm = require('vm');
@@ -55,9 +55,12 @@ const context = {
   FIELD_HEIGHT: 640,
   WORLD: { width: 360, height: 640 },
   mines: [],
+  cargoState: [],
   getDistanceFromPointToSegment,
   getPlaneEffectiveRangePx: () => 600,
   getBaseAnchor: (color) => (color === 'blue' ? { x: 180, y: 31 } : { x: 180, y: 609 }),
+  getCargoVisualCenter: (c) => c.center || { x: c.x, y: c.y },
+  isPathClear: () => true,
   // A straight sampled hop that STOPS at the field wall (planes don't fly off-field),
   // so the last point is on-field and wall clearance is meaningful.
   simulateAIShot: (plane, lv, _opts) => {
@@ -88,7 +91,8 @@ const centerPlane = { x: 180, y: 320, color: 'blue' };
 const pathCrosses = (plane, move) =>
   context.doesFlightPathCrossMine([{ x: plane.x, y: plane.y }, { x: move.landingX, y: move.landingY }], plane);
 
-// 1. Mines below + left of the plane; up/right open -> a mine-free escape exists.
+// 1. Mines below + left of the plane; a mine-free escape exists.
+context.cargoState = [];
 context.mines = [
   { owner: 'green', x: 180, y: 360 }, { owner: 'green', x: 180, y: 400 }, { owner: 'green', x: 180, y: 440 },
   { owner: 'green', x: 100, y: 320 }, { owner: 'green', x: 60, y: 320 },
@@ -111,35 +115,42 @@ assert(context.buildAiMineEscapeMove(centerPlane, {}) === null, '2: fully sealed
 context.mines = [];
 assert(context.buildAiMineEscapeMove(centerPlane, {}) === null, '3: no mines, no escape move.');
 
-// 4. The escape leans AWAY from the mines: with a wall of mines only to the south,
-//    the chosen landing is not deeper south than the plane.
-context.mines = [
-  { owner: 'green', x: 140, y: 380 }, { owner: 'green', x: 180, y: 380 }, { owner: 'green', x: 220, y: 380 },
-];
-const esc4 = context.buildAiMineEscapeMove(centerPlane, {});
-assert(esc4 && esc4.landingY <= centerPlane.y + 1, '4: the escape does not dive deeper into the mine wall to the south.');
-
-// 5. THE CAUGHT CASE (aiDumpBadMove, turn 17): blue #7 is pinned against the TOP wall
-//    with a wall of green mines just below it and its own base above — the OLD scoring
-//    pulled it toward the base (into the corner) so it just shuffled laterally along
-//    the top. The gap between the two middle mines is the way out. The escape must now
-//    thread DOWN through that gap into open field, NOT hug the top wall.
+// 4. PURPOSEFUL ESCAPE (aiDumpBadMove, turn 17 shape + an enemy): blue #7 is pinned
+//    against the TOP wall by a wall of green mines with a gap in the middle, and an
+//    enemy sits below the gap in open field. The escape must reposition DOWN through
+//    the gap to a spot from which a mine-free line onto that enemy OPENS — not shuffle
+//    laterally along the top wall.
 const pinnedPlane = { x: 133, y: 48, color: 'blue' };
+context.cargoState = [];
 context.mines = [
   { owner: 'green', x: 66, y: 96 }, { owner: 'green', x: 130, y: 106 },
   { owner: 'green', x: 225, y: 110 }, { owner: 'green', x: 291, y: 105 },
 ];
-const escBreakout = context.buildAiMineEscapeMove(pinnedPlane, {});
-assert(escBreakout && escBreakout.decisionReason === 'mine_escape_reposition', '5: an escape is found for the pinned plane.');
-assert(escBreakout.landingY > pinnedPlane.y + 80, '5b: the escape breaks DOWNWARD through the gap toward open field, not laterally along the top wall.');
-assert(pathCrosses(pinnedPlane, escBreakout) === false, '5c: the break-out hop itself does NOT cross a mine.');
-assert(escBreakout.threadsMineGap === true, '5d: squeezing past the pinning mines is flagged as a tight thread (so precision is spent).');
+const enemyBelowGap = { x: 180, y: 300, isAlive: true };
+const escLane = context.buildAiMineEscapeMove(pinnedPlane, { enemies: [enemyBelowGap] });
+assert(escLane && escLane.decisionReason === 'mine_escape_reposition', '4: an escape is found for the pinned plane.');
+assert(escLane.opensLane === true, '4b: the escape lands where a mine-free firing line onto the enemy OPENS (purposeful, not a shuffle).');
+assert(escLane.landingY > pinnedPlane.y + 40, '4c: it repositions DOWN toward the enemy, not laterally along the top wall.');
+assert(pathCrosses(pinnedPlane, escLane) === false, '4d: the reposition hop itself does NOT cross a mine.');
 
-// 6. Wide-open escape (a single distant mine, plenty of clearance) is NOT flagged as a
+// 5. ADVANCE, DON'T SHUFFLE: same pin but NO objectives to line up (no enemies / cargo /
+//    flags). With nothing to open a line onto, the escape must still advance toward the
+//    fight (the enemy base is to the south) instead of shuffling in place.
+const escAdvance = context.buildAiMineEscapeMove(pinnedPlane, { enemies: [] });
+assert(escAdvance && escAdvance.opensLane === false, '5: no objective -> no lane opened, but an escape is still made.');
+assert(escAdvance.landingY > pinnedPlane.y + 40, '5b: with nothing to line up, the escape ADVANCES toward the fight (south), not a shuffle.');
+assert(pathCrosses(pinnedPlane, escAdvance) === false, '5c: the advance hop itself does NOT cross a mine.');
+
+// 6. THREAD FLAG: squeezing past the pinning mines is flagged (precision spent). The
+//    down-through-the-gap escape passes a mine within trigger+margin.
+assert(escLane.threadsMineGap === true, '6: squeezing past the pinning mines is flagged as a tight thread (so precision is spent).');
+
+// 7. ROOMY escape (a single distant mine, plenty of clearance) is NOT flagged as a
 //    tight thread -> precision is not wasted when the corridor is roomy.
 const openPlane = { x: 180, y: 150, color: 'blue' };
+context.cargoState = [];
 context.mines = [{ owner: 'green', x: 180, y: 470 }];
-const escOpen = context.buildAiMineEscapeMove(openPlane, {});
-assert(escOpen && escOpen.threadsMineGap === false, '6: a roomy escape far from any mine is not flagged as a tight thread.');
+const escOpen = context.buildAiMineEscapeMove(openPlane, { enemies: [] });
+assert(escOpen && escOpen.threadsMineGap === false, '7: a roomy escape far from any mine is not flagged as a tight thread.');
 
-console.log('Smoke test passed: buildAiMineEscapeMove breaks out toward the most OPEN reachable spot (threading a gap when pinned), leans away from mines, flags a tight thread for precision, and returns null only when fully sealed.');
+console.log('Smoke test passed: buildAiMineEscapeMove repositions to OPEN a firing lane (or advances toward the fight when it cannot), stays mine-free, flags a tight thread for precision, and returns null only when fully sealed.');
