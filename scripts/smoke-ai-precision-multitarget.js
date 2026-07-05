@@ -94,4 +94,23 @@ assert(uses({
   aiFuelRicochetExtend: { baseCount: 2, boostedCount: 2 },
 }) === false, '6: a fuel probe that adds no targets is not force-prioritized.');
 
-console.log('Smoke test passed: precision prioritizes multi-target / fuel-extended sweeps (even short ones), still skips sure direct hits and short single shots.');
+// 7. A mine-trap escape that THREADS a tight gap (threadsMineGap) gets the crosshair
+//    even though it is short and single-target: spread near a mine is fatal, so
+//    precision guarantees the thread (bypasses the distance gate like a multikill).
+assert(uses({
+  plane, routeClass: 'direct', goalName: 'simple_step2_mine_escape',
+  decisionReason: 'mine_escape_reposition', bounceCount: 0,
+  planDistance: 120, multiTargetCount: 1, landingX: 40, landingY: 90,
+  threadsMineGap: true,
+}) === true, '7: a tight mine-gap thread escape gets the crosshair (spread near a mine is fatal).');
+
+// 8. A roomy escape (threadsMineGap false) is NOT force-prioritized -> normal gate
+//    applies, and a short one stays gated out (precision not wasted on a safe hop).
+assert(uses({
+  plane, routeClass: 'direct', goalName: 'simple_step2_mine_escape',
+  decisionReason: 'mine_escape_reposition', bounceCount: 0,
+  planDistance: 120, multiTargetCount: 1, landingX: 40, landingY: 90,
+  threadsMineGap: false,
+}) === false, '8: a roomy short escape is not force-prioritized (no crosshair wasted).');
+
+console.log('Smoke test passed: precision prioritizes multi-target / fuel-extended sweeps and tight mine-gap threads (even short ones), still skips sure direct hits, short single shots, and roomy escapes.');
