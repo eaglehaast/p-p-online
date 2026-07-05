@@ -16090,6 +16090,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         fuelReplanned: plan.fuelReplanned === true,
         fuelReplannedTarget: plan.fuelReplannedTarget || null,
         aiFuelReplanMeta: plan.aiFuelReplanMeta || null,
+        // Optional clamp: fuel flies to boosted max range UNLESS a mine sits on the
+        // extension, in which case the scheduler clips the flight to stop just short of
+        // it (forceFuelMoveToMaxRange respects this). Keeps fuel's reach, avoids the mine.
+        aiFuelMaxDistancePx: Number.isFinite(plan.aiFuelMaxDistancePx) ? plan.aiFuelMaxDistancePx : null,
         // Dynamite-replan metadata propagated from scheduler-side async replan
         // (see buildDynamiteReplannedMoveAsync + ~15390). Used only as telemetry;
         // issueAIMoveWithInventoryUsage has no sync dynamite-replan to suppress.
@@ -17616,7 +17620,57 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         aiExecutionContext,
       );
       if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("fuel_replan"); aiMoveScheduled = false; return; }
-      if(fuelReplanResult?.move){
+      // SAFETY: the base move was mine-checked, but fuel EXTENDS the flight (harpy
+      // return / forceFuelMoveToMaxRange flies the launch angle to boosted range) past
+      // that checked path — and the extension can ram a mine (own or enemy). If the
+      // fuel-boosted flight would reach a mine, first try to CLIP it to stop just short
+      // of the mine (fly e.g. 55 cells instead of 60), keeping the fuel's extra reach up
+      // to that point. Only if clipping leaves no real gain over base range do we drop
+      // the fuel and keep the safe base move — a great attack shouldn't end in a
+      // self-detonation at the tail of the route.
+      const boostedLaunchDir = fuelReplanResult?.move
+        ? { x: fuelReplanResult.move.vx, y: fuelReplanResult.move.vy }
+        : { x: fuelReplanInitialVx, y: fuelReplanInitialVy };
+      const mineEntry = (typeof aiFuelBoostedFlightMineEntry === "function")
+        ? aiFuelBoostedFlightMineEntry(selectedPlan.plane, boostedLaunchDir)
+        : { crosses: false };
+      let dropFuelForMine = false;
+      if(mineEntry.crosses){
+        const baseRangePx = (typeof getPlaneEffectiveRangePx === "function")
+          ? getPlaneEffectiveRangePx(selectedPlan.plane)
+          : 0;
+        const clipDistPx = mineEntry.entryDistPx - AI_FUEL_MINE_CLIP_BUFFER_PX;
+        // Keep the fuel only if flying up to the mine still reaches beyond base range by a
+        // meaningful margin (>= 1 cell). Otherwise fuel buys nothing here — drop it.
+        if(clipDistPx > baseRangePx + CELL_SIZE){
+          selectedPlan.aiFuelMaxDistancePx = clipDistPx;
+          logAiDecision("fuel_launch_clipped_before_mine", {
+            planeId: selectedPlan.plane?.id ?? null,
+            fromGoal: selectedPlan.goalName || null,
+            mineEntryDistPx: Number(mineEntry.entryDistPx.toFixed(1)),
+            clipDistPx: Number(clipDistPx.toFixed(1)),
+            baseRangePx: Number(baseRangePx.toFixed(1)),
+          });
+        } else {
+          dropFuelForMine = true;
+        }
+      }
+      if(dropFuelForMine){
+        let removedFuel = 0;
+        for(let i = selectedInventorySequence.length - 1; i >= 0; i -= 1){
+          if(selectedInventorySequence[i]?.itemType === INVENTORY_ITEM_TYPES.FUEL){
+            selectedInventorySequence.splice(i, 1);
+            removedFuel += 1;
+          }
+        }
+        selectedPlan.selectedInventorySequence = selectedInventorySequence.map((entry) => ({ ...entry }));
+        logAiDecision("fuel_launch_dropped_mine_on_boosted_path", {
+          planeId: selectedPlan.plane?.id ?? null,
+          fromGoal: selectedPlan.goalName || null,
+          removedFuelEntries: removedFuel,
+          keptBaseLanding: { x: Math.round(selectedPlan.landingX), y: Math.round(selectedPlan.landingY) },
+        });
+      } else if(fuelReplanResult?.move){
         const replannedMove = fuelReplanResult.move;
         const replannedTotalDist = Number.isFinite(replannedMove.totalDist)
           ? replannedMove.totalDist
@@ -17708,6 +17762,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       fuelReplanned: selectedPlan.fuelReplanned === true,
       fuelReplannedTarget: selectedPlan.fuelReplannedTarget || null,
       aiFuelReplanMeta: selectedPlan.aiFuelReplanMeta || null,
+      aiFuelMaxDistancePx: Number.isFinite(selectedPlan.aiFuelMaxDistancePx) ? selectedPlan.aiFuelMaxDistancePx : null,
       dynamiteReplanned: selectedPlan.dynamiteReplanned === true,
       dynamiteReplannedTarget: selectedPlan.dynamiteReplannedTarget || null,
       aiDynamiteReplanMeta: selectedPlan.aiDynamiteReplanMeta || null,
@@ -22588,6 +22643,72 @@ function buildAiMineEscapeMove(plane, context){
     threadsMineGap,
     opensLane,
   };
+}
+
+// Stop this far (px) BEFORE a mine when clipping a fuel-boosted flight short of it, so
+// the flight ends safely outside the trigger radius (covers the sampling step + a cushion).
+const AI_FUEL_MINE_CLIP_BUFFER_PX = 12;
+
+// Fuel EXTENDS a launch beyond its base range (a harpy strike-and-return, or
+// forceFuelMoveToMaxRange, flies the same launch angle to the BOOSTED range). The base
+// move was mine-checked, but that extension is NOT — and simulateAIShot's built-in
+// ownMinePathHit only looks at the plane's OWN-colour mines, so a flight extended
+// through an ENEMY mine slips through and the plane self-detonates at the tail of an
+// otherwise-great move. Simulate the flight at the fuel-boosted range along the given
+// launch direction and report the ARC-LENGTH at which it first reaches a mine (any owner):
+// the caller can then either clip the flight to just before that (keeping the fuel reach
+// up to the mine) or, if that leaves no gain over base range, drop the fuel.
+// Returns { crosses, entryDistPx } — entryDistPx is Infinity when the flight is clear.
+function aiFuelBoostedFlightMineEntry(plane, launchDir){
+  const clear = { crosses: false, entryDistPx: Number.POSITIVE_INFINITY };
+  if(!plane || !launchDir) return clear;
+  if(typeof simulateAIShot !== "function") return clear;
+  const mineList = (typeof mines !== "undefined" && Array.isArray(mines)) ? mines : [];
+  if(mineList.length === 0) return clear;
+  const len = Math.hypot(launchDir.x || 0, launchDir.y || 0);
+  if(!(len > 0)) return clear;
+  const dx = launchDir.x / len;
+  const dy = launchDir.y / len;
+  const triggerRadius = (typeof getMineEffectiveTriggerRadius === "function")
+    ? getMineEffectiveTriggerRadius(plane)
+    : (typeof MINE_TRIGGER_RADIUS === "number" ? MINE_TRIGGER_RADIUS : 28);
+  // Fuel is not applied to the plane yet, so temporarily apply it: simulateAIShot clamps
+  // scale to <=1 and takes its distance from getPlaneEffectiveRangePx, which only reports
+  // the doubled range while the FUEL buff is active. Restore the plane's buffs after.
+  // Mirrors pickAiBuffsForSelectedPlan's boosted-range probe.
+  const prevBuffs = (plane.activeTurnBuffs && typeof plane.activeTurnBuffs === "object")
+    ? { ...plane.activeTurnBuffs }
+    : {};
+  let applied = false;
+  if(typeof applyItemToOwnPlane === "function" && typeof INVENTORY_ITEM_TYPES === "object"){
+    applied = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, plane.color, plane, { silent: true });
+  }
+  const sim = simulateAIShot(plane, { dx, dy, scale: 1 }, { maxBounces: 8 });
+  if(applied) plane.activeTurnBuffs = prevBuffs;
+  const path = (sim && Array.isArray(sim.predictedPath)) ? sim.predictedPath : null;
+  if(!path || path.length < 2) return clear;
+  // Walk the (bounced) path, fine-sampling along its arc length, and return the distance
+  // at which it first enters ANY mine's trigger radius.
+  const STEP = 4;
+  let arc = 0;
+  for(let i = 0; i < path.length - 1; i += 1){
+    const a = path[i]; const b = path[i + 1];
+    if(!a || !b) continue;
+    const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+    if(!(segLen > 0)) continue;
+    const ux = (b.x - a.x) / segLen; const uy = (b.y - a.y) / segLen;
+    for(let d = 0; d <= segLen; d += STEP){
+      const px = a.x + ux * d; const py = a.y + uy * d;
+      for(const m of mineList){
+        if(!m || !Number.isFinite(m.x) || !Number.isFinite(m.y)) continue;
+        if(Math.hypot(px - m.x, py - m.y) <= triggerRadius){
+          return { crosses: true, entryDistPx: arc + d };
+        }
+      }
+    }
+    arc += segLen;
+  }
+  return clear;
 }
 
 function getMineControlSummaryForPlane(plane, context = {}, options = {}){
@@ -32550,8 +32671,14 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         ? Math.max(0, boostedFlightRangeCellsRaw)
         : 0;
       const boostedFlightDistancePx = boostedFlightRangeCells * CELL_SIZE;
+      // Optional mine clip (set by the scheduler when a mine sits on the fuel extension):
+      // fly to this distance instead of full boosted range, stopping short of the mine
+      // while still using fuel's reach up to that point.
+      const flightDistancePx = (Number.isFinite(plannedMove?.aiFuelMaxDistancePx) && plannedMove.aiFuelMaxDistancePx > 0)
+        ? Math.min(boostedFlightDistancePx, plannedMove.aiFuelMaxDistancePx)
+        : boostedFlightDistancePx;
       const boostedSpeedPxPerSec = FIELD_FLIGHT_DURATION_SEC > 0
-        ? boostedFlightDistancePx / FIELD_FLIGHT_DURATION_SEC
+        ? flightDistancePx / FIELD_FLIGHT_DURATION_SEC
         : 0;
       const launchAngle = Math.atan2(plannedMove.vy, plannedMove.vx);
       if(!Number.isFinite(boostedSpeedPxPerSec) || boostedSpeedPxPerSec <= 0 || !Number.isFinite(launchAngle)){
@@ -32570,7 +32697,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
       plannedMove.vx = Math.cos(launchAngle) * boostedSpeedPxPerSec;
       plannedMove.vy = Math.sin(launchAngle) * boostedSpeedPxPerSec;
-      plannedMove.totalDist = boostedFlightDistancePx;
+      plannedMove.totalDist = flightDistancePx;
       plannedMove.landingPoint = getAiMoveLandingPoint({
         plane: plannedMove.plane,
         vx: plannedMove.vx,
@@ -32581,6 +32708,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         planeId: plannedMove?.plane?.id ?? null,
         boostedFlightRangeCells: Number(boostedFlightRangeCells.toFixed(2)),
         boostedFlightDistancePx: Number(boostedFlightDistancePx.toFixed(1)),
+        clippedForMine: flightDistancePx < boostedFlightDistancePx - 0.01,
+        flightDistancePx: Number(flightDistancePx.toFixed(1)),
         launchAngleDeg: Number((((launchAngle * 180) / Math.PI + 360) % 360).toFixed(2)),
         vx: Number(plannedMove.vx.toFixed(4)),
         vy: Number(plannedMove.vy.toFixed(4)),
