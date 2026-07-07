@@ -16756,7 +16756,16 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       for(const entry of prioritizedEnemiesForPlane){
         await aiCoopMaybeYield();
         if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("attack_sim"); return null; }
-        const move = await buildSimulatedEnemyCandidate(launchReadyPlane, entry.enemy, maxFlightDistancePx, shotSimulationQuality);
+        // Make a side-wall BANK a first-class attack, not just a desperate last resort:
+        // seed the shot search with exact wall-mirror angles for the nearest enemy (the
+        // most likely bank target) so a clean 1-2 bounce ricochet competes with direct
+        // shots every turn. A direct kill still outscores a bank kill of the same enemy
+        // (fewer bounces), so this only wins when the direct line is blocked — exactly
+        // when a human banks off the wall. Nearest-only bounds the extra sim cost.
+        const shotOptions = (entry === prioritizedEnemiesForPlane[0])
+          ? { ...shotSimulationQuality, includeWallBounceSeeds: true }
+          : shotSimulationQuality;
+        const move = await buildSimulatedEnemyCandidate(launchReadyPlane, entry.enemy, maxFlightDistancePx, shotOptions);
         if(!move) continue;
         const selfSabotagePenalty = getAiSelfSabotageLandingPenalty(
           move.landingX, move.landingY, enemyBaseForSabotage, midYForSabotage,
@@ -16837,34 +16846,40 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       let lastResortAttackFound = false;
       if(!selectedPlan && prioritizedEnemiesForPlane.length){
         // No normal (<=3 bounce) shot connected. Before degrading to a dumb straight
-        // "center control" hop, try HARDER for a ricochet on the nearest enemy:
-        // more bounces + finer angle/scale sampling. Cheap because this only runs
-        // when the standard pass found nothing (typically the last plane or two),
-        // and it is capped to the single nearest enemy.
-        const nearestEnemyEntry = prioritizedEnemiesForPlane[0];
+        // "center control" hop, try HARDER for a ricochet: more bounces + finer
+        // angle/scale sampling + exact wall-bank seeds, across ALL prioritized enemies
+        // (not just the nearest) so a plane reachable ONLY by banking off a wall is still
+        // hit. Only runs when the standard pass found nothing (typically the last plane
+        // or two), so the extra cost is rare; pick the highest-scoring (cleanest) kill.
         aiThinkingTimingStageStart("attack_sim_last_resort");
-        await aiCoopMaybeYield();
-        if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("attack_sim_last_resort"); return null; }
-        const lastResortMove = await buildSimulatedEnemyCandidate(
-          launchReadyPlane,
-          nearestEnemyEntry.enemy,
-          maxFlightDistancePx,
-          {
-            maxBounces: 5,
-            coarseAngleStepDeg: 6,
-            fineAngleStepDeg: 2,
-            coarseScaleStep: 0.05,
-            fineScaleStep: 0.02,
-            seedCount: 12,
-            coarsePoolSize: 28,
-            // Desperate for a shot (no normal attack connected): seed the search with
-            // exact wall-bank angles so a clean 1-2 bounce ricochet off a side wall is
-            // found instead of degrading to a passive center move.
-            includeWallBounceSeeds: true,
+        let bestLastResort = null;
+        for(const entry of prioritizedEnemiesForPlane){
+          await aiCoopMaybeYield();
+          if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("attack_sim_last_resort"); return null; }
+          const move = await buildSimulatedEnemyCandidate(
+            launchReadyPlane,
+            entry.enemy,
+            maxFlightDistancePx,
+            {
+              maxBounces: 5,
+              coarseAngleStepDeg: 6,
+              fineAngleStepDeg: 2,
+              coarseScaleStep: 0.05,
+              fineScaleStep: 0.02,
+              seedCount: 12,
+              coarsePoolSize: 28,
+              includeWallBounceSeeds: true,
+            }
+          );
+          if(!move) continue;
+          if(!bestLastResort || (move.score ?? Number.NEGATIVE_INFINITY) > (bestLastResort.move.score ?? Number.NEGATIVE_INFINITY)){
+            bestLastResort = { move, entry };
           }
-        );
+        }
         aiThinkingTimingStageEnd("attack_sim_last_resort");
-        if(lastResortMove){
+        if(bestLastResort){
+          const lastResortMove = bestLastResort.move;
+          const chosenEntry = bestLastResort.entry;
           // Retag for telemetry so the self-analyzer report distinguishes this from a
           // normal first-pass hit.
           lastResortMove.decisionReason = lastResortMove.routeClass === "ricochet"
@@ -16873,14 +16888,14 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           lastResortMove.whyChosen = "last_resort_deep_ricochet_before_center_control";
           selectedPlan = lastResortMove;
           planTier = 2; // attack(1) > last-resort attack(2) > center(3); cargo stays 1
-          planDistance = Number.isFinite(nearestEnemyEntry.enemyDistance)
-            ? nearestEnemyEntry.enemyDistance
+          planDistance = Number.isFinite(chosenEntry.enemyDistance)
+            ? chosenEntry.enemyDistance
             : Number.POSITIVE_INFINITY;
           lastResortAttackFound = true;
           logAiDecision("simple_step2_last_resort_attack", {
             reasonCode: lastResortMove.decisionReason,
             planeId: launchReadyPlane?.id ?? null,
-            enemyId: nearestEnemyEntry.enemy?.id ?? null,
+            enemyId: chosenEntry.enemy?.id ?? null,
             routeClass: lastResortMove.routeClass,
             bounceCount: lastResortMove.bounceCount ?? null,
           });
