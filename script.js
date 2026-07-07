@@ -16399,6 +16399,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           seedCount: simulationOptions.seedCount,
           coarsePoolSize: simulationOptions.coarsePoolSize,
           refineScaleWindow: simulationOptions.refineScaleWindow,
+          includeWallBounceSeeds: simulationOptions.includeWallBounceSeeds,
         }, aiCoopMaybeYield);
         const sim = simulated?.sim;
         if(!sim || !sim.hitTarget) return null;
@@ -16856,6 +16857,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             fineScaleStep: 0.02,
             seedCount: 12,
             coarsePoolSize: 28,
+            // Desperate for a shot (no normal attack connected): seed the search with
+            // exact wall-bank angles so a clean 1-2 bounce ricochet off a side wall is
+            // found instead of degrading to a passive center move.
+            includeWallBounceSeeds: true,
           }
         );
         aiThinkingTimingStageEnd("attack_sim_last_resort");
@@ -43850,6 +43855,51 @@ function scoreAISimulatedCandidate(simResult, options = {}){
   return score;
 }
 
+// Analytic "bank shot" seeds: the coarse angle grid (6deg) can STRADDLE a narrow
+// ricochet window (a clean 1-2 bounce bank off a side wall is often a <2deg needle),
+// so a real kill that a human would just "bank off the wall" is missed and the AI
+// degrades to a passive center move. Compute the EXACT launch angle for a 1-bounce
+// (and 2-bounce corner) reflection off the outer walls via the mirror method, and feed
+// them as refinement seeds so the shot search always polishes the true bank angle. The
+// reflect line is where the plane CENTER bounces: playable edge (field + border) plus
+// POINT_RADIUS. Out-of-range banks (mirror farther than flight range) are dropped;
+// bricks on the path are handled by the real sim, which simply won't register a hit.
+function computeAiWallBounceSeeds(plane, target, effectiveRangePx){
+  const seeds = [];
+  if(!plane || !target || !(effectiveRangePx > 0)) return seeds;
+  const R = (typeof POINT_RADIUS === "number") ? POINT_RADIUS : 13.5;
+  const worldW = (typeof WORLD === "object" && WORLD && Number.isFinite(WORLD.width)) ? WORLD.width : 360;
+  const worldH = (typeof WORLD === "object" && WORLD && Number.isFinite(WORLD.height)) ? WORLD.height : 640;
+  const fLeft = (typeof FIELD_LEFT === "number") ? FIELD_LEFT : 0;
+  const fTop = (typeof FIELD_TOP === "number") ? FIELD_TOP : 0;
+  const fW = (typeof FIELD_WIDTH === "number" && FIELD_WIDTH > 0) ? FIELD_WIDTH : worldW;
+  const fH = (typeof FIELD_HEIGHT === "number" && FIELD_HEIGHT > 0) ? FIELD_HEIGHT : worldH;
+  const insetX = (typeof FIELD_BORDER_OFFSET_X === "number") ? FIELD_BORDER_OFFSET_X : 20;
+  const insetY = (typeof FIELD_BORDER_OFFSET_Y === "number") ? FIELD_BORDER_OFFSET_Y : 20;
+  const vwalls = [{ axis: "x", line: fLeft + insetX + R }, { axis: "x", line: fLeft + fW - insetX - R }];
+  const hwalls = [{ axis: "y", line: fTop + insetY + R }, { axis: "y", line: fTop + fH - insetY - R }];
+  const reflect = (pt, w) => (w.axis === "x") ? { x: 2 * w.line - pt.x, y: pt.y } : { x: pt.x, y: 2 * w.line - pt.y };
+  const addSeed = (mirror) => {
+    const dx = mirror.x - plane.x;
+    const dy = mirror.y - plane.y;
+    const d = Math.hypot(dx, dy);
+    if(!(d > 1)) return;
+    const scale = d / effectiveRangePx;
+    if(!(scale > 0.05) || scale > 1.0) return; // bank is out of flight range
+    seeds.push({ angle: Math.atan2(dy, dx), scale });
+  };
+  // 1-bounce: reflect the target across each outer wall.
+  for(const w of [...vwalls, ...hwalls]) addSeed(reflect(target, w));
+  // 2-bounce corner banks: one vertical + one horizontal wall, both orderings.
+  for(const v of vwalls){
+    for(const h of hwalls){
+      addSeed(reflect(reflect(target, h), v)); // path: plane -> v -> h -> target
+      addSeed(reflect(reflect(target, v), h)); // path: plane -> h -> v -> target
+    }
+  }
+  return seeds;
+}
+
 function enumerateAIShotCandidates(plane, target, options = {}){
   const coarseAngleStep = (Number.isFinite(options.coarseAngleStepDeg) ? options.coarseAngleStepDeg : AI_SIM_COARSE_ANGLE_STEP_DEG) * Math.PI / 180;
   const fineAngleStep = (Number.isFinite(options.fineAngleStepDeg) ? options.fineAngleStepDeg : AI_SIM_FINE_ANGLE_STEP_DEG) * Math.PI / 180;
@@ -43875,6 +43925,9 @@ function enumerateAIShotCandidates(plane, target, options = {}){
     return a.scale - b.scale;
   });
   const seeds = coarse.slice(0, seedCount);
+  if(options.includeWallBounceSeeds){
+    for(const s of computeAiWallBounceSeeds(plane, target, getPlaneEffectiveRangePx(plane))) seeds.push(s);
+  }
   const refined = [];
   for(const seed of seeds){
     for(let da = -coarseAngleStep; da <= coarseAngleStep + 1e-6; da += fineAngleStep){
@@ -43910,6 +43963,7 @@ function findBestSimulatedShot(plane, target, options = {}){
     seedCount: options.seedCount,
     coarsePoolSize: options.coarsePoolSize,
     refineScaleWindow: options.refineScaleWindow,
+    includeWallBounceSeeds: options.includeWallBounceSeeds,
   });
   return selectBestAICandidate(candidates);
 }
@@ -43945,6 +43999,9 @@ async function enumerateAIShotCandidatesAsync(plane, target, options = {}, yield
     return a.scale - b.scale;
   });
   const seeds = coarse.slice(0, seedCount);
+  if(options.includeWallBounceSeeds){
+    for(const s of computeAiWallBounceSeeds(plane, target, getPlaneEffectiveRangePx(plane))) seeds.push(s);
+  }
   const refined = [];
   for(const seed of seeds){
     for(let da = -coarseAngleStep; da <= coarseAngleStep + 1e-6; da += fineAngleStep){
@@ -43976,6 +44033,7 @@ async function findBestSimulatedShotAsync(plane, target, options = {}, yieldHook
     seedCount: options.seedCount,
     coarsePoolSize: options.coarsePoolSize,
     refineScaleWindow: options.refineScaleWindow,
+    includeWallBounceSeeds: options.includeWallBounceSeeds,
   }, yieldHook);
   return selectBestAICandidate(candidates);
 }
