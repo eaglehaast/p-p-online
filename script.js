@@ -16447,12 +16447,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         };
       };
 
-    // Is `enemy` swept by the flown path (perpendicular within the danger width)?
-    const isEnemyOnPredictedPath = (enemy, path) => {
+    // Is `enemy` swept by the flown path (perpendicular within the kill span)? The
+    // tolerance defaults to the danger half-width; a wings-widened tolerance can be
+    // passed so a grazing kill that only connects with the wide wings span counts.
+    const isEnemyOnPredictedPath = (enemy, path, tolerancePx) => {
       if(!enemy || !Array.isArray(path) || path.length < 2) return false;
+      const tol = Number.isFinite(tolerancePx) ? tolerancePx : AI_SWEEP_ENEMY_HIT_TOLERANCE_PX;
       for(let i = 0; i < path.length - 1; i += 1){
         const d = getDistanceFromPointToSegment(enemy.x, enemy.y, path[i].x, path[i].y, path[i + 1].x, path[i + 1].y);
-        if(d <= AI_SWEEP_ENEMY_HIT_TOLERANCE_PX) return true;
+        if(d <= tol) return true;
       }
       return false;
     };
@@ -16464,6 +16467,21 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     const buildBestMultiTargetSweepCandidate = async (plane, maxFlightDistancePx) => {
       const effRange = getPlaneEffectiveRangePx(plane);
       if(!(effRange > 0)) return null;
+      // Wings this turn widen the kill span (36 -> 96), so a spray that only GRAZES
+      // enemies/cargo still connects. When wings are on hand, evaluate the sweep with the
+      // wide span (a wings-view plane for cargo, a widened enemy tolerance) so the AI
+      // finds and takes a multikill "поколотиться в щель" run it would otherwise miss;
+      // the wings buff picker re-verifies with the true wide span and grants the wings.
+      const sweepColorForWings = plane.color || aiColor;
+      const wingsOnHand = typeof evaluateInventoryState === "function"
+        && Number(evaluateInventoryState(sweepColorForWings)?.counts?.[INVENTORY_ITEM_TYPES.WINGS] ?? 0) > 0
+        && !plane.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.WINGS];
+      const sweepPlane = wingsOnHand
+        ? { ...plane, activeTurnBuffs: { ...(plane.activeTurnBuffs || {}), [INVENTORY_ITEM_TYPES.WINGS]: true } }
+        : plane;
+      const enemySweepTol = (typeof getAiSweepEnemyHitTolerancePx === "function")
+        ? getAiSweepEnemyHitTolerancePx(wingsOnHand)
+        : (typeof AI_SWEEP_ENEMY_HIT_TOLERANCE_PX === "number" ? AI_SWEEP_ENEMY_HIT_TOLERANCE_PX : CELL_SIZE);
       const sweepCargos = readyCargo
         .filter(Boolean)
         .map((cargo) => ({ cargo, center: getCargoVisualCenter(cargo), d: dist(plane, getCargoVisualCenter(cargo)) }))
@@ -16532,6 +16550,27 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         const rad = deg * Math.PI / 180;
         directions.push({ nx: Math.cos(rad), ny: Math.sin(rad), anchor: false });
       }
+      // Analytic bank-shot seeds: the 20deg circle sweep is far too coarse to land on a
+      // narrow wall-bank angle, so a spray that ricochets off a side wall INTO a cluster
+      // is missed. Add the exact 1-2 bounce wall-mirror angles toward each target (deduped
+      // to ~1deg buckets, capped) so those banks-into-a-cluster are actually tried.
+      if(typeof computeAiWallBounceSeeds === "function"){
+        const bankTargets = [
+          ...sweepEnemies.map((e) => e.enemy),
+          ...sweepCargos.map((c) => c.center),
+          ...sweepFlags.map((f) => f.anchor),
+        ];
+        const seenBankAngle = new Set();
+        for(const t of bankTargets){
+          if(seenBankAngle.size >= 48) break; // bound the extra sim budget
+          for(const s of computeAiWallBounceSeeds(plane, t, effRange)){
+            const key = Math.round((s.angle * 180 / Math.PI));
+            if(seenBankAngle.has(key)) continue;
+            seenBankAngle.add(key);
+            directions.push({ nx: Math.cos(s.angle), ny: Math.sin(s.angle), anchor: true });
+          }
+        }
+      }
 
       let best = null;
       let simBudget = 0;
@@ -16549,8 +16588,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           // straight through it).
           if(typeof doesFlightPathCrossMine === "function" && doesFlightPathCrossMine(sim.predictedPath, plane)) continue;
           let cargoHit = 0, enemyHit = 0;
-          for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, plane, sim.predictedPath)) cargoHit += 1; }
-          for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, sim.predictedPath)) enemyHit += 1; }
+          for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, sweepPlane, sim.predictedPath)) cargoHit += 1; }
+          for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, sim.predictedPath, enemySweepTol)) enemyHit += 1; }
           const flagHit = countFlagsOnPath(sim.predictedPath);
           // rawCount drives the pair/dominate tiers (flag = ONE target, so it can't force
           // an ignore-safety dominate by itself); value picks the best DIRECTION, where a
@@ -16601,8 +16640,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         if(boostedSim && Array.isArray(boostedSim.predictedPath) && boostedSim.predictedPath.length >= 2){
           let boostedCargo = 0;
           let boostedEnemy = 0;
-          for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, plane, boostedSim.predictedPath)) boostedCargo += 1; }
-          for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, boostedSim.predictedPath)) boostedEnemy += 1; }
+          for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, sweepPlane, boostedSim.predictedPath)) boostedCargo += 1; }
+          for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, boostedSim.predictedPath, enemySweepTol)) boostedEnemy += 1; }
           const boostedFlag = countFlagsOnPath(boostedSim.predictedPath);
           const boostedCount = boostedCargo + boostedEnemy + boostedFlag;
           if(boostedCount > best.count){
@@ -16635,6 +16674,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         landingRisk,
         travel: best.travel,
         aiFuelRicochetExtend,
+        // Counted with the wide wings span — the buff picker should grant wings so the
+        // grazing kills in this spray actually land.
+        aiWingsSweepWiden: wingsOnHand,
       };
     };
 
@@ -20697,6 +20739,24 @@ const AI_SWEEP_ANGLE_STEP_DEG = 20;
 const AI_SWEEP_MAX_BOUNCES = 2;
 const AI_SWEEP_ANCHOR_SCALES = [1, 0.7];
 const AI_SWEEP_ENEMY_HIT_TOLERANCE_PX = CELL_SIZE; // ~ danger half-width (18) + margin
+
+// Enemy sweep tolerance for the multi-target search. Normally the danger half-width
+// (+margin); when the plane can spend WINGS this turn, the beneficial span roughly
+// doubles (36 -> 96), so a shot that only GRAZES an enemy still kills with wings.
+// Widening the tolerance lets the AI find and take a multikill spray it would otherwise
+// miss — and the wings buff picker (which re-counts with the true wide span) then grants
+// the wings, so the extra kills actually land. Kept conservative (attacker half only,
+// same margin) so it never over-counts vs the picker's wider attacker+enemy threshold.
+function getAiSweepEnemyHitTolerancePx(wingsWiden){
+  const base = (typeof AI_SWEEP_ENEMY_HIT_TOLERANCE_PX === "number") ? AI_SWEEP_ENEMY_HIT_TOLERANCE_PX : CELL_SIZE;
+  if(!wingsWiden) return base;
+  const truth = (typeof PLANE_GEOMETRY_TRUTH === "object" && PLANE_GEOMETRY_TRUTH) ? PLANE_GEOMETRY_TRUTH : null;
+  const wideHalf = truth && Number.isFinite(truth.BENEFICIAL_HITBOX_WIDTH_WITH_WINGS) ? truth.BENEFICIAL_HITBOX_WIDTH_WITH_WINGS / 2 : 48;
+  const dangerHalf = truth && Number.isFinite(truth.DANGER_HITBOX_WIDTH) ? truth.DANGER_HITBOX_WIDTH / 2 : 18;
+  const margin = Math.max(0, base - dangerHalf); // preserve the base tolerance's margin
+  return wideHalf + margin;
+}
+
 const AI_EXTEND_MOVE_MIN_GAIN_PX = CELL_SIZE * 2; // skip extension when <2 cells of range are unused
 const AI_DEFENSIVE_KILL_INTRUDER_PX = CELL_SIZE * 12; // enemy this close to our flag/base (in our half) = promote-the-kill intruder
 const AI_SELF_SABOTAGE_LANDING_PENALTY = 400; // max attack-score penalty for landing our LAST plane deep in the enemy's base
