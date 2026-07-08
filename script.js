@@ -4870,7 +4870,10 @@ function isMinePlacementValid(placement){
 
   const tooCloseToPlane = points.some(plane => {
     if(!plane?.isAlive || plane?.burning) return false;
-    return Math.hypot(plane.x - placement.x, plane.y - placement.y) < getMineEffectiveTriggerRadius(plane);
+    // Placement clearance is decoupled from the detonation radius so a mine can be
+    // WEDGED between parked planes; detonation (getMineEffectiveTriggerRadius) is
+    // unchanged, so a placed mine still threatens them the instant they fly.
+    return Math.hypot(plane.x - placement.x, plane.y - placement.y) < MINE_PLACEMENT_PLANE_CLEARANCE;
   });
   if(tooCloseToPlane) return false;
 
@@ -8950,6 +8953,15 @@ const MINE_TRIGGER_RADIUS  = 28; // v3.4: restored 24→28 after diagnosing the
 // same. All downstream AI buffers (landing_safe, cluster, approach, anchor)
 // scale from this constant and now leave proper slack around the real trigger.
 const MINE_PLACEMENT_MIN_DISTANCE = 24; // v3.2: was MINE_SIZE_DEFAULTS.LOGICAL_PX (30). Lowered so 2×24=48 < 59px hangar-gap → mine fits between adjacent parked planes.
+// How close to an ALIVE plane a mine may be PLACED. Decoupled from the detonation
+// radius (getMineEffectiveTriggerRadius ≈ 33px) so a mine can be WEDGED between parked
+// enemy planes (a 59px hangar gap needs 2× this < 59, i.e. < 29.5). Uses the plane's
+// drawn half-width so the mine can sit right at a plane's edge without being placed
+// inside its body. Detonation is unchanged — a placed mine still threatens (kills)
+// adjacent planes the moment they fly, which is the whole point of the "wall of mines
+// between their planes" play. Parked planes don't detonate mines (handleMineForPlane
+// only fires on a flight segment), so placing this close is safe until they launch.
+const MINE_PLACEMENT_PLANE_CLEARANCE = PLANE_DRAW_W / 2; // = 18px
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
 // (Restored to the original pre-change speed used for gameplay physics)
