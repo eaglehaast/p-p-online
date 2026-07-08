@@ -4912,10 +4912,18 @@ function isMinePlacementValid(placement){
 
   const tooCloseToPlane = points.some(plane => {
     if(!plane?.isAlive || plane?.burning) return false;
-    // Placement clearance is decoupled from the detonation radius so a mine can be
-    // WEDGED between parked planes; detonation (getMineEffectiveTriggerRadius) is
-    // unchanged, so a placed mine still threatens them the instant they fly.
-    return Math.hypot(plane.x - placement.x, plane.y - placement.y) < MINE_PLACEMENT_PLANE_CLEARANCE;
+    // A mine within a plane's detonation trigger blows that plane up the instant it is
+    // placed: stationary planes detonate mines too — handleMineForPlane runs on parked
+    // planes every frame and fires on any mine within getMineEffectiveTriggerRadius. So
+    // never allow a placement that would instantly detonate a plane, yours OR the enemy's.
+    // Couple the clearance to the plane's ACTUAL trigger (wings widen it) and use <= so a
+    // spot exactly on the trigger boundary — which would fire — is rejected too. A mine can
+    // still be wedged between parked planes where that is geometrically safe (a 59px gap
+    // leaves the ~29.5px midpoint just outside the 29px trigger).
+    const triggerRadius = (typeof getMineEffectiveTriggerRadius === "function")
+      ? getMineEffectiveTriggerRadius(plane)
+      : MINE_PLACEMENT_PLANE_CLEARANCE;
+    return Math.hypot(plane.x - placement.x, plane.y - placement.y) <= triggerRadius;
   });
   if(tooCloseToPlane) return false;
 
@@ -9031,15 +9039,16 @@ const MINE_TRIGGER_RADIUS  = 28; // v3.4: restored 24→28 after diagnosing the
 // same. All downstream AI buffers (landing_safe, cluster, approach, anchor)
 // scale from this constant and now leave proper slack around the real trigger.
 const MINE_PLACEMENT_MIN_DISTANCE = 24; // v3.2: was MINE_SIZE_DEFAULTS.LOGICAL_PX (30). Lowered so 2×24=48 < 59px hangar-gap → mine fits between adjacent parked planes.
-// How close to an ALIVE plane a mine may be PLACED. Decoupled from the detonation
-// radius (getMineEffectiveTriggerRadius ≈ 33px) so a mine can be WEDGED between parked
-// enemy planes (a 59px hangar gap needs 2× this < 59, i.e. < 29.5). Uses the plane's
-// drawn half-width so the mine can sit right at a plane's edge without being placed
-// inside its body. Detonation is unchanged — a placed mine still threatens (kills)
-// adjacent planes the moment they fly, which is the whole point of the "wall of mines
-// between their planes" play. Parked planes don't detonate mines (handleMineForPlane
-// only fires on a flight segment), so placing this close is safe until they launch.
-const MINE_PLACEMENT_PLANE_CLEARANCE = PLANE_DRAW_W / 2; // = 18px
+// Fallback minimum distance from an ALIVE plane at which a mine may be PLACED, used only
+// if getMineEffectiveTriggerRadius is unavailable. The real rule (isMinePlacementValid)
+// couples the clearance to each plane's ACTUAL detonation trigger: a mine placed within
+// that radius blows the plane up the instant it is placed, because STATIONARY planes
+// detonate mines too (handleMineForPlane runs on parked planes every frame — the earlier
+// "parked planes don't detonate mines" assumption was wrong). A mine can still be wedged
+// between parked planes where geometrically safe (a 59px gap leaves the ~29.5px midpoint
+// just outside the 29px trigger). This fallback matches the bare wingless trigger
+// (mine radius 11 + wing half-span 18 = 29px).
+const MINE_PLACEMENT_PLANE_CLEARANCE = MINE_VISUAL_RADIUS + PLANE_DRAW_W / 2; // = 29px (bare trigger)
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
 // (Restored to the original pre-change speed used for gameplay physics)
