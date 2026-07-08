@@ -8873,9 +8873,16 @@ const PLANE_METRIC_SCALE   = PLANE_DRAW_W / 40;
 // LOGICAL_PX controls mine size inside the game world (canvas drawing units).
 // SCREEN_PX controls mine size in interface pixels (inventory/drag preview via CSS variable).
 // Keep both values here so future tweaks do not create a second, conflicting size source.
+// Mine size. 22px matches the mine sprite's own drawn extent (measured ~22-23px); the
+// old 30px UPSCALED the sprite, so the placed mine looked noticeably bigger than the
+// one in hand and couldn't be wedged between parked planes. LOGICAL_PX also feeds
+// MINE_VISUAL_RADIUS below, so the detonation trigger (mine radius + plane half-span)
+// follows the smaller mine: a plane now detonates it when its body TOUCHES the smaller
+// circle (11 + 18 = 29px, was 33) — the danger zone matches the visual. The AI mine
+// avoidance keys off getMineEffectiveTriggerRadius, so it tracks this automatically.
 const MINE_SIZE_DEFAULTS = Object.freeze({
-  LOGICAL_PX: 30,
-  SCREEN_PX: 30,
+  LOGICAL_PX: 22,
+  SCREEN_PX: 22,
 });
 const MINE_VISUAL_RADIUS = MINE_SIZE_DEFAULTS.LOGICAL_PX / 2;
 
