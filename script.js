@@ -29383,6 +29383,20 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan, options = {}){
   const widePlane = { ...plane, activeTurnBuffs: { ...(plane.activeTurnBuffs || {}), [INVENTORY_ITEM_TYPES.WINGS]: true } };
   const barePlane = { ...plane, activeTurnBuffs: { ...(plane.activeTurnBuffs || {}), [INVENTORY_ITEM_TYPES.WINGS]: false } };
 
+  // SAFETY: wings widen the mine trigger (getMineEffectiveTriggerRadius jumps from the bare
+  // span to the broad-wing span). If the widened span sweeps this flight path into a mine
+  // that the bare span clears, turning wings on here self-detonates the plane mid-flight —
+  // exactly the "unluckily switched on wide wings next to a mine and blew up" case. Teach
+  // the AI that danger: never take wings when they are the thing that drives the plane into
+  // a mine (the bare move flies clean). A move that already rams a mine WITHOUT wings is a
+  // separate problem — wings add no new mine risk there — so this guard fires only on the
+  // wings-caused detonation.
+  if(typeof doesFlightPathCrossMine === "function"
+     && doesFlightPathCrossMine(path, widePlane)
+     && !doesFlightPathCrossMine(path, barePlane)){
+    return false;
+  }
+
   // An enemy is killed when the flying plane's beneficial span sweeps over it
   // (the same span checkPlaneHits uses). Approximate the swept overlap by the
   // perpendicular distance from the enemy to the path vs the combined half-spans.
