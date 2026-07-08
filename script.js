@@ -3281,6 +3281,30 @@ let inventoryDragFallbackHeight = 30;
 let inventoryDragImageMarkedUnstable = false;
 const MINE_INVENTORY_ICON_PATH = "ui_gamescreen/gs_inventory/gs_inventory_mine.png";
 
+// On-screen size (CSS px) the placed mine occupies on the board. The mine is drawn at
+// mineSizeRuntime.LOGICAL_PX in WORLD units, and the board is scaled to boardRect.width on
+// screen, so its on-screen size is LOGICAL_PX × (boardWidth / WORLD.width). Sizing the
+// DRAG preview to this (instead of the inventory-icon SCREEN_PX) makes the mine the player
+// is dragging match how it will look once dropped — the player can size it up in place.
+// Falls back to SCREEN_PX before the board is laid out (board rect not measurable yet).
+function getPlacedMineOnScreenSizePx(){
+  let boardWidth = 0;
+  try {
+    const rect = getBoardCssRect();
+    boardWidth = Number.isFinite(rect?.width) ? rect.width : 0;
+  } catch(_error){
+    boardWidth = 0;
+  }
+  const worldWidth = (typeof WORLD === "object" && WORLD && Number.isFinite(WORLD.width) && WORLD.width > 0)
+    ? WORLD.width
+    : CANVAS_BASE_WIDTH;
+  if(!(boardWidth > 0) || !(worldWidth > 0)){
+    return mineSizeRuntime.SCREEN_PX;
+  }
+  const sizePx = mineSizeRuntime.LOGICAL_PX * (boardWidth / worldWidth);
+  return Number.isFinite(sizePx) && sizePx > 0 ? sizePx : mineSizeRuntime.SCREEN_PX;
+}
+
 function getInventoryIconPathForSlot(type, color){
   const slotConfig = INVENTORY_UI_CONFIG.slots[type] ?? null;
   if(!slotConfig) return "";
@@ -3381,12 +3405,16 @@ function releaseInventoryPointerFromMapEditorInteraction(){
 
 function activateInventoryDragFallback(target, clientX, clientY, type, options = {}){
   const ghost = getInventoryDragFallbackGhost();
-  const width = Number.isFinite(options.width) && options.width > 0
-    ? options.width
-    : mineSizeRuntime.SCREEN_PX;
-  const height = Number.isFinite(options.height) && options.height > 0
-    ? options.height
-    : mineSizeRuntime.SCREEN_PX;
+  const isMine = type === INVENTORY_ITEM_TYPES.MINE;
+  // A mine's drag preview is sized to match the placed mine (LOGICAL_PX × board scale),
+  // not the smaller inventory-icon size, so dragging previews the real field footprint.
+  const mineScreenSize = isMine ? getPlacedMineOnScreenSizePx() : null;
+  const width = isMine
+    ? mineScreenSize
+    : (Number.isFinite(options.width) && options.width > 0 ? options.width : mineSizeRuntime.SCREEN_PX);
+  const height = isMine
+    ? mineScreenSize
+    : (Number.isFinite(options.height) && options.height > 0 ? options.height : mineSizeRuntime.SCREEN_PX);
   inventoryDragFallbackWidth = width;
   inventoryDragFallbackHeight = height;
   ghost.style.width = `${Math.round(width)}px`;
@@ -3445,10 +3473,12 @@ function resetSharedInventoryDragPreview(){
 
 function getInventoryDragPreviewConfig(type, target, visualWidth, visualHeight){
   if(type === INVENTORY_ITEM_TYPES.MINE){
+    // visualWidth/Height are supplied as the placed-mine on-screen size by the caller, so
+    // the dragged mine previews its real field footprint rather than the inventory-icon size.
     return {
       src: MINE_INVENTORY_ICON_PATH,
-      width: mineSizeRuntime.SCREEN_PX,
-      height: mineSizeRuntime.SCREEN_PX,
+      width: visualWidth,
+      height: visualHeight,
     };
   }
 
@@ -4083,16 +4113,18 @@ function onInventoryItemDragStart(event){
     if (target instanceof HTMLImageElement) {
       const hasDragImageIssues = detectProblematicDragImageConditions(event);
       const dragPreview = getSharedInventoryDragPreview();
-      const fallbackSize = type === INVENTORY_ITEM_TYPES.MINE
-        ? mineSizeRuntime.SCREEN_PX
-        : INVENTORY_ITEM_SIZE_PX;
+      const isMineDrag = type === INVENTORY_ITEM_TYPES.MINE;
       const targetRect = target.getBoundingClientRect();
-      const visualWidth = Number.isFinite(targetRect.width) && targetRect.width > 0
-        ? targetRect.width
-        : fallbackSize;
-      const visualHeight = Number.isFinite(targetRect.height) && targetRect.height > 0
-        ? targetRect.height
-        : fallbackSize;
+      // A mine previews at its placed on-screen size (LOGICAL_PX × board scale) so the
+      // player sees the real field footprint while dragging; other items use their icon.
+      const mineOnScreenSize = isMineDrag ? getPlacedMineOnScreenSizePx() : null;
+      const fallbackSize = isMineDrag ? mineOnScreenSize : INVENTORY_ITEM_SIZE_PX;
+      const visualWidth = isMineDrag
+        ? mineOnScreenSize
+        : (Number.isFinite(targetRect.width) && targetRect.width > 0 ? targetRect.width : fallbackSize);
+      const visualHeight = isMineDrag
+        ? mineOnScreenSize
+        : (Number.isFinite(targetRect.height) && targetRect.height > 0 ? targetRect.height : fallbackSize);
       const dragPreviewConfig = getInventoryDragPreviewConfig(type, target, visualWidth, visualHeight);
       applyInventoryDragPreviewState(dragPreview, dragPreviewConfig);
       const dragOffset = getInventoryDragPreviewOffset(type, event, targetRect, visualWidth, visualHeight);
