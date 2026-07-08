@@ -3102,11 +3102,21 @@ function getPlaneDangerGeometry(plane){
 }
 
 function getMineEffectiveTriggerRadius(plane){
+  // Detonation rule: the plane's WING edge touching the mine's visible EDGE (contact),
+  // NOT the plane reaching the mine's centre. So the trigger = mine radius + wing
+  // half-span (edge-to-edge). Blue and green draw slightly different wing art inside the
+  // same 36px box, but we deliberately use ONE half-span for BOTH colours, keyed to the
+  // GREEN plane's visible wing tip (mineTriggerRuntime.WING_HALF_SPAN_PX, live-tunable so
+  // it can be dialled against the sprite). Blue's wing is a touch narrower, so it simply
+  // detonates on the same rule as green.
   const hasWings = plane && planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
-  const halfSpan = hasWings
+  const wingHalfSpan = hasWings
     ? PLANE_GEOMETRY_TRUTH.BENEFICIAL_HITBOX_WIDTH_WITH_WINGS / 2
-    : PLANE_DRAW_W / 2;
-  return MINE_VISUAL_RADIUS + halfSpan;
+    : mineTriggerRuntime.WING_HALF_SPAN_PX;
+  // Use the CURRENT (live-tunable) mine size so the danger zone always matches the mine
+  // as it is drawn — resizing the mine moves its trigger with it.
+  const mineRadius = mineSizeRuntime.LOGICAL_PX / 2;
+  return mineRadius + wingHalfSpan;
 }
 
 function getPlaneBeneficialGeometry(plane){
@@ -8323,9 +8333,14 @@ function getMineDebugConfig(){
   return {
     screenPx: mineSizeRuntime.SCREEN_PX,
     logicalPx: mineSizeRuntime.LOGICAL_PX,
+    // Wing half-span for the detonation trigger (green-keyed, applies to both colours).
+    triggerWingHalfSpanPx: mineTriggerRuntime.WING_HALF_SPAN_PX,
+    // Resulting wingless trigger radius: wing touches the mine's edge at this distance.
+    triggerRadiusPx: (mineSizeRuntime.LOGICAL_PX / 2) + mineTriggerRuntime.WING_HALF_SPAN_PX,
     defaults: {
       screenPx: MINE_SIZE_DEFAULTS.SCREEN_PX,
       logicalPx: MINE_SIZE_DEFAULTS.LOGICAL_PX,
+      triggerWingHalfSpanPx: MINE_TRIGGER_WING_HALF_SPAN_DEFAULT,
     },
   };
 }
@@ -8423,9 +8438,20 @@ function ensureMineDebugApi(){
       syncInventoryUI("green");
       return true;
     },
+    // Calibrate the wing half-span for the detonation trigger: the distance from the
+    // plane's centre to its visible wing tip (green-keyed, applied to both colours). The
+    // wingless trigger becomes (mine radius + this). Dial it until the wing visually just
+    // touches the mine as it detonates, then bake the number as the default in script.js.
+    setWingHalfSpan(px){
+      const safePx = normalizeMineDebugSize(px);
+      if(safePx === null) return false;
+      mineTriggerRuntime.WING_HALF_SPAN_PX = safePx;
+      return true;
+    },
     reset(){
       mineSizeRuntime.SCREEN_PX = MINE_SIZE_DEFAULTS.SCREEN_PX;
       mineSizeRuntime.LOGICAL_PX = MINE_SIZE_DEFAULTS.LOGICAL_PX;
+      mineTriggerRuntime.WING_HALF_SPAN_PX = MINE_TRIGGER_WING_HALF_SPAN_DEFAULT;
       applyMineScreenSizeToDom();
       syncInventoryUI("blue");
       syncInventoryUI("green");
@@ -8434,7 +8460,7 @@ function ensureMineDebugApi(){
   };
 
   console.info(
-    "[MINE_DEBUG] ready. Try: MINE_DEBUG.getConfig(), MINE_DEBUG.setScreenSize(42), MINE_DEBUG.setLogicalSize(36), MINE_DEBUG.setBoth(32), MINE_DEBUG.reset()"
+    "[MINE_DEBUG] ready. Try: MINE_DEBUG.getConfig(), MINE_DEBUG.setScreenSize(42), MINE_DEBUG.setLogicalSize(36), MINE_DEBUG.setBoth(32), MINE_DEBUG.setWingHalfSpan(16), MINE_DEBUG.reset()"
   );
 }
 
@@ -8875,11 +8901,12 @@ const PLANE_METRIC_SCALE   = PLANE_DRAW_W / 40;
 // Keep both values here so future tweaks do not create a second, conflicting size source.
 // Mine size. 22px matches the mine sprite's own drawn extent (measured ~22-23px); the
 // old 30px UPSCALED the sprite, so the placed mine looked noticeably bigger than the
-// one in hand and couldn't be wedged between parked planes. LOGICAL_PX also feeds
-// MINE_VISUAL_RADIUS below, so the detonation trigger (mine radius + plane half-span)
-// follows the smaller mine: a plane now detonates it when its body TOUCHES the smaller
-// circle (11 + 18 = 29px, was 33) — the danger zone matches the visual. The AI mine
-// avoidance keys off getMineEffectiveTriggerRadius, so it tracks this automatically.
+// one in hand and couldn't be wedged between parked planes. getMineEffectiveTriggerRadius
+// reads the CURRENT LOGICAL_PX (mineSizeRuntime, live-tunable) for its mine radius, so the
+// detonation trigger (mine radius + wing half-span) follows the mine as drawn: a plane
+// detonates it when its WING touches the mine's EDGE (11 + 18 = 29px by default) — the
+// danger zone matches the visual. The AI mine avoidance keys off the same function, so it
+// tracks this automatically.
 const MINE_SIZE_DEFAULTS = Object.freeze({
   LOGICAL_PX: 22,
   SCREEN_PX: 22,
@@ -8889,6 +8916,18 @@ const MINE_VISUAL_RADIUS = MINE_SIZE_DEFAULTS.LOGICAL_PX / 2;
 const mineSizeRuntime = {
   LOGICAL_PX: MINE_SIZE_DEFAULTS.LOGICAL_PX,
   SCREEN_PX: MINE_SIZE_DEFAULTS.SCREEN_PX,
+};
+
+// Wing half-span used by getMineEffectiveTriggerRadius: how far the plane's visible WING
+// TIP sits from its centre. Detonation fires when that tip touches the mine's EDGE, so the
+// trigger is (mine radius + this). Blue and green draw their wings a little differently
+// inside the shared 36px box, but the detonation rule is ONE value for BOTH colours, keyed
+// to the GREEN plane's wing tip. It defaults to the drawn-box edge (PLANE_DRAW_W / 2 = 18)
+// and is live-tunable (MINE_DEBUG.setWingHalfSpan) so the exact green wing tip can be
+// dialled in against the sprite, then baked as the default here.
+const MINE_TRIGGER_WING_HALF_SPAN_DEFAULT = PLANE_DRAW_W / 2; // 18px (box edge; calibrate to green's wing tip)
+const mineTriggerRuntime = {
+  WING_HALF_SPAN_PX: MINE_TRIGGER_WING_HALF_SPAN_DEFAULT,
 };
 
 function planeMetric(value) {
