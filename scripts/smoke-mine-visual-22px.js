@@ -41,11 +41,13 @@ assert(logicalPx === 22, `1: the placed mine is 22px (matches its sprite, no ups
 const mineVisualRadius = logicalPx / 2; // 11
 assert(mineVisualRadius === 11, '2: MINE_VISUAL_RADIUS derives to 11 (22 / 2).');
 
-// getMineEffectiveTriggerRadius = mine radius + plane half-span ("bodies touch").
+// getMineEffectiveTriggerRadius = mine radius + wing half-span ("wing touches the edge").
+// It reads the live mine size (mineSizeRuntime.LOGICAL_PX) and the green-keyed wing
+// half-span (mineTriggerRuntime.WING_HALF_SPAN_PX = PLANE_DRAW_W / 2 = 18 by default).
 const context = {
   Math,
-  MINE_VISUAL_RADIUS: mineVisualRadius,
-  PLANE_DRAW_W: 36,
+  mineSizeRuntime: { LOGICAL_PX: logicalPx },
+  mineTriggerRuntime: { WING_HALF_SPAN_PX: 18 },
   PLANE_GEOMETRY_TRUTH: { BENEFICIAL_HITBOX_WIDTH_WITH_WINGS: 96 },
   INVENTORY_ITEM_TYPES: { WINGS: 'wings' },
   planeHasActiveTurnBuff: (plane, type) => Boolean(plane?.activeTurnBuffs?.[type]),
