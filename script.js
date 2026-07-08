@@ -16970,11 +16970,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               : null,
           };
 
-          // A "gap"-class cargo route can report totalDist 0, and a plan claiming
-          // distance 0 sorts ahead of everything (including a point-blank kill).
-          // Fall back to the real distance to the cargo when totalDist isn't positive.
-          const cargoPlanDistance = (Number.isFinite(bestCargoCandidate.move.totalDist) && bestCargoCandidate.move.totalDist > 0)
-            ? bestCargoCandidate.move.totalDist
+          // Rank by the REAL straight-line distance to the cargo plus a per-bounce
+          // penalty — NOT the route's totalDist. A "gap"-class bounce route reports an
+          // unreliable (often tiny) totalDist, which made a convoluted 2-bounce grab sort
+          // AHEAD of a CLEAN direct grab by another plane (cross-plane sort is by
+          // planDistance). The bounce penalty makes a clean direct grab win unless the
+          // bouncy cargo is meaningfully closer, or no clean grab exists.
+          const cargoBounceCount = Number.isFinite(bestCargoCandidate.move.bounceCount) ? bestCargoCandidate.move.bounceCount : 0;
+          const cargoPlanDistance = (typeof getAiCargoPlanDistance === "function")
+            ? getAiCargoPlanDistance(bestCargoEntry.d, cargoBounceCount)
             : bestCargoEntry.d;
           // planTier 0 is a promoted defensive intruder kill — cargo must not override it.
           const shouldPreferCargoOverAttack = planTier > 0
@@ -17019,7 +17023,14 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               bounceCount: Number.isFinite(reachCandidate.move.bounceCount) ? reachCandidate.move.bounceCount : 0,
             };
             planTier = 2; // last-resort attack(2) > cargo-reach(2, mutually exclusive) > center(3)
-            planDistance = Number.isFinite(reachCandidate.move.totalDist) ? reachCandidate.move.totalDist : reachEntry.d;
+            // Same fix as the tier-1 pickup: rank by real distance + bounce penalty, not
+            // the gap route's unreliable totalDist, so a clean reach beats a bouncy one.
+            planDistance = (typeof getAiCargoPlanDistance === "function")
+              ? getAiCargoPlanDistance(
+                  reachEntry.d,
+                  Number.isFinite(reachCandidate.move.bounceCount) ? reachCandidate.move.bounceCount : 0,
+                )
+              : reachEntry.d;
             logAiDecision("simple_step2_cargo_reach", {
               planeId: launchReadyPlane?.id ?? null,
               routeClass: selectedPlan.routeClass,
@@ -20710,6 +20721,21 @@ const AI_CARGO_RISK_ACCEPTANCE = 0.42;
 // soft enemy-response risk cap entirely (path must still be navigable). Dial to
 // ~0.7 to only chase cargo when interception risk is moderate.
 const AI_CARGO_REACH_RISK_ACCEPTANCE = 1;
+
+// Cross-plane cargo ranking penalty per ricochet bounce. A "gap"-class bounce route to
+// a cargo reports an unreliable (often tiny) totalDist, which made a convoluted 2-bounce
+// grab by one plane sort AHEAD of a CLEAN direct grab by another (the cross-plane sort is
+// by planDistance). Rank cargo grabs by the real straight-line distance to the cargo plus
+// this penalty per bounce, so a clean direct grab of a farther cargo beats a bouncy grab
+// of a nearer one — a bounce grab wins only when the cargo is this-many px closer, or when
+// no clean grab exists at all. ~8 cells: reliable but still lets a much-closer bounce win.
+const AI_CARGO_BOUNCE_DISTANCE_PENALTY = CELL_SIZE * 8;
+function getAiCargoPlanDistance(straightLineDistPx, bounceCount){
+  const base = Number.isFinite(straightLineDistPx) ? Math.max(0, straightLineDistPx) : 0;
+  const bounces = Number.isFinite(bounceCount) ? Math.max(0, bounceCount) : 0;
+  const penalty = (typeof AI_CARGO_BOUNCE_DISTANCE_PENALTY === "number") ? AI_CARGO_BOUNCE_DISTANCE_PENALTY : 0;
+  return base + bounces * penalty;
+}
 // Step 1 (attack landing-point safety). The simple_step2 attack picker now
 // factors how EXPOSED the landing is, reusing getImmediateResponseThreatMeta +
 // getFallbackCandidateResponseRisk (0..1 response risk).
