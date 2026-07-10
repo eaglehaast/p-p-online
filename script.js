@@ -29595,7 +29595,22 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
         ? { x: selectedPlan.landingX, y: selectedPlan.landingY, kind: "landing" }
         : null;
 
-  const dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context, { planTarget: planTargetSource }) : null;
+  let dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context, { planTarget: planTargetSource }) : null;
+  // Economics: don't spend a scarce dynamite whose only payoff is a single cargo (a near-
+  // even item-for-item trade). isAiDynamiteOpeningWorthwhile keeps it for kills / flags /
+  // base / multi-target lanes, so dynamite stays in use — just not to "blow a wall for one box".
+  if(dyn && typeof isAiDynamiteOpeningWorthwhile === "function" && !isAiDynamiteOpeningWorthwhile(selectedPlan, dyn)){
+    if(typeof logAiDecision === "function"){
+      logAiDecision("dynamite_skipped_low_value_single_cargo", {
+        planeId: plane?.id ?? null,
+        colliderId: dyn.target?.colliderId ?? null,
+        finalDestinationKind: dyn.finalDestination?.kind ?? null,
+        goalName: selectedPlan?.goalName ?? null,
+        decisionReason: selectedPlan?.decisionReason ?? null,
+      });
+    }
+    dyn = null;
+  }
 
   const targetPoint = selectedPlan?.targetPoint;
   const dynAlignsWithPlanTarget = !dyn ? false
@@ -29671,7 +29686,22 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
         ? { x: selectedPlan.landingX, y: selectedPlan.landingY, kind: "landing" }
         : null;
 
-  const dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context, { planTarget: planTargetSource }) : null;
+  let dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context, { planTarget: planTargetSource }) : null;
+  // Economics: don't spend a scarce dynamite whose only payoff is a single cargo (a near-
+  // even item-for-item trade). isAiDynamiteOpeningWorthwhile keeps it for kills / flags /
+  // base / multi-target lanes, so dynamite stays in use — just not to "blow a wall for one box".
+  if(dyn && typeof isAiDynamiteOpeningWorthwhile === "function" && !isAiDynamiteOpeningWorthwhile(selectedPlan, dyn)){
+    if(typeof logAiDecision === "function"){
+      logAiDecision("dynamite_skipped_low_value_single_cargo", {
+        planeId: plane?.id ?? null,
+        colliderId: dyn.target?.colliderId ?? null,
+        finalDestinationKind: dyn.finalDestination?.kind ?? null,
+        goalName: selectedPlan?.goalName ?? null,
+        decisionReason: selectedPlan?.decisionReason ?? null,
+      });
+    }
+    dyn = null;
+  }
 
   const targetPoint = selectedPlan?.targetPoint;
   const dynAlignsWithPlanTarget = !dyn ? false
@@ -30941,6 +30971,35 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
 
 function pickAiSingleBuffForSelectedPlan(params){
   return pickAiBuffsForSelectedPlan(params)[0] || null;
+}
+
+// Dynamite economics. Clearing a wall to reach a SINGLE cargo is a near-even trade — spend
+// one scarce item to grab one item, and burn the turn and the plane's position doing it —
+// so it is not worth a charge. But dynamite must NOT go unused either, so this cuts ONLY
+// that lone-box case: it stays available for the payoffs that justify it (a kill / enemy
+// flag / base / finisher, or a lane that collects MULTIPLE targets). Returns true when the
+// opening is worth a dynamite.
+function isAiDynamiteOpeningWorthwhile(selectedPlan, dyn){
+  if(!dyn) return false;
+  const goalName = `${selectedPlan?.goalName || ""}`.toLowerCase();
+  const decisionReason = `${selectedPlan?.decisionReason || ""}`.toLowerCase();
+  const intent = `${goalName} ${decisionReason}`;
+  // A high-value objective always justifies a charge. Keyed to goalName + decisionReason,
+  // NOT whyChosen (which can say "enemy_attack" even for a cargo plan that merely tied
+  // with an attack), so a cargo pickup isn't misread as an attack.
+  if(["attack", "enemy", "finisher", "flag", "base", "capture", "kill"].some((w) => intent.includes(w))){
+    return true;
+  }
+  // A lane that sweeps MULTIPLE targets (multikill / multi-pickup) is worth it: one charge
+  // opens a corridor for several.
+  const multiTargetCount = Number.isFinite(selectedPlan?.multiTargetCount) ? selectedPlan.multiTargetCount : 0;
+  if(multiTargetCount >= 2) return true;
+  const readyCargoCount = Number.isFinite(selectedPlan?.readyCargoCount) ? selectedPlan.readyCargoCount : 0;
+  if(readyCargoCount >= 2) return true; // several cargo in play — possibly a multi-pickup sweep
+  // The one clearly-bad trade: a cargo / pickup plan whose payoff is a single box. Skip it.
+  // Every OTHER plan keeps dynamite, so it is trimmed, not disabled.
+  if(["cargo", "pickup"].some((w) => intent.includes(w))) return false;
+  return true;
 }
 
 function findAiDynamitePathOpeningOpportunity(plane, color, context, options = {}){
