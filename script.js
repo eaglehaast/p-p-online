@@ -31764,6 +31764,59 @@ function launchPathHitsOwnMineRicochet(plane, startX, startY, endX, endY){
   return false;
 }
 
+// Bounce budget for the real-flight mine gate. The sweep/attack shot sims stop at the
+// target after AI_SWEEP_MAX_BOUNCES (2), but the plane really flies to the END of its
+// range with several wall/brick bounces PAST the target — so a mine on that un-simulated
+// tail (an enemy mine near a wall, or our own freshly-placed one) detonates the plane
+// mid-flight. This covers that full bounced path.
+const AI_FLIGHT_MINE_GATE_MAX_BOUNCES = 6;
+
+// Aggregate mine threat along the plane's REAL bounced flight (full range, owner-AGNOSTIC).
+// The launch gate's straight start->landing segment check misses a mine on the BENT part
+// of a ricochet's real path (the plane bounces off walls/bricks). This re-simulates the
+// actual flight with simulateAIShot (same surface collision the shot predictor uses, so
+// it is a real path, not a phantom straight line) and folds the per-segment mine threat,
+// so the gate sees mines the straight check cannot. Guarded to be a no-op when there are
+// no mines on the field.
+function getRicochetFlightMineThreatMeta(plane, vx, vy){
+  if(!plane || !Number.isFinite(vx) || !Number.isFinite(vy)) return null;
+  if(!Array.isArray(mines) || mines.length === 0) return null; // only check when mines exist
+  if(typeof simulateAIShot !== "function" || typeof getMineThreatMetaForSegment !== "function") return null;
+  const speed = Math.hypot(vx, vy);
+  if(!(speed > 0)) return null;
+  const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? FIELD_FLIGHT_DURATION_SEC
+    : 1;
+  const effRange = (typeof getPlaneEffectiveRangePx === "function") ? getPlaneEffectiveRangePx(plane) : 0;
+  // Match the shot's real reach: the plane flies speed*duration, capped at its range.
+  const scale = effRange > 0 ? Math.max(0.02, Math.min(1, (speed * durationSec) / effRange)) : 1;
+  const sim = simulateAIShot(plane, { dx: vx, dy: vy, scale }, { maxBounces: AI_FLIGHT_MINE_GATE_MAX_BOUNCES });
+  const path = sim?.predictedPath;
+  if(!Array.isArray(path) || path.length < 2) return null;
+  let pathHit = false;
+  let landingThreat = false;
+  let count = 0;
+  let nearestDist = Number.POSITIVE_INFINITY;
+  let triggeringMine = null;
+  let triggerRadius = null;
+  for(let i = 0; i < path.length - 1; i += 1){
+    const meta = getMineThreatMetaForSegment(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y, plane);
+    if(!meta) continue;
+    if(Number.isFinite(meta.triggerRadius)) triggerRadius = meta.triggerRadius;
+    if(meta.pathHit) pathHit = true;
+    // Only the FINAL segment's endpoint is a true "landing"; a mine near an interior
+    // bounce point is already a path crossing (pathHit) the plane flies through.
+    if(meta.landingThreat && i === path.length - 2) landingThreat = true;
+    count += Number(meta.count) || 0;
+    if(Number.isFinite(meta.nearestDist) && meta.nearestDist < nearestDist){
+      nearestDist = meta.nearestDist;
+      triggeringMine = meta.triggeringMine || triggeringMine;
+    }
+  }
+  if(!pathHit && !landingThreat) return null;
+  return { count, nearestDist, pathHit, landingThreat, triggeringMine, triggerRadius, viaRicochetFlight: true };
+}
+
 function getFinalAiLaunchMineThreatCheck(plannedMove){
   const plane = plannedMove?.plane || null;
   const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
@@ -31862,18 +31915,30 @@ function getFinalAiLaunchMineThreatCheck(plannedMove){
       message: "Launch path intersects own mine danger zone.",
     };
   }
-  const blocked = Boolean(threatMeta?.pathHit || threatMeta?.landingThreat);
-  if(blocked){
+  // The straight start->landing check above only sees mines on that literal segment. A
+  // ricochet's REAL path bounces off walls/bricks and flies its full range PAST the
+  // target, so a mine on the bent tail is missed (this is how a plane self-detonates on
+  // a mine the AI "didn't see"). Re-check the real bounced flight against ALL mines —
+  // own OR enemy — a no-op when the field has no mines.
+  const ricochetFlightThreat = getRicochetFlightMineThreatMeta(plane, plannedMove?.vx, plannedMove?.vy);
+  const blockedByStraight = Boolean(threatMeta?.pathHit || threatMeta?.landingThreat);
+  const blockedByRicochetFlight = Boolean(ricochetFlightThreat?.pathHit || ricochetFlightThreat?.landingThreat);
+  if(blockedByStraight || blockedByRicochetFlight){
+    const effectiveThreatMeta = blockedByStraight ? threatMeta : ricochetFlightThreat;
     return {
       ok: false,
       reason: "path_crosses_mine",
-      reasonCode: "final_mine_check_rejected_stale_route",
+      reasonCode: blockedByStraight
+        ? "final_mine_check_rejected_stale_route"
+        : "final_mine_check_rejected_flight_ricochet",
       threatClass: "critical_forbidden",
       ownMineThreat: false,
-      threatMeta,
+      threatMeta: effectiveThreatMeta,
       startPoint,
       landingPoint,
-      message: "Launch path intersects a mine danger zone.",
+      message: blockedByStraight
+        ? "Launch path intersects a mine danger zone."
+        : "Real bounced flight path intersects a mine danger zone.",
     };
   }
 
