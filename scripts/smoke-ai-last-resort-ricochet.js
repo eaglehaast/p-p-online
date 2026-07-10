@@ -257,6 +257,10 @@ const context = {
 };
 
 vm.createContext(context);
+// The tier-1 death-trap demotion (scenario E/F) lives behind a top-level helper the
+// scheduler calls; extract it so the demotion actually runs in this vm (otherwise the
+// typeof-guard in the scheduler makes it a no-op and the exposed attack is never demoted).
+vm.runInContext(extractFunctionSource(source, 'shouldDemoteRiskyAttackFromTier1'), context);
 vm.runInContext(scheduleSrc, context);
 
 async function runScenario({
