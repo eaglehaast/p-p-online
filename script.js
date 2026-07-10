@@ -16945,8 +16945,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         // If no safer option exists the attack still fires (tier 2 > center) — this
         // is a demotion, not a veto, so aggression is preserved.
         const allowedRisk = getAiAllowedMoveRisk(aiExecutionContext);
-        const isInvestedShot = (bestAttackCandidate.move.bounceCount || 0) > 0;
-        if(attackLandingRisk > Math.max(allowedRisk, AI_ATTACK_LANDING_RISK_DEMOTE) && !isInvestedShot){
+        if(typeof shouldDemoteRiskyAttackFromTier1 === "function"
+          && shouldDemoteRiskyAttackFromTier1(bestAttackCandidate.move, attackLandingRisk, allowedRisk)){
           planTier = 2;
           logAiDecision("attack_landing_exposed_demoted", {
             planeId: launchReadyPlane?.id ?? null,
@@ -25214,6 +25214,25 @@ function getAiSelfSabotageLandingPenalty(landingX, landingY, enemyBase, midY, ow
   const alive = Number.isFinite(ownAliveCount) ? ownAliveCount : 3;
   const scarcity = alive <= 1 ? 1 : (alive === 2 ? 0.5 : 0.2);
   return maxPenalty * depth * scarcity;
+}
+
+// Death-trap landing-risk demotion: a single-target kill whose landing is near-certain
+// death (risk above the bar) is demoted out of tier 1 so a SAFER alternative can win — a
+// demotion, not a veto (the attack still fires if nothing safer exists). Judged on LANDING
+// SAFETY alone. Crucially it does NOT exempt a shot just for having BOUNCED: the old
+// `bounceCount > 0` exemption demoted a risky DIRECT kill while shielding an equally risky
+// RICOCHET kill of the same enemy — an artificial ricochet-over-direct preference. A single
+// kill is treated identically whether it flew straight or banked; only a genuine MULTI-target
+// kill (worth the risk) is spared. So attacks are judged on targets / safety, not on whether
+// they are ricochet or direct. Pure + unit-tested.
+function shouldDemoteRiskyAttackFromTier1(move, attackLandingRisk, allowedRisk){
+  const riskBar = Math.max(Number(allowedRisk) || 0, AI_ATTACK_LANDING_RISK_DEMOTE);
+  if(!(Number(attackLandingRisk) > riskBar)) return false;
+  const multiKill = Math.max(
+    Number(move?.multiTargetCount) || 0,
+    Number(move?.multiKillCount) || 0,
+  );
+  return !(multiKill > 1); // spare only a real multikill; single kills demote regardless of bounce
 }
 
 // Decides whether a dynamite-augmented alternative should REPLACE the base plan.
