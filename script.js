@@ -17745,6 +17745,21 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     }
     aiThinkingTimingStageEnd("dynamite_gate");
 
+    // A successful dynamite replan above re-aimed the plan to a SHORTER, straighter route
+    // (landingX/Y, planDistance, routeClass, bounceCount were rewritten). The crosshair was
+    // picked earlier for the ORIGINAL longer ricochet — precision wasted on the now-short
+    // direct hop. Re-validate it against the rewritten plan and drop it if it no longer
+    // earns its keep. (Only when a replan actually happened.)
+    if(selectedPlan.dynamiteReplanned === true){
+      const aiColorForBuffs = selectedPlan.plane?.color || selectedPlan.color
+        || (typeof turnColors !== "undefined" ? turnColors?.[typeof turnIndex !== "undefined" ? turnIndex : 0] : null)
+        || "blue";
+      const buffCounts = (typeof evaluateInventoryState === "function"
+        ? evaluateInventoryState(aiColorForBuffs)?.counts
+        : null) || {};
+      pruneStaleAimBuffsAfterRouteRewrite(selectedPlan, buffCounts);
+    }
+
     const selectedInventorySequence = Array.isArray(selectedPlan.selectedInventorySequence)
       ? selectedPlan.selectedInventorySequence.map((entry) => ({ ...entry }))
       : [];
@@ -29367,6 +29382,37 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan, options = {}
     "ricochet", "gap", "bounce", "bank", "multi_target",
   ].some((word) => goalText.includes(word) || routeClass.includes(word));
   return precisionIntent;
+}
+
+// After a route-rewriting replan (e.g. DYNAMITE clearing a brick straightens and SHORTENS
+// the path), aim buffs picked for the ORIGINAL, longer route can be stranded on the new
+// shorter one: a crosshair justified for a long ricochet cargo lane ends up wasted on a
+// tiny direct hop. Re-validate the crosshair against the rewritten plan and drop it if it
+// no longer qualifies (shouldAiUseCrosshairForSelectedPlan ignores its context arg, so this
+// is self-contained). Returns how many entries were removed.
+function pruneStaleAimBuffsAfterRouteRewrite(selectedPlan, availableCounts){
+  if(!selectedPlan || !Array.isArray(selectedPlan.selectedInventorySequence)) return 0;
+  if(typeof shouldAiUseCrosshairForSelectedPlan !== "function") return 0;
+  let removed = 0;
+  for(let i = selectedPlan.selectedInventorySequence.length - 1; i >= 0; i -= 1){
+    const entry = selectedPlan.selectedInventorySequence[i];
+    if(entry?.itemType !== INVENTORY_ITEM_TYPES.CROSSHAIR) continue;
+    const availableCount = Number(availableCounts?.[INVENTORY_ITEM_TYPES.CROSSHAIR] ?? 0);
+    if(shouldAiUseCrosshairForSelectedPlan(null, selectedPlan, { availableCount })) continue;
+    selectedPlan.selectedInventorySequence.splice(i, 1);
+    removed += 1;
+    if(typeof logAiDecision === "function"){
+      logAiDecision("aim_buff_dropped_after_route_rewrite", {
+        planeId: selectedPlan.plane?.id ?? null,
+        itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
+        reason: "route_shortened_precision_no_longer_justified",
+        planDistance: Number.isFinite(selectedPlan.planDistance) ? Number(selectedPlan.planDistance.toFixed(1)) : null,
+        bounceCount: selectedPlan.bounceCount ?? null,
+        routeClass: selectedPlan.routeClass || null,
+      });
+    }
+  }
+  return removed;
 }
 
 // Step 4: wide wings widen the BENEFICIAL span (96px vs 36px). That span is what
