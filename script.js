@@ -30157,6 +30157,31 @@ if(typeof window !== "undefined"){
 // total, 20ms budget, 3 top threats. Strict per-candidate gates prevent the
 // "mines saturate launch corridor" regression that froze the AI in earlier
 // iterations.
+// The enemy plane THIS selected move is going to KILL (only when the move predicts a hit),
+// matched from the alive-enemy list by the plan's target. Returns null when the move isn't
+// a predicted kill or its target doesn't coincide with an enemy — so a shot that might miss
+// never drops a real threat.
+function getAiPlanKillTargetEnemy(selectedPlan, enemies){
+  if(!selectedPlan || !Array.isArray(enemies) || enemies.length === 0) return null;
+  const outcome = `${selectedPlan?.predictedOutcome || ""}`.toLowerCase();
+  if(!(outcome.includes("target_hit") || outcome.includes("hit"))) return null;
+  const directEnemy = selectedPlan?.targetEnemy || selectedPlan?.targetEnemySnapshot || null;
+  const tx = Number.isFinite(directEnemy?.x) ? directEnemy.x
+    : (Number.isFinite(selectedPlan?.targetPoint?.x) ? selectedPlan.targetPoint.x : null);
+  const ty = Number.isFinite(directEnemy?.y) ? directEnemy.y
+    : (Number.isFinite(selectedPlan?.targetPoint?.y) ? selectedPlan.targetPoint.y : null);
+  if(!Number.isFinite(tx) || !Number.isFinite(ty)) return null;
+  let best = null;
+  let bestD = Number.POSITIVE_INFINITY;
+  for(const e of enemies){
+    if(!e || !Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
+    const d = Math.hypot(e.x - tx, e.y - ty);
+    if(d < bestD){ bestD = d; best = e; }
+  }
+  const tol = (typeof CELL_SIZE === "number" ? CELL_SIZE : 20) * 1.5; // the aim coincides with an enemy
+  return (best && bestD <= tol) ? best : null;
+}
+
 async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
   const plane = selectedPlan?.plane || null;
@@ -30183,10 +30208,24 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   const enemyColor = aiColor === "blue" ? "green" : "blue";
   const livePoints = Array.isArray(points) ? points : [];
   const allOwnAlive = livePoints.filter((p) => p && p.color === aiColor && p.isAlive && !p.burning);
-  const enemies = livePoints.filter((p) => p && p.color === enemyColor && p.isAlive && !p.burning);
+  let enemies = livePoints.filter((p) => p && p.color === enemyColor && p.isAlive && !p.burning);
+  // A defensive mine guards against enemies that are STILL a threat after this move. If THIS
+  // move is an attack that kills an enemy, that plane is gone — spending a mine to defend the
+  // flag/base against it is waste (the "place a mine against the very plane we're killing"
+  // move). Drop the plan's kill target from the threat set.
+  const killTargetEnemy = getAiPlanKillTargetEnemy(selectedPlan, enemies);
+  if(killTargetEnemy){
+    enemies = enemies.filter((e) => e !== killTargetEnemy);
+    logAiDecision("defensive_mine_skip_killed_enemy", {
+      enemyId: killTargetEnemy?.id ?? null,
+      enemyPos: { x: Math.round(killTargetEnemy.x), y: Math.round(killTargetEnemy.y) },
+    });
+  }
   if(enemies.length === 0){
-    logAiDecision("defensive_mine_planner_reject", { reason: "no_enemies" });
-    aiMineDebugRecord({ color: aiColor, inv: mineCount, earlyReject: "no_enemies" });
+    logAiDecision("defensive_mine_planner_reject", {
+      reason: killTargetEnemy ? "only_threat_is_being_killed" : "no_enemies",
+    });
+    aiMineDebugRecord({ color: aiColor, inv: mineCount, earlyReject: killTargetEnemy ? "threat_being_killed" : "no_enemies" });
     return null;
   }
 
