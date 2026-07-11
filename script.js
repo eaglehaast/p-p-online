@@ -17740,7 +17740,14 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             const newLandingY = selectedPlan.plane.y + replannedMove.vy * flightDur;
             const newDist = Math.hypot(replannedMove.vx, replannedMove.vy) * flightDur;
             const finalDest = dynEntry.finalDestination;
-            const distOldToDest = Math.hypot(selectedPlan.landingX - finalDest.x, selectedPlan.landingY - finalDest.y);
+            // Judge the ORIGINAL plan by where it REALLY ends. A ricochet that hits its
+            // target lands (in straight-line projection) off-field, so comparing that
+            // projection to the destination makes a working kill look far away and lets a
+            // replan that falls SHORT win on "closerToDest" (blows a wall, then недолёт).
+            const originalEnd = (typeof getAiReplanOriginalEndpoint === "function")
+              ? getAiReplanOriginalEndpoint(selectedPlan)
+              : { x: selectedPlan.landingX, y: selectedPlan.landingY };
+            const distOldToDest = Math.hypot(originalEnd.x - finalDest.x, originalEnd.y - finalDest.y);
             const distNewToDest = Math.hypot(newLandingX - finalDest.x, newLandingY - finalDest.y);
             const scoreImproves = Number.isFinite(replannedMove.score)
               && Number.isFinite(selectedPlan.score)
@@ -25345,6 +25352,25 @@ function shouldDemoteRiskyAttackFromTier1(move, attackLandingRisk, allowedRisk){
     Number(move?.multiKillCount) || 0,
   );
   return !(multiKill > 1); // spare only a real multikill; single kills demote regardless of bounce
+}
+
+// Where a plan REALLY ends, for the dynamite-replan "closer to destination" comparison.
+// A plan's straight-line landing (plane + launch vector projected straight) lands OFF-FIELD
+// for a RICOCHET that bounces to its target — it is NOT where the plane ends up. So a shot
+// that already HITS its target is judged by the enemy it hits, not that meaningless
+// projection; otherwise a working ricochet kill looks "far from the destination" and a
+// dynamite replan whose direct route falls SHORT of the target is wrongly accepted as
+// "closer to dest" (blow the wall, then недолёт). A non-hitting plan ends at its landing.
+// Pure + unit-tested.
+function getAiReplanOriginalEndpoint(plan){
+  const hitsTarget = plan
+    && typeof plan.predictedOutcome === "string"
+    && plan.predictedOutcome.indexOf("target_hit") === 0
+    && plan.targetPoint
+    && Number.isFinite(plan.targetPoint.x)
+    && Number.isFinite(plan.targetPoint.y);
+  if(hitsTarget) return { x: plan.targetPoint.x, y: plan.targetPoint.y };
+  return { x: plan?.landingX, y: plan?.landingY };
 }
 
 // When the plane has NO confirmed kill and its best move is a best-effort attack ATTEMPT
