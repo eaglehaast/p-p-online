@@ -16523,6 +16523,14 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     const scoredPlans = [];
     const aiColor = turnColors?.[turnIndex] || "blue";
 
+    // How exposed is a landing point? Reuses the same response-threat mechanic the cargo /
+    // center / finisher paths use. Shared by the attack candidate (target enemy excluded, as
+    // it's being killed) and by the exposed-cargo carve-out below (no primary enemy).
+    const getSelectedLandingExposureRisk = (plane, landingX, landingY, primaryEnemy) => {
+      if(typeof getImmediateResponseThreatMeta !== "function" || typeof getFallbackCandidateResponseRisk !== "function") return 0;
+      return getFallbackCandidateResponseRisk(getImmediateResponseThreatMeta({ ...aiExecutionContext, plane }, landingX, landingY, primaryEnemy || null));
+    };
+
     const buildSimulatedEnemyCandidate = async (plane, enemy, maxFlightDistancePx, simulationOptions = {}) => {
         if(!plane || !enemy) return null;
         if(!Number.isFinite(maxFlightDistancePx) || maxFlightDistancePx <= 0) return null;
@@ -16538,7 +16546,24 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           includeWallBounceSeeds: simulationOptions.includeWallBounceSeeds,
         }, aiCoopMaybeYield);
         const sim = simulated?.sim;
-        if(!sim || !sim.hitTarget) return null;
+        if(!sim) return null;
+        // Normally we only offer a shot the sim CONFIRMS kills the enemy. But an AI that
+        // never tries a hard ricochet just plays passively. When `allowBestEffort` is set
+        // (the last-resort pass), a near-miss is still offered as a PURPOSEFUL attempt —
+        // provided the simulated path actually passes close to the enemy (within
+        // `bestEffortMaxApproachPx`), so it reads as "trying to hit it", not a random lob.
+        // A real hit always outranks an attempt via score (a hit carries the +1200 bonus).
+        let bestEffortAttempt = false;
+        let closestApproachPx = 0;
+        if(!sim.hitTarget){
+          if(!simulationOptions.allowBestEffort) return null;
+          closestApproachPx = getSimPathClosestApproachToPoint(sim.predictedPath, enemy);
+          const maxApproach = Number.isFinite(simulationOptions.bestEffortMaxApproachPx)
+            ? simulationOptions.bestEffortMaxApproachPx
+            : (typeof AI_BEST_EFFORT_ATTEMPT_MAX_APPROACH_PX === "number" ? AI_BEST_EFFORT_ATTEMPT_MAX_APPROACH_PX : 70);
+          if(!(closestApproachPx <= maxApproach)) return null;
+          bestEffortAttempt = true;
+        }
         // Mines are invisible to the shot simulator (they aren't colliders), so a
         // "best" shot can fly straight through one and self-detonate mid-flight —
         // the plane dies before it even reaches the target. Reject any shot whose
@@ -16568,22 +16593,26 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         // How exposed is THIS landing? Reuse the same risk mechanic the cargo /
         // center / finisher paths already use; the target enemy is excluded (we
         // are killing it, so it's not a post-landing threat).
-        const landingRisk = (typeof getImmediateResponseThreatMeta === "function" && typeof getFallbackCandidateResponseRisk === "function")
-          ? getFallbackCandidateResponseRisk(getImmediateResponseThreatMeta({ ...aiExecutionContext, plane }, landingX, landingY, enemy))
-          : 0;
+        const landingRisk = getSelectedLandingExposureRisk(plane, landingX, landingY, enemy);
         return {
           plane,
           landingX,
           landingY,
           targetPoint: { x: enemy.x, y: enemy.y },
-          decisionReason: bouncedShot ? "simple_step2_ricochet_enemy" : "simple_step2_direct_enemy",
+          decisionReason: bestEffortAttempt
+            ? (bouncedShot ? "simple_step2_ricochet_best_effort" : "simple_step2_direct_best_effort")
+            : (bouncedShot ? "simple_step2_ricochet_enemy" : "simple_step2_direct_enemy"),
           goalName: "simple_step2_attack_enemy",
-          whyChosen: `simulated_hit_enemy_id_${enemy.id || "unknown"}_bounces_${sim.bounceCount}`,
+          whyChosen: bestEffortAttempt
+            ? `best_effort_attempt_enemy_id_${enemy.id || "unknown"}_approach_${Math.round(closestApproachPx)}px_bounces_${sim.bounceCount}`
+            : `simulated_hit_enemy_id_${enemy.id || "unknown"}_bounces_${sim.bounceCount}`,
           routeClass: bouncedShot ? "ricochet" : "direct",
           bounceCount: sim.bounceCount,
           score: simulated.score,
           landingRisk,
           predictedOutcome: sim.predictedOutcome,
+          isBestEffortAttempt: bestEffortAttempt,
+          closestApproachPx,
         };
       };
 
@@ -17022,6 +17051,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       }
 
       let lastResortAttackFound = false;
+      let lastResortIsBestEffort = false;
       if(!selectedPlan && prioritizedEnemiesForPlane.length){
         // No normal (<=3 bounce) shot connected. Before degrading to a dumb straight
         // "center control" hop, try HARDER for a ricochet: more bounces + finer
@@ -17029,6 +17059,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         // (not just the nearest) so a plane reachable ONLY by banking off a wall is still
         // hit. Only runs when the standard pass found nothing (typically the last plane
         // or two), so the extra cost is rare; pick the highest-scoring (cleanest) kill.
+        // `allowBestEffort` also lets a near-miss come back as a purposeful ATTEMPT (a
+        // shot that "почти попал") so the plane still TRIES the enemy instead of playing
+        // passively; a real hit always outscores an attempt, so kills win when they exist.
         aiThinkingTimingStageStart("attack_sim_last_resort");
         let bestLastResort = null;
         for(const entry of prioritizedEnemiesForPlane){
@@ -17047,6 +17080,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               seedCount: 12,
               coarsePoolSize: 28,
               includeWallBounceSeeds: true,
+              allowBestEffort: true,
             }
           );
           if(!move) continue;
@@ -17058,24 +17092,35 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         if(bestLastResort){
           const lastResortMove = bestLastResort.move;
           const chosenEntry = bestLastResort.entry;
-          // Retag for telemetry so the self-analyzer report distinguishes this from a
-          // normal first-pass hit.
-          lastResortMove.decisionReason = lastResortMove.routeClass === "ricochet"
-            ? "simple_step2_ricochet_enemy_last_resort"
-            : "simple_step2_direct_enemy_last_resort";
-          lastResortMove.whyChosen = "last_resort_deep_ricochet_before_center_control";
+          const isBestEffort = lastResortMove.isBestEffortAttempt === true;
+          // Retag for telemetry so the self-analyzer report distinguishes a confirmed
+          // last-resort kill from a best-effort ATTEMPT that missed but still tried.
+          lastResortMove.decisionReason = isBestEffort
+            ? (lastResortMove.routeClass === "ricochet"
+                ? "simple_step2_ricochet_best_effort_attempt"
+                : "simple_step2_direct_best_effort_attempt")
+            : (lastResortMove.routeClass === "ricochet"
+                ? "simple_step2_ricochet_enemy_last_resort"
+                : "simple_step2_direct_enemy_last_resort");
+          lastResortMove.whyChosen = isBestEffort
+            ? "best_effort_attempt_toward_enemy_instead_of_passive_play"
+            : "last_resort_deep_ricochet_before_center_control";
           selectedPlan = lastResortMove;
           planTier = 2; // attack(1) > last-resort attack(2) > center(3); cargo stays 1
           planDistance = Number.isFinite(chosenEntry.enemyDistance)
             ? chosenEntry.enemyDistance
             : Number.POSITIVE_INFINITY;
           lastResortAttackFound = true;
+          lastResortIsBestEffort = isBestEffort;
           logAiDecision("simple_step2_last_resort_attack", {
             reasonCode: lastResortMove.decisionReason,
             planeId: launchReadyPlane?.id ?? null,
             enemyId: chosenEntry.enemy?.id ?? null,
             routeClass: lastResortMove.routeClass,
             bounceCount: lastResortMove.bounceCount ?? null,
+            bestEffort: isBestEffort,
+            closestApproachPx: Number.isFinite(lastResortMove.closestApproachPx)
+              ? Math.round(lastResortMove.closestApproachPx) : null,
           });
         }
       }
@@ -17174,8 +17219,30 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             ? getAiCargoPlanDistance(bestCargoEntry.d, cargoBounceCount)
             : bestCargoEntry.d;
           // planTier 0 is a promoted defensive intruder kill — cargo must not override it.
-          const shouldPreferCargoOverAttack = planTier > 0
+          let shouldPreferCargoOverAttack = planTier > 0
             && (!bestAttackCandidate || cargoPlanDistance <= planDistance + CELL_SIZE * 0.25);
+
+          // Don't abandon a PURPOSEFUL attack attempt just to grab a cargo that parks the
+          // plane under the enemy's guns. Only when the cargo's own landing is exposed
+          // above the allowed risk (the "senseless exposed cargo grab" the user flagged)
+          // AND the attempt lands no MORE exposed do we keep the attempt. A SAFE cargo
+          // still wins — preserving the standing "cargo comparable to attack" balance; the
+          // carve-out is purely safety-driven, not a ricochet-over-cargo preference.
+          if(shouldPreferCargoOverAttack && lastResortIsBestEffort && selectedPlan
+            && typeof shouldKeepBestEffortAttemptOverCargo === "function"){
+            const allowedRiskForCargo = getAiAllowedMoveRisk(aiExecutionContext);
+            const cargoLandingRisk = getSelectedLandingExposureRisk(launchReadyPlane, cargoMove.landingX, cargoMove.landingY, null);
+            const attemptLandingRisk = Number.isFinite(selectedPlan.landingRisk) ? selectedPlan.landingRisk : 0;
+            if(shouldKeepBestEffortAttemptOverCargo(cargoLandingRisk, attemptLandingRisk, allowedRiskForCargo)){
+              shouldPreferCargoOverAttack = false;
+              logAiDecision("best_effort_attempt_kept_over_exposed_cargo", {
+                planeId: launchReadyPlane?.id ?? null,
+                cargoLandingRisk: Number(cargoLandingRisk.toFixed(3)),
+                attemptLandingRisk: Number(attemptLandingRisk.toFixed(3)),
+                allowedRisk: Number(allowedRiskForCargo.toFixed(3)),
+              });
+            }
+          }
 
           if(shouldPreferCargoOverAttack){
             selectedPlan = cargoMove;
@@ -20957,6 +21024,14 @@ function getAiCargoPlanDistance(straightLineDistPx, bounceCount){
 const AI_ATTACK_SCORE_TOLERANCE = 80;
 const AI_LANDING_RISK_DISTANCE_PENALTY = CELL_SIZE * 8;
 const AI_ATTACK_LANDING_RISK_DEMOTE = 0.8;
+// Best-effort attack ATTEMPT. When no shot the sim can CONFIRM as a kill exists, the AI
+// would otherwise degrade to passive play — hold center, or grab an exposed cargo and sit
+// under the enemy's guns. Instead it commits to the closest PURPOSEFUL ricochet toward the
+// enemy — a shot that "почти попал" — so it plays like a good opponent that TRIES, not a
+// killing machine and not a passive one (a missed attempt is fine). The near-miss only
+// counts as a purposeful attempt when the simulated path passes within this many px of the
+// enemy; a farther "shot" isn't aimed at it and is ignored (no random lobs).
+const AI_BEST_EFFORT_ATTEMPT_MAX_APPROACH_PX = CELL_SIZE * 3.5; // ~70px — a recognizable near-miss
 // Step 2 (maximize targets on a route). A "dominate" candidate simulates real
 // trajectories (incl. wall ricochets via simulateAIShot) and counts how many
 // targets (cargo + enemy planes, combined) the flown path sweeps. The densest
@@ -25270,6 +25345,21 @@ function shouldDemoteRiskyAttackFromTier1(move, attackLandingRisk, allowedRisk){
     Number(move?.multiKillCount) || 0,
   );
   return !(multiKill > 1); // spare only a real multikill; single kills demote regardless of bounce
+}
+
+// When the plane has NO confirmed kill and its best move is a best-effort attack ATTEMPT
+// (a purposeful near-miss toward the enemy), decide whether to KEEP that attempt instead of
+// letting a cargo grab override it. We keep it only when the cargo's own landing is exposed
+// above the allowed risk — the "grab a box and park under the enemy's guns" case the user
+// flagged — AND the attempt lands no MORE exposed than that cargo. A SAFE cargo (risk within
+// the allowed bar) always wins, preserving the standing "cargo comparable to attack" balance;
+// this is a pure safety comparison, not a ricochet-over-cargo preference. Pure + unit-tested.
+function shouldKeepBestEffortAttemptOverCargo(cargoLandingRisk, attemptLandingRisk, allowedRisk){
+  const cargoRisk = Number(cargoLandingRisk);
+  const attemptRisk = Number.isFinite(Number(attemptLandingRisk)) ? Number(attemptLandingRisk) : 0;
+  const allowed = Number(allowedRisk) || 0;
+  if(!(cargoRisk > allowed)) return false;      // a safe cargo grab still wins
+  return attemptRisk <= cargoRisk;              // keep the attempt only if it's no more exposed
 }
 
 // Decides whether a dynamite-augmented alternative should REPLACE the base plan.
@@ -44332,6 +44422,20 @@ function scoreAISimulatedCandidate(simResult, options = {}){
   if(simResult.ownMinePathHit) score -= AI_OWN_MINE_PATH_PENALTY;
   if(simResult.ownMineLandingThreat) score -= AI_OWN_MINE_LANDING_PENALTY;
   return score;
+}
+
+// Closest the flown path ever comes to a point, across every segment of the simulated
+// trajectory. Used to judge how "purposeful" a near-miss shot is: a best-effort attack
+// attempt only counts when the ricochet actually passes close to the enemy (it tried to
+// hit it), not when the search's best guess merely ended somewhere near it.
+function getSimPathClosestApproachToPoint(path, point){
+  if(!Array.isArray(path) || path.length < 2 || !point) return Number.POSITIVE_INFINITY;
+  let best = Number.POSITIVE_INFINITY;
+  for(let i = 0; i < path.length - 1; i += 1){
+    const d = getDistanceFromPointToSegment(point.x, point.y, path[i].x, path[i].y, path[i + 1].x, path[i + 1].y);
+    if(d < best) best = d;
+  }
+  return best;
 }
 
 // Analytic "bank shot" seeds: the coarse angle grid (6deg) can STRADDLE a narrow
