@@ -11894,7 +11894,40 @@ function aiDumpSerializePlan(selectedPlan, allPlanes){
   return aiDumpSafeClone(shallow, 6, 250, new Set([selectedPlan]));
 }
 
-function buildAiMoveDumpDynamic(selectedPlan){
+// Compact per-plane candidate summary: for EACH launch-ready plane, the best plan the
+// selector built for it (goal, tier, distance, score, route, target). Always captured in
+// the dump (no aiLogOn needed) so a bad move caught after the fact still shows WHY the AI
+// chose this plane/target over the others — the cross-plane picture the selection sort acts
+// on (planTier asc, then planDistance asc). `selected` marks the winner.
+function aiDumpSerializePlanCandidates(scoredPlans, selectedPlan){
+  if(!Array.isArray(scoredPlans)) return [];
+  const allPlanes = (typeof points !== "undefined" && Array.isArray(points)) ? points : [];
+  const num = (v, d = 1) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
+  return scoredPlans.map((p) => ({
+    planeIndex: (p?.plane && allPlanes.length) ? allPlanes.indexOf(p.plane) : null,
+    planeId: p?.plane?.id ?? null,
+    planePos: (p?.plane && Number.isFinite(p.plane.x)) ? { x: Math.round(p.plane.x), y: Math.round(p.plane.y) } : null,
+    goalName: p?.goalName ?? null,
+    decisionReason: p?.decisionReason ?? null,
+    whyChosen: p?.whyChosen ?? null,
+    routeClass: p?.routeClass ?? null,
+    bounceCount: Number.isFinite(p?.bounceCount) ? p.bounceCount : null,
+    planTier: p?.planTier ?? null,
+    planDistance: num(p?.planDistance),
+    score: num(p?.score),
+    landingX: num(p?.landingX),
+    landingY: num(p?.landingY),
+    targetPoint: (p?.targetPoint && Number.isFinite(p.targetPoint.x))
+      ? { x: num(p.targetPoint.x), y: num(p.targetPoint.y) } : null,
+    predictedOutcome: p?.predictedOutcome ?? null,
+    landingRisk: num(p?.landingRisk, 3),
+    hasDirectEnemy: p?.hasDirectEnemy ?? null,
+    readyCargoCount: Number.isFinite(p?.readyCargoCount) ? p.readyCargoCount : null,
+    selected: p === selectedPlan,
+  }));
+}
+
+function buildAiMoveDumpDynamic(selectedPlan, scoredPlans){
   const allPlanes = (typeof points !== "undefined" && Array.isArray(points)) ? points : [];
   const runtimeTurnColors = (typeof turnColors !== "undefined") ? turnColors : null;
   const runtimeTurnIndex = (typeof turnIndex !== "undefined") ? turnIndex : 0;
@@ -11942,6 +11975,10 @@ function buildAiMoveDumpDynamic(selectedPlan){
     mines: (typeof mines !== "undefined" && Array.isArray(mines)) ? mines.map((m) => aiDumpSerializeMine(m)) : [],
     colliders: aiDumpSerializeColliders(),
     decision: aiDumpSerializePlan(selectedPlan, allPlanes),
+    // Every launch-ready plane's best plan (why THIS plane/target won across planes).
+    // Always present — no aiLogOn() needed — so a bad move caught after the fact is
+    // explainable. Empty when the caller did not pass the candidate list.
+    planCandidates: aiDumpSerializePlanCandidates(scoredPlans, selectedPlan),
   };
 
   // Optional explanatory tail of the structured decision log — only populated
@@ -11956,9 +11993,9 @@ function buildAiMoveDumpDynamic(selectedPlan){
   return dump;
 }
 
-function recordAiMoveDump(selectedPlan){
+function recordAiMoveDump(selectedPlan, scoredPlans){
   try {
-    const dump = buildAiMoveDumpDynamic(selectedPlan);
+    const dump = buildAiMoveDumpDynamic(selectedPlan, scoredPlans);
     if(!dump) return;
     AI_MOVE_DUMP_BUFFER.push(dump);
     if(AI_MOVE_DUMP_BUFFER.length > AI_MOVE_DUMP_MAX) AI_MOVE_DUMP_BUFFER.shift();
@@ -17925,7 +17962,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     // inventory + mine/dynamite/fuel replans) and the board is still at its
     // pre-launch state — exactly what a regression test rebuilds. Ring-buffered;
     // read the latest with aiDumpBadMove() in the console.
-    recordAiMoveDump(selectedPlan);
+    recordAiMoveDump(selectedPlan, scoredPlans);
 
     let launchResult = tryIssueAiMoveWithInventory({
       plane: selectedPlan.plane || launchReadyPlane,

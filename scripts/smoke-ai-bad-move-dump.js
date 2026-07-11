@@ -98,7 +98,7 @@ for(const fn of [
   'aiDumpNum', 'aiDumpSafeClone', 'aiDumpPlaneRef',
   'aiDumpSerializePlane', 'aiDumpSerializeCargo', 'aiDumpSerializeFlag',
   'aiDumpSerializeMine', 'aiDumpSerializeColliders', 'aiDumpSerializePlan',
-  'buildAiMoveDumpDynamic', 'recordAiMoveDump',
+  'aiDumpSerializePlanCandidates', 'buildAiMoveDumpDynamic', 'recordAiMoveDump',
 ]){
   vm.runInContext(extractFunctionSource(source, fn), context);
 }
@@ -183,4 +183,28 @@ assert(context.AI_MOVE_DUMP_BUFFER[1].colliders === context.AI_MOVE_DUMP_BUFFER[
 for(let i = 0; i < 20; i += 1) context.recordAiMoveDump(selectedPlan);
 assert(context.AI_MOVE_DUMP_BUFFER.length === context.AI_MOVE_DUMP_MAX, '10: ring buffer capped at AI_MOVE_DUMP_MAX.');
 
-console.log('Smoke test passed: bad-move dump captures a reproducible, JSON-safe pre-launch snapshot (planes/cargo/flags/mines/inventory/walls/bases/settings + finalized plan), strips functions/cycles, caches walls, and rings.');
+// planCandidates: passing the per-plane scoredPlans captures the cross-plane picture
+// ALWAYS (no aiLogOn), so a bad move caught after the fact shows why THIS plane/target won.
+context.recordAiMoveDump(selectedPlan, [
+  selectedPlan,
+  {
+    plane: { id: 'blue-2', color: 'blue', x: 300, y: 700 },
+    goalName: 'simple_step2_cargo', decisionReason: 'simple_step2_pickup_cargo',
+    routeClass: 'direct', bounceCount: 0, planTier: 1, planDistance: 150.2, score: 900.5,
+    landingX: 305, landingY: 500, predictedOutcome: null, hasDirectEnemy: false, readyCargoCount: 2,
+  },
+]);
+const withCand = context.AI_MOVE_DUMP_BUFFER[context.AI_MOVE_DUMP_BUFFER.length - 1];
+assert(Array.isArray(withCand.planCandidates) && withCand.planCandidates.length === 2,
+  '11: planCandidates captured for every scored plane.');
+const selCand = withCand.planCandidates.find((c) => c.selected);
+assert(selCand && selCand.goalName === 'attack_enemy' && selCand.planTier === 1,
+  '11b: the selected candidate is flagged and summarized.');
+const loseCand = withCand.planCandidates.find((c) => !c.selected);
+assert(loseCand && loseCand.goalName === 'simple_step2_cargo' && loseCand.planDistance === 150.2,
+  '11c: the losing candidate (a cargo plan) is captured with its tier/distance.');
+JSON.stringify(withCand.planCandidates); // stays JSON-safe
+assert(Array.isArray(dump.planCandidates) && dump.planCandidates.length === 0,
+  '11d: a dump built without scoredPlans has an empty planCandidates list (back-compat).');
+
+console.log('Smoke test passed: bad-move dump captures a reproducible, JSON-safe pre-launch snapshot (planes/cargo/flags/mines/inventory/walls/bases/settings + finalized plan + per-plane planCandidates), strips functions/cycles, caches walls, and rings.');
