@@ -21039,6 +21039,16 @@ const AI_ATTACK_LANDING_RISK_DEMOTE = 0.8;
 // counts as a purposeful attempt when the simulated path passes within this many px of the
 // enemy; a farther "shot" isn't aimed at it and is ignored (no random lobs).
 const AI_BEST_EFFORT_ATTEMPT_MAX_APPROACH_PX = CELL_SIZE * 3.5; // ~70px — a recognizable near-miss
+// Surplus-scaled dynamite. When the AI holds a big dynamite stock, a charge is nearly free,
+// so it should carve DEEPER corridors and spend liberally to open multi-target routes /
+// kills — "массовое использование динамита". With a scarce stock it stays conservative.
+//   - SURPLUS_THRESHOLD: holding >= this many -> "plenty", spend aggressively (accept a lane
+//     that adds a KILL the current plan misses; relaxed economics).
+//   - MAX_BRICKS_CAP: deepest corridor carved in one launch (was a flat 3 regardless of stock).
+//   - BASE_BRICK_COST: per-brick score cost when dynamite is scarce; fades toward 0 with surplus.
+const AI_DYNAMITE_SURPLUS_THRESHOLD = 5;
+const AI_DYNAMITE_MAX_BRICKS_CAP = 6;
+const AI_DYNAMITE_BASE_BRICK_COST = 0.04;
 // Step 2 (maximize targets on a route). A "dominate" candidate simulates real
 // trajectories (incl. wall ricochets via simulateAIShot) and counts how many
 // targets (cargo + enemy planes, combined) the flown path sweeps. The densest
@@ -25397,7 +25407,29 @@ function shouldKeepBestEffortAttemptOverCargo(cargoLandingRisk, attemptLandingRi
 // score win fire against a degenerate 0-score baseline (a sweep usually reports
 // score 0); and we never spend a dynamite to trade AWAY a kill the base plan
 // already lines up (a cargo grab that drops the sweep's kill is a downgrade).
-function evaluateDynamiteAugmentedAcceptance(altStats, altAdjustedScore, currentPlan, currentStats){
+// Surplus-scaled dynamite policy. When the AI hoards dynamite the opportunity cost of a
+// charge is ~0, so it should spend LIBERALLY — carve DEEPER corridors (more bricks per lane)
+// and stop treating each brick as expensive — instead of behaving as if it had a single
+// charge. With a scarce stock it stays conservative (the old flat 3-brick cap / full cost),
+// so #2888's "don't burn a charge for one box" is preserved when dynamite is precious.
+// Pure + unit-tested.
+function getAiDynamiteSurplusPolicy(dynamiteCharges){
+  const charges = Math.max(0, Math.trunc(Number(dynamiteCharges) || 0));
+  const threshold = (typeof AI_DYNAMITE_SURPLUS_THRESHOLD === "number") ? AI_DYNAMITE_SURPLUS_THRESHOLD : 5;
+  const capMax = (typeof AI_DYNAMITE_MAX_BRICKS_CAP === "number") ? AI_DYNAMITE_MAX_BRICKS_CAP : 6;
+  const baseCost = (typeof AI_DYNAMITE_BASE_BRICK_COST === "number") ? AI_DYNAMITE_BASE_BRICK_COST : 0.04;
+  // Cap grows past the old flat 3 as the surplus grows: +1 brick per 2 spare charges,
+  // clamped to capMax and to how many charges we actually hold.
+  const maxBricks = Math.max(1, Math.min(charges, capMax, 3 + Math.floor(Math.max(0, charges - 3) / 2)));
+  // Per-brick score cost fades toward ~0 as the surplus grows (a spare charge is nearly free),
+  // with a small floor so a truly pointless multi-brick detour still costs something.
+  const surplusFactor = Math.max(0, charges - 3) / 3;
+  const costPerBlocker = Math.max(baseCost * 0.2, baseCost / (1 + surplusFactor));
+  return { maxBricks, costPerBlocker, aggressive: charges >= threshold, charges };
+}
+
+function evaluateDynamiteAugmentedAcceptance(altStats, altAdjustedScore, currentPlan, currentStats, options){
+  const aggressive = Boolean(options && options.aggressive);
   const currentScore = Number.isFinite(currentPlan?.score) ? currentPlan.score : 0;
   const reportedPickups = Number.isFinite(currentPlan?.multiTargetCount) ? currentPlan.multiTargetCount : 0;
   const reportedKills = Number.isFinite(currentPlan?.multiTargetEnemy) ? currentPlan.multiTargetEnemy : 0;
@@ -25411,9 +25443,14 @@ function evaluateDynamiteAugmentedAcceptance(altStats, altAdjustedScore, current
   const sameCollectsButSafer = altPickups === currentPickups
     && (altStats?.threatsNearLanding || 0) < (currentStats?.threatsNearLanding || 0);
   const scoreSignificantlyBetter = currentScore > 0 && altAdjustedScore > currentScore * acceptanceThreshold;
+  // Adding a KILL the current plan misses is worth a dynamite when we have a surplus to spend
+  // — the exact "он мог взорвать кирпичи и убить" case. Only when aggressive (plenty of stock)
+  // so a scarce charge is never spent to swap a fat cargo sweep for a lone kill.
+  const addsKill = altKills > currentKills;
   const dropsAKill = altKills < currentKills;
-  const accepted = !dropsAKill && (collectsMore || sameCollectsButSafer || scoreSignificantlyBetter);
-  return { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, dropsAKill };
+  const accepted = !dropsAKill
+    && (collectsMore || sameCollectsButSafer || scoreSignificantlyBetter || (aggressive && addsKill));
+  return { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, addsKill, dropsAKill };
 }
 
 async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context, currentPlan, dynamiteCharges){
@@ -25423,10 +25460,41 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
   if(typeof planPathToPoint !== "function") return null;
   if(typeof checkLineIntersectionWithCollider !== "function") return null;
 
-  const maxDynamites = Math.min(3, Math.trunc(dynamiteCharges));
+  // Surplus-scaled: with a big dynamite stock, carve DEEPER corridors and spend liberally.
+  const dynamitePolicy = (typeof getAiDynamiteSurplusPolicy === "function")
+    ? getAiDynamiteSurplusPolicy(dynamiteCharges)
+    : { maxBricks: Math.min(3, Math.trunc(dynamiteCharges)), costPerBlocker: 0.04, aggressive: false };
+  const maxDynamites = dynamitePolicy.maxBricks;
   const baseRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
   const reachLimit = baseRangePx * 1.6;
   const enemyColor = color === "green" ? "blue" : "green";
+  // Full-range corridor endpoint: launching THROUGH a target to full range lets one carved
+  // lane keep sweeping whatever lines up past it (a plane behind the cargo, another box).
+  const effRangePx = (typeof getPlaneEffectiveRangePx === "function")
+    ? getPlaneEffectiveRangePx(plane)
+    : baseRangePx;
+  const fieldLeft = (typeof FIELD_LEFT === "number") ? FIELD_LEFT : 0;
+  const fieldTop = (typeof FIELD_TOP === "number") ? FIELD_TOP : 0;
+  const fieldW = (typeof FIELD_WIDTH === "number" && FIELD_WIDTH > 0) ? FIELD_WIDTH : (typeof WORLD === "object" && WORLD ? WORLD.width : 360);
+  const fieldH = (typeof FIELD_HEIGHT === "number" && FIELD_HEIGHT > 0) ? FIELD_HEIGHT : (typeof WORLD === "object" && WORLD ? WORLD.height : 640);
+  // Inset so a corridor endpoint never sits on / past the outer wall bricks (we must not
+  // spend dynamite carving through the boundary wall to reach a phantom field-edge point).
+  const insetX = (typeof FIELD_BORDER_OFFSET_X === "number") ? FIELD_BORDER_OFFSET_X : CELL_SIZE;
+  const insetY = (typeof FIELD_BORDER_OFFSET_Y === "number") ? FIELD_BORDER_OFFSET_Y : CELL_SIZE;
+  const clampToField = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const corridorEndpointThrough = (tx, ty) => {
+    const dx = tx - plane.x;
+    const dy = ty - plane.y;
+    const len = Math.hypot(dx, dy);
+    if(!(len > 1)) return null;
+    const ux = dx / len;
+    const uy = dy / len;
+    // Extend to full flight range, then clamp back inside the PLAYABLE field along the ray.
+    const ex = clampToField(plane.x + ux * effRangePx, fieldLeft + insetX, fieldLeft + fieldW - insetX);
+    const ey = clampToField(plane.y + uy * effRangePx, fieldTop + insetY, fieldTop + fieldH - insetY);
+    if(Math.hypot(ex - tx, ey - ty) < CELL_SIZE) return null; // corridor barely past the target — no gain
+    return { x: ex, y: ey };
+  };
 
   // Build target list with rough "value" weights. Higher = more important.
   const targets = [];
@@ -25467,38 +25535,27 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
 
   let bestAlt = null;
 
-  for(const target of targets){
-    if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
-    if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
-
-    const dist = Math.hypot(target.x - plane.x, target.y - plane.y);
-    if(dist > reachLimit) continue;
-
-    // If the direct path is already clear, dynamite isn't needed for this target.
-    // The main planner would have considered it naturally; skip here.
-    if(typeof isPathClear === "function" && isPathClear(plane.x, plane.y, target.x, target.y)) continue;
-
-    // Identify colliders that the direct line plane → target intersects.
+  // Evaluate a single carved lane: aim from the plane at (aimX,aimY), remove the bricks
+  // that block that straight line (up to the surplus-scaled cap), and score the swept
+  // targets. Used for both the lane that STOPS at the target and the full-range CORRIDOR
+  // that carries on THROUGH it — so one blast can keep sweeping whatever lines up beyond.
+  const evaluateCarvedLane = async (target, aimX, aimY) => {
     const blockers = [];
     for(const c of liveColliders){
       if(!c || c.id == null) continue;
-      if(checkLineIntersectionWithCollider(plane.x, plane.y, target.x, target.y, c)){
-        blockers.push(c);
-      }
+      if(checkLineIntersectionWithCollider(plane.x, plane.y, aimX, aimY, c)) blockers.push(c);
     }
-    if(blockers.length === 0 || blockers.length > maxDynamites) continue;
-
+    if(blockers.length === 0 || blockers.length > maxDynamites) return null;
     const blockerIds = blockers.map((b) => b.id);
 
-    // Plan a direct path with these blockers temporarily removed from the world.
     let planAfter = null;
     try {
       planAfter = await withTemporarilyIgnoredColliderIdsAsync(blockerIds, async () => {
-        if(typeof isPathClear === "function" && !isPathClear(plane.x, plane.y, target.x, target.y)){
+        if(typeof isPathClear === "function" && !isPathClear(plane.x, plane.y, aimX, aimY)){
           return null; // still blocked by something else (cannot fix with these N)
         }
         try {
-          return planPathToPoint(plane, target.x, target.y, {
+          return planPathToPoint(plane, aimX, aimY, {
             routeClass: "direct",
             goalName: "dynamite_augmented_plan",
             decisionReason: `dynamite_augmented_${target.kind}`,
@@ -25510,7 +25567,7 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     } catch(_outerErr){
       planAfter = null;
     }
-    if(!planAfter || !Number.isFinite(planAfter.vx) || !Number.isFinite(planAfter.vy)) continue;
+    if(!planAfter || !Number.isFinite(planAfter.vx) || !Number.isFinite(planAfter.vy)) return null;
 
     const totalDist = Number.isFinite(planAfter.totalDist)
       ? planAfter.totalDist
@@ -25526,10 +25583,7 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
 
     // Flag-safety guard. Flag-grab into enemy retaliation range loses the
     // plane next turn for one pickup. Allow only if landing is clear, OR
-    // if AI has FUEL in inventory (return-trip plausible). "continue" pops
-    // just this flag-target from the bestAlt race; other targets remain,
-    // so the function still returns a non-null alt if any safe target
-    // exists — no desync (legacy null-return was the previous desync source).
+    // if AI has FUEL in inventory (return-trip plausible).
     if(target.kind === "flag" && typeof getImmediateResponseThreatMeta === "function"){
       const respondThreats = getImmediateResponseThreatMeta(context, altLandingX, altLandingY, null);
       const threatCount = Number.isFinite(respondThreats?.count) ? respondThreats.count : 0;
@@ -25546,7 +25600,7 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
             threatCount,
             reason: "no_fuel_for_safe_return",
           });
-          continue;
+          return null;
         }
       }
     }
@@ -25561,14 +25615,47 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     const extraPickups = Math.min(Math.max(0, altStats.totalPickups - 1), 3);
     const massPickupBonus = extraPickups * baseScore * 0.20;
 
-    // Scale dynamite cost with baseScore so extra blockers stay meaningful
-    // at distance — was 0.05/blocker (negligible vs baseScore in hundreds).
-    const dynamiteCost = blockerIds.length * baseScore * 0.04;
+    // Per-brick cost scales with the surplus policy — near-free when hoarding, so a deep
+    // corridor is worthwhile; still meaningful (a small floor) when dynamite is scarce.
+    const dynamiteCost = blockerIds.length * baseScore * dynamitePolicy.costPerBlocker;
 
     const adjustedScore = baseScore * target.value + massPickupBonus - dynamiteCost;
+    return { target, blockers, plan: planAfter, adjustedScore, nDynamites: blockerIds.length, altLandingX, altLandingY, altStats };
+  };
 
-    if(!bestAlt || adjustedScore > bestAlt.adjustedScore){
-      bestAlt = { target, blockers, plan: planAfter, adjustedScore, nDynamites: blockerIds.length, altLandingX, altLandingY, altStats };
+  for(const target of targets){
+    if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
+    if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
+
+    const dist = Math.hypot(target.x - plane.x, target.y - plane.y);
+    if(dist > reachLimit) continue;
+
+    // If the direct path is already clear, dynamite isn't needed for this target.
+    // The main planner would have considered it naturally; skip here.
+    if(typeof isPathClear === "function" && isPathClear(plane.x, plane.y, target.x, target.y)) continue;
+
+    // The lane that STOPS at the target, and the CORRIDOR that carries on through it to
+    // full range. Prefer the corridor when it adds a KILL, or sweeps strictly more targets
+    // without landing more exposed — otherwise the shorter, safer lane stands.
+    const laneCand = await evaluateCarvedLane(target, target.x, target.y);
+    let cand = laneCand;
+    const corridorEnd = corridorEndpointThrough(target.x, target.y);
+    if(corridorEnd){
+      const corridorCand = await evaluateCarvedLane(target, corridorEnd.x, corridorEnd.y);
+      if(corridorCand){
+        const laneKills = laneCand?.altStats.enemyHits ?? 0;
+        const lanePickups = laneCand?.altStats.totalPickups ?? -1;
+        const laneThreats = laneCand?.altStats.threatsNearLanding ?? Number.POSITIVE_INFINITY;
+        const addsKill = corridorCand.altStats.enemyHits > laneKills;
+        const sweepsMoreSafely = corridorCand.altStats.totalPickups > lanePickups
+          && corridorCand.altStats.threatsNearLanding <= laneThreats;
+        if(!laneCand || addsKill || sweepsMoreSafely) cand = corridorCand;
+      }
+    }
+    if(!cand) continue;
+
+    if(!bestAlt || cand.adjustedScore > bestAlt.adjustedScore){
+      bestAlt = cand;
     }
   }
 
@@ -25596,8 +25683,8 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
   const currentStats = countTargetsAndSafetyOnSegment(plane, currentLandingX, currentLandingY, color, context, aliveEnemies);
 
   const acceptanceThreshold = 1.01;
-  const { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, dropsAKill } =
-    evaluateDynamiteAugmentedAcceptance(bestAlt.altStats, bestAlt.adjustedScore, currentPlan, currentStats);
+  const { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, addsKill, dropsAKill } =
+    evaluateDynamiteAugmentedAcceptance(bestAlt.altStats, bestAlt.adjustedScore, currentPlan, currentStats, { aggressive: dynamitePolicy.aggressive });
 
   logDynamiteDebug("dynamite_augmented_plan_evaluation", {
     planeId: plane?.id ?? null,
@@ -25607,6 +25694,8 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     threshold: acceptanceThreshold,
     accepted,
     nDynamites: bestAlt.nDynamites,
+    maxBricks: maxDynamites,
+    aggressive: dynamitePolicy.aggressive,
     colliderIds: bestAlt.blockers.map((b) => b?.id ?? null),
     altStats: bestAlt.altStats,
     currentStats,
@@ -25614,6 +25703,7 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
       collectsMore,
       sameCollectsButSafer,
       scoreSignificantlyBetter,
+      addsKill,
       dropsAKill,
     },
   });
