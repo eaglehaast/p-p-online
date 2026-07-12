@@ -17963,7 +17963,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           dropFuelForMine = true;
         }
       }
-      if(dropFuelForMine){
+      // Reject a fuel replan that would trade the base plan's KILL for a miss (keep the
+      // clean kill, drop the fuel) — same drop path as the mine case below.
+      const replanBreaksKill = typeof doesFuelReplanBreakKill === "function"
+        && doesFuelReplanBreakKill(selectedPlan, fuelReplanResult?.move);
+      if(dropFuelForMine || replanBreaksKill){
         let removedFuel = 0;
         for(let i = selectedInventorySequence.length - 1; i >= 0; i -= 1){
           if(selectedInventorySequence[i]?.itemType === INVENTORY_ITEM_TYPES.FUEL){
@@ -17972,11 +17976,17 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           }
         }
         selectedPlan.selectedInventorySequence = selectedInventorySequence.map((entry) => ({ ...entry }));
-        logAiDecision("fuel_launch_dropped_mine_on_boosted_path", {
+        delete selectedPlan.aiFuelMaxDistancePx; // no fuel -> no clip either
+        logAiDecision(replanBreaksKill ? "fuel_replan_rejected_would_break_kill" : "fuel_launch_dropped_mine_on_boosted_path", {
           planeId: selectedPlan.plane?.id ?? null,
           fromGoal: selectedPlan.goalName || null,
           removedFuelEntries: removedFuel,
           keptBaseLanding: { x: Math.round(selectedPlan.landingX), y: Math.round(selectedPlan.landingY) },
+          ...(replanBreaksKill ? {
+            baseOutcome: selectedPlan.predictedOutcome || null,
+            replanTarget: fuelReplanResult?.target?.label || null,
+            replanOutcome: fuelReplanResult?.move?.predictedOutcome || null,
+          } : {}),
         });
       } else if(fuelReplanResult?.move){
         const replannedMove = fuelReplanResult.move;
@@ -25393,6 +25403,20 @@ function getAiReplanOriginalEndpoint(plan){
     && Number.isFinite(plan.targetPoint.y);
   if(hitsTarget) return { x: plan.targetPoint.x, y: plan.targetPoint.y };
   return { x: plan?.landingX, y: plan?.landingY };
+}
+
+// A fuel replan must not DEGRADE a working kill. When the base plan already HITS its target
+// but the fuel-boosted route no longer does (a "harpy return" that re-planned toward home /
+// the enemy and lands range_end SHORT of or past it), the fuel bought a MISS in place of a
+// kill — so reject it, keep the clean base kill, and drop the fuel. #2896 fixed the off-field
+// AIM point; this guards the resulting TRAJECTORY, the fuel-path twin of the dynamite-replan
+// (#2894) "don't trade away a kill" rule. Pure + unit-tested.
+function doesFuelReplanBreakKill(basePlan, replannedMove){
+  if(!basePlan || !replannedMove) return false;
+  const baseHits = `${basePlan.predictedOutcome || ""}`.toLowerCase().includes("target_hit");
+  if(!baseHits) return false;
+  const replanHits = `${replannedMove.predictedOutcome || ""}`.toLowerCase().includes("target_hit");
+  return !replanHits;
 }
 
 // When the plane has NO confirmed kill and its best move is a best-effort attack ATTEMPT
