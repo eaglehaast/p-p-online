@@ -17911,6 +17911,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           || selectedInventorySequence.find((entry) => entry?.harpyReturnTarget)?.harpyReturnTarget
           || null,
         aiFuelTacticalDecision: selectedPlan.aiFuelTacticalDecision || null,
+        // So the fuel-replan fallback aims at where the plan REALLY ends (the enemy a hitting
+        // ricochet strikes), not its off-field straight-line projection.
+        predictedOutcome: selectedPlan.predictedOutcome || null,
+        targetPoint: selectedPlan.targetPoint || null,
       };
       const fuelReplanResult = await buildFuelReplannedMoveAsync(
         selectedPlan.plane,
@@ -25032,13 +25036,68 @@ async function planPathWithSpecialRouteProbeAsync(plane, tx, ty, options = {}){
   return bestCandidate;
 }
 
+// Ordered, de-duped, ON-FIELD list of fuel-replan aim points, shared by the async and sync
+// replan twins so their target rules can never drift. Bakes the dynamite-replan (#2894)
+// lesson into the fuel path:
+//   - the "original_landing" fallback uses the plan's REAL endpoint — a shot that HITS its
+//     target ends at that enemy, NOT the launch vector projected straight, which is off-field
+//     for a ricochet. Aiming the fuel-boosted launch at that phantom off-field point flew a
+//     useless hop across our own side (the reported bug);
+//   - any aim point OFF the playable field is dropped outright, so a phantom target can never
+//     drive the launch again.
+// Pure (reads only globals FIELD_*/WORLD + getAiMoveLandingPoint) + unit-tested.
+function buildAiFuelReplanAimTargets(plannedMoveLike, latestTargetEnemy){
+  const candidates = [];
+  const add = (label, x, y) => { if(Number.isFinite(x) && Number.isFinite(y)) candidates.push({ label, x, y }); };
+
+  const harpyReturnTarget = plannedMoveLike?.aiFuelHarpyReturnTarget;
+  add(harpyReturnTarget?.label || "harpy_return_home", harpyReturnTarget?.x, harpyReturnTarget?.y);
+
+  const tacticalFuelPoint = plannedMoveLike?.aiFuelTacticalDecision?.targetContactPoint;
+  add("fuel_tactical_contact", tacticalFuelPoint?.x, tacticalFuelPoint?.y);
+
+  add("target_enemy", latestTargetEnemy?.x, latestTargetEnemy?.y);
+
+  const targetSnapshot = plannedMoveLike?.targetEnemySnapshot;
+  add("target_snapshot", targetSnapshot?.x, targetSnapshot?.y);
+
+  // Fallback: where the plan REALLY ends. A shot that hits its target ends at that enemy;
+  // its straight-line landing projection is off-field for a ricochet (aiming there = the hop).
+  const hitsTarget = typeof plannedMoveLike?.predictedOutcome === "string"
+    && plannedMoveLike.predictedOutcome.indexOf("target_hit") === 0
+    && Number.isFinite(plannedMoveLike?.targetPoint?.x)
+    && Number.isFinite(plannedMoveLike?.targetPoint?.y);
+  const fallbackLandingPoint = hitsTarget
+    ? { x: plannedMoveLike.targetPoint.x, y: plannedMoveLike.targetPoint.y }
+    : getAiMoveLandingPoint(plannedMoveLike);
+  add("original_landing", fallbackLandingPoint?.x, fallbackLandingPoint?.y);
+
+  const left = (typeof FIELD_LEFT === "number") ? FIELD_LEFT : 0;
+  const top = (typeof FIELD_TOP === "number") ? FIELD_TOP : 0;
+  const width = (typeof FIELD_WIDTH === "number" && FIELD_WIDTH > 0) ? FIELD_WIDTH : ((typeof WORLD === "object" && WORLD) ? WORLD.width : 360);
+  const height = (typeof FIELD_HEIGHT === "number" && FIELD_HEIGHT > 0) ? FIELD_HEIGHT : ((typeof WORLD === "object" && WORLD) ? WORLD.height : 640);
+  const onField = (t) => t.x >= left && t.x <= left + width && t.y >= top && t.y <= top + height;
+
+  const uniqueTargets = [];
+  const seenTargetKeys = new Set();
+  for(const target of candidates){
+    if(!onField(target)) continue; // never aim the fuel launch at a phantom off-field point
+    const key = `${Math.round(target.x)}:${Math.round(target.y)}`;
+    if(seenTargetKeys.has(key)) continue;
+    seenTargetKeys.add(key);
+    uniqueTargets.push(target);
+  }
+  return uniqueTargets;
+}
+
 // Async-yielding twin of the nested buildFuelReplannedMove() inside issueAIMoveWithInventoryUsage
 // (script.js:~27871). Used by the scheduler before launch to compute the FUEL-boosted replan
 // asynchronously so the renderer can paint between target-route evaluations. Identical target
 // enumeration and selection rules; only difference is `await aiCoopMaybeYield()` between targets,
 // plus calls planPathWithSpecialRouteProbeAsync (which yields between route classes).
 // Caller passes `plannedMoveLike` carrying plane/vx/vy/goalName/decisionReason/routeClass/
-// targetEnemy/targetEnemySnapshot/aiFuelHarpyReturnTarget/aiFuelTacticalDecision.
+// targetEnemy/targetEnemySnapshot/aiFuelHarpyReturnTarget/aiFuelTacticalDecision +
+// predictedOutcome/targetPoint (so the fallback aim uses the plan's real endpoint).
 // KEEP IN SYNC with the nested sync buildFuelReplannedMove when target priority rules change.
 async function buildFuelReplannedMoveAsync(plane, plannedMoveLike, context){
   if(!plane) return null;
@@ -25047,60 +25106,7 @@ async function buildFuelReplannedMoveAsync(plane, plannedMoveLike, context){
   const latestTargetEnemy = plannedMoveLike?.targetEnemy?.id
     ? findActualPlaneById(plannedMoveLike.targetEnemy.id) || plannedMoveLike.targetEnemy
     : plannedMoveLike?.targetEnemy || null;
-  const fallbackLandingPoint = getAiMoveLandingPoint(plannedMoveLike);
-  const candidateTargets = [];
-
-  const harpyReturnTarget = plannedMoveLike?.aiFuelHarpyReturnTarget;
-  if(Number.isFinite(harpyReturnTarget?.x) && Number.isFinite(harpyReturnTarget?.y)){
-    candidateTargets.push({
-      label: harpyReturnTarget.label || "harpy_return_home",
-      x: harpyReturnTarget.x,
-      y: harpyReturnTarget.y,
-    });
-  }
-
-  const tacticalFuelPoint = plannedMoveLike?.aiFuelTacticalDecision?.targetContactPoint;
-  if(Number.isFinite(tacticalFuelPoint?.x) && Number.isFinite(tacticalFuelPoint?.y)){
-    candidateTargets.push({
-      label: "fuel_tactical_contact",
-      x: tacticalFuelPoint.x,
-      y: tacticalFuelPoint.y,
-    });
-  }
-
-  if(Number.isFinite(latestTargetEnemy?.x) && Number.isFinite(latestTargetEnemy?.y)){
-    candidateTargets.push({
-      label: "target_enemy",
-      x: latestTargetEnemy.x,
-      y: latestTargetEnemy.y,
-    });
-  }
-
-  const targetSnapshot = plannedMoveLike?.targetEnemySnapshot;
-  if(Number.isFinite(targetSnapshot?.x) && Number.isFinite(targetSnapshot?.y)){
-    candidateTargets.push({
-      label: "target_snapshot",
-      x: targetSnapshot.x,
-      y: targetSnapshot.y,
-    });
-  }
-
-  if(Number.isFinite(fallbackLandingPoint?.x) && Number.isFinite(fallbackLandingPoint?.y)){
-    candidateTargets.push({
-      label: "original_landing",
-      x: fallbackLandingPoint.x,
-      y: fallbackLandingPoint.y,
-    });
-  }
-
-  const uniqueTargets = [];
-  const seenTargetKeys = new Set();
-  for(const target of candidateTargets){
-    const key = `${Math.round(target.x)}:${Math.round(target.y)}`;
-    if(seenTargetKeys.has(key)) continue;
-    seenTargetKeys.add(key);
-    uniqueTargets.push(target);
-  }
+  const uniqueTargets = buildAiFuelReplanAimTargets(plannedMoveLike, latestTargetEnemy);
 
   for(const target of uniqueTargets){
     await aiCoopMaybeYield();
@@ -33417,60 +33423,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       const latestTargetEnemy = plannedMove?.targetEnemy?.id
         ? findActualPlaneById(plannedMove.targetEnemy.id) || plannedMove.targetEnemy
         : plannedMove?.targetEnemy || null;
-      const fallbackLandingPoint = getAiMoveLandingPoint(plannedMove);
-      const candidateTargets = [];
-
-      const harpyReturnTarget = plannedMove?.aiFuelHarpyReturnTarget;
-      if(Number.isFinite(harpyReturnTarget?.x) && Number.isFinite(harpyReturnTarget?.y)){
-        candidateTargets.push({
-          label: harpyReturnTarget.label || "harpy_return_home",
-          x: harpyReturnTarget.x,
-          y: harpyReturnTarget.y,
-        });
-      }
-
-      const tacticalFuelPoint = plannedMove?.aiFuelTacticalDecision?.targetContactPoint;
-      if(Number.isFinite(tacticalFuelPoint?.x) && Number.isFinite(tacticalFuelPoint?.y)){
-        candidateTargets.push({
-          label: "fuel_tactical_contact",
-          x: tacticalFuelPoint.x,
-          y: tacticalFuelPoint.y,
-        });
-      }
-
-      if(Number.isFinite(latestTargetEnemy?.x) && Number.isFinite(latestTargetEnemy?.y)){
-        candidateTargets.push({
-          label: "target_enemy",
-          x: latestTargetEnemy.x,
-          y: latestTargetEnemy.y,
-        });
-      }
-
-      const targetSnapshot = plannedMove?.targetEnemySnapshot;
-      if(Number.isFinite(targetSnapshot?.x) && Number.isFinite(targetSnapshot?.y)){
-        candidateTargets.push({
-          label: "target_snapshot",
-          x: targetSnapshot.x,
-          y: targetSnapshot.y,
-        });
-      }
-
-      if(Number.isFinite(fallbackLandingPoint?.x) && Number.isFinite(fallbackLandingPoint?.y)){
-        candidateTargets.push({
-          label: "original_landing",
-          x: fallbackLandingPoint.x,
-          y: fallbackLandingPoint.y,
-        });
-      }
-
-      const uniqueTargets = [];
-      const seenTargetKeys = new Set();
-      for(const target of candidateTargets){
-        const key = `${Math.round(target.x)}:${Math.round(target.y)}`;
-        if(seenTargetKeys.has(key)) continue;
-        seenTargetKeys.add(key);
-        uniqueTargets.push(target);
-      }
+      const uniqueTargets = buildAiFuelReplanAimTargets(plannedMove, latestTargetEnemy);
 
       for(const target of uniqueTargets){
         const replanned = planPathWithSpecialRouteProbe(plane, target.x, target.y, {
