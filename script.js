@@ -16757,8 +16757,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           // straight through it).
           if(typeof doesFlightPathCrossMine === "function" && doesFlightPathCrossMine(sim.predictedPath, plane)) continue;
           let cargoHit = 0, enemyHit = 0;
+          const enemyRefs = [];
           for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, sweepPlane, sim.predictedPath)) cargoHit += 1; }
-          for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, sim.predictedPath, enemySweepTol)) enemyHit += 1; }
+          for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, sim.predictedPath, enemySweepTol)){ enemyHit += 1; enemyRefs.push(e.enemy); } }
           const flagHit = countFlagsOnPath(sim.predictedPath);
           // rawCount drives the pair/dominate tiers (flag = ONE target, so it can't force
           // an ignore-safety dominate by itself); value picks the best DIRECTION, where a
@@ -16772,7 +16773,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             || (value === best.value && sim.bounceCount < best.bounceCount)
             || (value === best.value && sim.bounceCount === best.bounceCount && travel < best.travel);
           if(better){
-            best = { nx: dir.nx, ny: dir.ny, scale, count: rawCount, value, cargoHit, enemyHit, flagHit, bounceCount: sim.bounceCount, travel, end: sim.predictedPath[sim.predictedPath.length - 1] };
+            best = { nx: dir.nx, ny: dir.ny, scale, count: rawCount, value, cargoHit, enemyHit, enemyRefs, flagHit, bounceCount: sim.bounceCount, travel, end: sim.predictedPath[sim.predictedPath.length - 1] };
           }
         }
       }
@@ -16839,6 +16840,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         multiTargetCount: best.count,
         multiTargetCargo: best.cargoHit,
         multiTargetEnemy: best.enemyHit,
+        // The actual enemy planes this sweep's flown path removes — so a defensive mine
+        // isn't wasted guarding a plane the same sweep kills (multi-target twin of #2889;
+        // the sweep reports predictedOutcome: null, so the kill-target filter can't see it
+        // without these refs).
+        multiTargetEnemyRefs: Array.isArray(best.enemyRefs) ? best.enemyRefs : [],
         multiTargetFlag: best.flagHit || 0,
         landingRisk,
         travel: best.travel,
@@ -30450,6 +30456,30 @@ function getAiPlanKillTargetEnemy(selectedPlan, enemies){
   return (best && bestD <= tol) ? best : null;
 }
 
+// Every enemy plane THIS move removes — so a defensive mine is never spent guarding a plane
+// the move already eliminates (#2889). Covers both a DIRECT attack (predictedOutcome
+// "target_hit" -> getAiPlanKillTargetEnemy) and a MULTI-TARGET SWEEP, which reports only a
+// COUNT of kills (predictedOutcome null) but now carries multiTargetEnemyRefs — the actual
+// planes its flown path sweeps. Matched by position (ids are null in this game). Pure +
+// unit-tested.
+function getAiPlanRemovedEnemies(selectedPlan, enemies){
+  if(!selectedPlan || !Array.isArray(enemies) || enemies.length === 0) return [];
+  const removed = new Set();
+  const directKill = getAiPlanKillTargetEnemy(selectedPlan, enemies);
+  if(directKill) removed.add(directKill);
+  const sweptRefs = Array.isArray(selectedPlan.multiTargetEnemyRefs) ? selectedPlan.multiTargetEnemyRefs : [];
+  if(sweptRefs.length){
+    const tol = (typeof CELL_SIZE === "number" ? CELL_SIZE : 20);
+    for(const e of enemies){
+      if(!e || !Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
+      if(sweptRefs.some((k) => k && Number.isFinite(k.x) && Number.isFinite(k.y) && Math.hypot(k.x - e.x, k.y - e.y) < tol)){
+        removed.add(e);
+      }
+    }
+  }
+  return Array.from(removed);
+}
+
 async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
   const plane = selectedPlan?.plane || null;
@@ -30481,19 +30511,20 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   // move is an attack that kills an enemy, that plane is gone — spending a mine to defend the
   // flag/base against it is waste (the "place a mine against the very plane we're killing"
   // move). Drop the plan's kill target from the threat set.
-  const killTargetEnemy = getAiPlanKillTargetEnemy(selectedPlan, enemies);
-  if(killTargetEnemy){
-    enemies = enemies.filter((e) => e !== killTargetEnemy);
+  const removedEnemies = getAiPlanRemovedEnemies(selectedPlan, enemies);
+  if(removedEnemies.length){
+    enemies = enemies.filter((e) => !removedEnemies.includes(e));
     logAiDecision("defensive_mine_skip_killed_enemy", {
-      enemyId: killTargetEnemy?.id ?? null,
-      enemyPos: { x: Math.round(killTargetEnemy.x), y: Math.round(killTargetEnemy.y) },
+      removedCount: removedEnemies.length,
+      removedPos: removedEnemies.map((e) => ({ x: Math.round(e.x), y: Math.round(e.y) })),
+      viaSweep: (Array.isArray(selectedPlan?.multiTargetEnemyRefs) && selectedPlan.multiTargetEnemyRefs.length > 0),
     });
   }
   if(enemies.length === 0){
     logAiDecision("defensive_mine_planner_reject", {
-      reason: killTargetEnemy ? "only_threat_is_being_killed" : "no_enemies",
+      reason: removedEnemies.length ? "only_threat_is_being_killed" : "no_enemies",
     });
-    aiMineDebugRecord({ color: aiColor, inv: mineCount, earlyReject: killTargetEnemy ? "threat_being_killed" : "no_enemies" });
+    aiMineDebugRecord({ color: aiColor, inv: mineCount, earlyReject: removedEnemies.length ? "threat_being_killed" : "no_enemies" });
     return null;
   }
 
