@@ -25419,6 +25419,18 @@ function doesFuelReplanBreakKill(basePlan, replannedMove){
   return !replanHits;
 }
 
+// Is this plan a RICOCHET (bounced) route? A ricochet must not buy harpy-strike fuel: its
+// landing (selectedPlan.landingX/Y) is the launch vector projected STRAIGHT — off-field, not
+// the bounced strike point — so the harpy round-trip math is bogus; and the fuel is executed
+// as forceFuelMoveToMaxRange, which rams the BOUNCED path FORWARD past the kill into whatever
+// lies beyond (its own mine, off-field). A ricochet that already hits should just be flown.
+// (Same reason the fuelExtendCapturesMoreTargets gate excludes ricochets.) Pure + unit-tested.
+function isAiRicochetRoutePlan(selectedPlan){
+  const routeClass = `${selectedPlan?.routeClass || ""}`.toLowerCase();
+  const bounceCount = Number(selectedPlan?.bounceCount) || 0;
+  return routeClass.includes("ricochet") || bounceCount > 0;
+}
+
 // When the plane has NO confirmed kill and its best move is a best-effort attack ATTEMPT
 // (a purposeful near-miss toward the enemy), decide whether to KEEP that attempt instead of
 // letting a cargo grab override it. We keep it only when the cargo's own landing is exposed
@@ -31172,6 +31184,10 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
     ? getBaseAnchor(color)
     : null;
   const harpyStrikeOpportunity = fuelAvailable
+    // Ricochets are excluded: their fuel-extended flight (forceFuelMoveToMaxRange) rams the
+    // BOUNCED path forward past the kill — off-field, or into the AI's own mine — and their
+    // landing projection makes the round-trip math bogus. A bounced kill needs no fuel.
+    && !(typeof isAiRicochetRoutePlan === "function" && isAiRicochetRoutePlan(selectedPlan))
     && Number.isFinite(harpyHome?.x) && Number.isFinite(harpyHome?.y)
     && Number.isFinite(selectedPlan?.landingX) && Number.isFinite(selectedPlan?.landingY)
     && (() => {
