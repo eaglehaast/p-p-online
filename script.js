@@ -31055,6 +31055,14 @@ const AI_FUEL_MIN_REACH_RATIO = 1.0;
 // within fuel range) on the launch line — they are unreachable without it.
 const AI_FUEL_EXTEND_MIN_EXTRA_TARGETS = 1;
 
+// A harpy strike commits FUEL to a strike-and-return, so it only pays off when the STRIKE
+// is a confident kill. The shot sim's accuracy falls off with bounce depth (a deep ricochet
+// diverges from the real bounced flight and often whiffs), so cap the bounce count a harpy
+// strike will commit fuel to. This is a CONFIDENCE gate, not a ricochet penalty — a direct
+// or shallow ricochet harpy strike is still allowed; only deep speculative ones are cut, so
+// the AI stops spending fuel (+precision) on a "harpy strike for its own sake" that misses.
+const AI_HARPY_STRIKE_MAX_BOUNCES = 2;
+
 function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
   if(!plane) return [];
 
@@ -31116,7 +31124,13 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
   const harpyHome = fuelAvailable && typeof getBaseAnchor === "function"
     ? getBaseAnchor(color)
     : null;
+  // Confidence gate: only commit fuel to a strike-and-return when the STRIKE is a
+  // reasonably reliable kill. A deep ricochet (bounceCount above the cap) is a low-
+  // confidence hit the sim often mispredicts, so it whiffs and the fuel + return is wasted.
+  const harpyMaxBounces = (typeof AI_HARPY_STRIKE_MAX_BOUNCES === "number") ? AI_HARPY_STRIKE_MAX_BOUNCES : 2;
+  const harpyKillIsConfident = (Number(selectedPlan?.bounceCount) || 0) <= harpyMaxBounces;
   const harpyStrikeOpportunity = fuelAvailable
+    && harpyKillIsConfident
     && Number.isFinite(harpyHome?.x) && Number.isFinite(harpyHome?.y)
     && Number.isFinite(selectedPlan?.landingX) && Number.isFinite(selectedPlan?.landingY)
     && (() => {
