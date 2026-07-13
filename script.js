@@ -17310,8 +17310,16 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       // safety-aware (only >=3 ignores landing exposure). Subsumes the old
       // "extend a cargo line to the 3rd" idea — the sweep already maximises
       // targets (cargo + enemy) on the chosen line, including ricochets.
+      // BUT a cargo-only pair sweep must NOT steal the turn from a genuine enemy KILL:
+      // removing an enemy plane (especially the last one) is worth more than two boxes.
+      // Block only when the current plan already kills AND the sweep brings no kill of its
+      // own; a sweep that also kills, or replaces a non-kill plan, still wins.
+      const sweepWouldTradeAwayKill = (typeof aiPlanKillsEnemy === "function")
+        && aiPlanKillsEnemy(selectedPlan)
+        && (Number(sweepCandidate?.multiTargetEnemy) || 0) === 0;
       if(planTier > 0
         && sweepCandidate
+        && !sweepWouldTradeAwayKill
         && sweepCandidate.multiTargetCount >= AI_MULTI_TARGET_PAIR_MIN
         && sweepCandidate.multiTargetCount < AI_MULTI_TARGET_DOMINATE_MIN
         && (sweepCandidate.landingRisk ?? 0) <= getAiAllowedMoveRisk(aiExecutionContext)){
@@ -30490,6 +30498,16 @@ function getAiPlanKillTargetEnemy(selectedPlan, enemies){
   }
   const tol = (typeof CELL_SIZE === "number" ? CELL_SIZE : 20) * 1.5; // the aim coincides with an enemy
   return (best && bestD <= tol) ? best : null;
+}
+
+// Does THIS plan remove an enemy plane? True for a confirmed attack hit (predictedOutcome
+// "target_hit") or a sweep that sweeps at least one enemy (multiTargetEnemy > 0). Used to
+// protect a KILL from being traded away for cargo-only pickups — removing an enemy plane
+// (especially the last one) is worth more than two boxes. Pure + unit-tested.
+function aiPlanKillsEnemy(plan){
+  if(!plan) return false;
+  if(`${plan.predictedOutcome || ""}`.toLowerCase().includes("target_hit")) return true;
+  return (Number(plan.multiTargetEnemy) || 0) > 0;
 }
 
 // Every enemy plane THIS move removes — so a defensive mine is never spent guarding a plane
