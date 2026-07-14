@@ -49,6 +49,10 @@
               <span class="visually-hidden">Advanced Settings</span>
             </button>
 
+            <button id="mapTesterBtn" class="mode-menu__btn mode-menu__btn--editor mode-menu__btn--tester" type="button" aria-label="Map Tester">
+              <span>Map Tester</span>
+            </button>
+
             <button id="editorBtn" class="mode-menu__btn mode-menu__btn--editor" type="button" aria-label="Map Editor">
               <span>Map Editor</span>
             </button>
@@ -174,6 +178,48 @@
             >
               <span>ResetM</span>
             </button>
+
+            <button
+              id="mapTesterEndRoundBtn"
+              class="map-editor-reset-btn map-tester-end-round-btn-positioned"
+              type="button"
+              aria-label="Быстро завершить раунд (Map Tester)"
+              hidden
+            >
+              <span>EndR</span>
+            </button>
+
+            <div
+              id="mapTesterDialog"
+              class="map-editor-save-dialog map-tester-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="mapTesterDialogTitle"
+              hidden
+              aria-hidden="true"
+            >
+              <div class="map-editor-save-dialog__card map-tester-dialog__card">
+                <h2 id="mapTesterDialogTitle" class="map-editor-save-dialog__title">Карты</h2>
+                <p id="mapTesterStatus" class="map-tester-dialog__status" hidden></p>
+
+                <div class="map-tester-dialog__section">
+                  <h3 class="map-tester-dialog__tier-title">Easy</h3>
+                  <ul id="mapTesterEasyList" class="map-tester-dialog__list"></ul>
+                </div>
+
+                <div class="map-tester-dialog__section">
+                  <h3 class="map-tester-dialog__tier-title">Hard</h3>
+                  <ul id="mapTesterHardList" class="map-tester-dialog__list"></ul>
+                </div>
+
+                <p class="map-tester-dialog__hint">Пометки: ✓ оставить, ✎ доработать, ✕ удалить. Клик по названию — сыграть раунд на карте.</p>
+
+                <div class="map-editor-save-dialog__actions">
+                  <button id="mapTesterCopyBtn" class="map-editor-reset-btn" type="button">Copy marks</button>
+                  <button id="mapTesterCloseBtn" class="map-editor-reset-btn" type="button">Close</button>
+                </div>
+              </div>
+            </div>
 
             <div
               id="mapEditorSaveDialog"

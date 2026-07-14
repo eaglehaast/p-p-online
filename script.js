@@ -852,6 +852,13 @@ const mapEditorSaveDialogSubmitBtn = document.getElementById("mapEditorSaveDialo
 const mapEditorModeControls = document.getElementById("mapEditorModeControls");
 const mapEditorModeBricksBtn = document.getElementById("mapEditorModeBricksBtn");
 const mapEditorModePlanesBtn = document.getElementById("mapEditorModePlanesBtn");
+const mapTesterDialog = document.getElementById("mapTesterDialog");
+const mapTesterStatus = document.getElementById("mapTesterStatus");
+const mapTesterEasyList = document.getElementById("mapTesterEasyList");
+const mapTesterHardList = document.getElementById("mapTesterHardList");
+const mapTesterCopyBtn = document.getElementById("mapTesterCopyBtn");
+const mapTesterCloseBtn = document.getElementById("mapTesterCloseBtn");
+const mapTesterEndRoundBtn = document.getElementById("mapTesterEndRoundBtn");
 const mapEditorBrickSidebar = document.getElementById("mapEditorBrickSidebar");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
@@ -2632,7 +2639,11 @@ function updateNukeTimeline(now = performance.now()){
   if(elapsed >= totalDuration && !nuclearStrikeTimelineState.startNewRoundQueued){
     nuclearStrikeTimelineState.startNewRoundQueued = true;
     transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.RESOLVED, { reason: "timeline complete" });
-    startNewRound();
+    if(isMapTesterModeActive()){
+      openMapTesterDialog();
+    } else {
+      startNewRound();
+    }
   }
 }
 
@@ -6153,6 +6164,10 @@ const MENU_BUTTON_SKINS = {
   mapEditor: {
     default: null,
     active: null
+  },
+  mapTester: {
+    default: null,
+    active: null
   }
 };
 
@@ -6194,9 +6209,11 @@ function syncRulesButtonSkins(selection){
   applyMenuButtonSkin(classicRulesBtn, "classicRules", selection === "classic");
   applyMenuButtonSkin(advancedSettingsBtn, "advancedSettings", selection === "advanced");
   applyMenuButtonSkin(editorBtn, "mapEditor", selection === "mapeditor");
+  applyMenuButtonSkin(mapTesterBtn, "mapTester", selection === "maptester");
   classicRulesBtn?.classList.toggle("selected", selection === "classic");
   advancedSettingsBtn?.classList.toggle("selected", selection === "advanced");
   editorBtn?.classList.toggle("selected", selection === "mapeditor");
+  mapTesterBtn?.classList.toggle("selected", selection === "maptester");
 }
 
 const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
@@ -7795,8 +7812,9 @@ const playBtn     = document.getElementById("playBtn");
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 const editorBtn = document.getElementById("editorBtn");
+const mapTesterBtn = document.getElementById("mapTesterBtn");
 const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn];
-const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn, editorBtn];
+const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn, editorBtn, mapTesterBtn];
 
 const DEBUG_MENU_PLANE_PIVOT = false;
 
@@ -7867,7 +7885,8 @@ setupMenuPressFeedback([
   playBtn,
   classicRulesBtn,
   advancedSettingsBtn,
-  editorBtn
+  editorBtn,
+  mapTesterBtn
 ]);
 
 let selectedMode = "hotSeat";
@@ -11148,6 +11167,10 @@ function loadSettingsForRuleset(ruleset = selectedRuleset){
   loadSettings();
   if(ruleset === "mapeditor"){
     settingsBridge.setMapIndex(0, { persist: false });
+    settings.randomizeMapEachRound = false;
+    settings.arcadeMode = false;
+  }
+  if(ruleset === "maptester"){
     settings.randomizeMapEachRound = false;
     settings.arcadeMode = false;
   }
@@ -15211,6 +15234,7 @@ function lockInDraw(options = {}){
 function maybeLockInMatchOutcome(options = {}){
   if(isGameOver) return true;
   if(isArcadeInfiniteScoreMode()) return false;
+  if(isMapTesterModeActive()) return false;
 
   if(blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
     lockInDraw(options);
@@ -15238,7 +15262,14 @@ function finalizePostFlightState(){
     if(roundTransitionTimeout){
       clearTimeout(roundTransitionTimeout);
     }
-    roundTransitionTimeout = setTimeout(startNewRound, remaining);
+    roundTransitionTimeout = setTimeout(() => {
+      // В Map Tester между раундами вместо автостарта открывается окно карт.
+      if(isMapTesterModeActive()){
+        openMapTesterDialog();
+        return;
+      }
+      startNewRound();
+    }, remaining);
     pendingRoundTransitionDelay = null;
     pendingRoundTransitionStart = 0;
     return;
@@ -18868,6 +18899,22 @@ if(editorBtn){
     await handlePlayStart();
   });
 }
+if(mapTesterBtn){
+  mapTesterBtn.addEventListener('click', async () => {
+    selectedRuleset = "maptester";
+    syncMapEditorResetButtonVisibility();
+    loadSettingsForRuleset(selectedRuleset);
+    settings.randomizeMapEachRound = false;
+    syncRulesButtonSkins(selectedRuleset);
+    lastRulesSelectionButton = mapTesterBtn;
+    updateModeSelection(mapTesterBtn);
+
+    const started = await handlePlayStart();
+    if(started){
+      openMapTesterDialog();
+    }
+  });
+}
 function resolveModeButton(activeButton){
   if(!selectedMode) return null;
   if(modeMenuButtons.includes(activeButton)) return activeButton;
@@ -18887,6 +18934,7 @@ function resolveRulesButton(activeButton){
   if(selectedRuleset === "classic") return classicRulesBtn;
   if(selectedRuleset === "advanced") return advancedSettingsBtn;
   if(selectedRuleset === "mapeditor") return editorBtn;
+  if(selectedRuleset === "maptester") return mapTesterBtn;
   return null;
 }
 
@@ -48650,12 +48698,13 @@ function checkVictory(options = {}){
   const isInfiniteScoreMode = isArcadeInfiniteScoreMode();
   if(isGameOver) return;
 
-  if(!isInfiniteScoreMode && !deferRoundLock && blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
+  // Map Tester гоняет раунды бесконечно: серия не завершается по очкам.
+  if(!isInfiniteScoreMode && !isMapTesterModeActive() && !deferRoundLock && blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
     lockInDraw({ showEndScreen: true });
     return;
   }
 
-  const canContinueSeries = isInfiniteScoreMode || (blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN);
+  const canContinueSeries = isInfiniteScoreMode || isMapTesterModeActive() || (blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN);
 
   if(deferRoundLock) return;
 
@@ -49427,7 +49476,7 @@ function startNewRound(){
   const isArcadeUiMode = useStoredRulesetSettings && settings.arcadeMode === true;
   if(selectedRuleset === "classic"){
     settings.addCargo = true;
-  } else if(selectedRuleset === "mapeditor"){
+  } else if(selectedRuleset === "mapeditor" || selectedRuleset === "maptester"){
     settings.randomizeMapEachRound = false;
   }
   console.log('[settings] load at match start', {
@@ -49569,7 +49618,7 @@ function shouldAutoRandomizeMap(){
   if(selectedRuleset === "classic"){
     return true;
   }
-  if(selectedRuleset === "mapeditor"){
+  if(selectedRuleset === "mapeditor" || selectedRuleset === "maptester"){
     return false;
   }
   if(isAdvancedLikeRuleset(selectedRuleset)){
@@ -49689,6 +49738,211 @@ function syncMapEditorResetButtonVisibility(){
   if(!bricksModeActive){
     resetMapEditorBrickInteraction();
   }
+
+  syncMapTesterUiVisibility();
+}
+
+/* ======= Map Tester =======
+ * Режим прогона существующих карт: обычная игра + окно со списком карт
+ * (easy сверху, hard снизу) и кнопка быстрого завершения раунда.
+ * Карты здесь не редактируются и не удаляются — на каждую можно поставить
+ * пометку («оставить» / «доработать» / «удалить»), пометки хранятся в
+ * localStorage, а кнопка Copy marks собирает их в текст для передачи.
+ */
+const MAP_TESTER_MARKS_STORAGE_KEY = "mapTester.marks";
+const MAP_TESTER_MARK_LABELS = Object.freeze({
+  keep: "оставить",
+  rework: "доработать",
+  delete: "удалить"
+});
+const MAP_TESTER_MARK_BUTTONS = Object.freeze([
+  { mark: "keep", glyph: "✓" },
+  { mark: "rework", glyph: "✎" },
+  { mark: "delete", glyph: "✕" }
+]);
+
+function isMapTesterModeActive(){
+  return selectedRuleset === "maptester";
+}
+
+function syncMapTesterUiVisibility(){
+  const testerVisible = isMapTesterModeActive()
+    && document.body.classList.contains("screen--game");
+
+  if(mapTesterEndRoundBtn instanceof HTMLElement){
+    mapTesterEndRoundBtn.hidden = !testerVisible;
+    mapTesterEndRoundBtn.setAttribute("aria-hidden", testerVisible ? "false" : "true");
+  }
+
+  if(!testerVisible){
+    closeMapTesterDialog({ silent: true });
+  }
+}
+
+function loadMapTesterMarks(){
+  try {
+    const parsed = JSON.parse(getStoredSetting(MAP_TESTER_MARKS_STORAGE_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch(_error){
+    return {};
+  }
+}
+
+function saveMapTesterMarks(marks){
+  setStoredSetting(MAP_TESTER_MARKS_STORAGE_KEY, JSON.stringify(marks));
+}
+
+function toggleMapTesterMark(mapId, mark){
+  const marks = loadMapTesterMarks();
+  if(marks[mapId] === mark){
+    delete marks[mapId];
+  } else {
+    marks[mapId] = mark;
+  }
+  saveMapTesterMarks(marks);
+  renderMapTesterLists();
+}
+
+function setMapTesterStatus(message){
+  if(!(mapTesterStatus instanceof HTMLElement)) return;
+  const text = typeof message === "string" ? message : "";
+  mapTesterStatus.textContent = text;
+  mapTesterStatus.hidden = text.length === 0;
+}
+
+function describeMapTesterMap(map){
+  const id = typeof map?.id === "string" && map.id.length > 0 ? map.id : "?";
+  const name = typeof map?.name === "string" && map.name.length > 0 ? map.name : id;
+  return name === id ? id : `${id} (${name})`;
+}
+
+function buildMapTesterListItem(map, mapIndex, marks){
+  const item = document.createElement("li");
+  item.className = "map-tester-dialog__item";
+
+  const playButton = document.createElement("button");
+  playButton.type = "button";
+  playButton.className = "map-tester-dialog__play-btn";
+  playButton.textContent = map?.name || map?.id || `map #${mapIndex}`;
+  playButton.title = "Сыграть раунд на этой карте";
+  playButton.addEventListener("click", () => playMapTesterMap(mapIndex));
+  item.appendChild(playButton);
+
+  const currentMark = marks[map?.id];
+  for(const { mark, glyph } of MAP_TESTER_MARK_BUTTONS){
+    const markButton = document.createElement("button");
+    markButton.type = "button";
+    markButton.className = `map-tester-dialog__mark-btn map-tester-dialog__mark-btn--${mark}`;
+    if(currentMark === mark){
+      markButton.classList.add("map-tester-dialog__mark-btn--active");
+    }
+    markButton.textContent = glyph;
+    markButton.title = MAP_TESTER_MARK_LABELS[mark];
+    markButton.setAttribute("aria-pressed", currentMark === mark ? "true" : "false");
+    markButton.addEventListener("click", () => toggleMapTesterMark(map?.id, mark));
+    item.appendChild(markButton);
+  }
+
+  return item;
+}
+
+function renderMapTesterLists(){
+  if(!(mapTesterEasyList instanceof HTMLElement) || !(mapTesterHardList instanceof HTMLElement)) return;
+
+  const marks = loadMapTesterMarks();
+  mapTesterEasyList.textContent = "";
+  mapTesterHardList.textContent = "";
+
+  MAPS.forEach((map, mapIndex) => {
+    if(!map || typeof map.id !== "string") return;
+    const listHost = normalizeMapTier(map.tier) === "easy" ? mapTesterEasyList : mapTesterHardList;
+    listHost.appendChild(buildMapTesterListItem(map, mapIndex, marks));
+  });
+
+  for(const listHost of [mapTesterEasyList, mapTesterHardList]){
+    if(listHost.childElementCount === 0){
+      const emptyItem = document.createElement("li");
+      emptyItem.className = "map-tester-dialog__item map-tester-dialog__item--empty";
+      emptyItem.textContent = "нет карт";
+      listHost.appendChild(emptyItem);
+    }
+  }
+}
+
+function buildMapTesterMarksSummary(){
+  const marks = loadMapTesterMarks();
+  const groups = { keep: [], rework: [], delete: [], unmarked: [] };
+
+  for(const map of MAPS){
+    if(!map || typeof map.id !== "string") continue;
+    const entry = `${normalizeMapTier(map.tier)} ${describeMapTesterMap(map)}`;
+    const mark = marks[map.id];
+    (groups[mark] || groups.unmarked).push(entry);
+  }
+
+  const lines = ["Пометки Map Tester:"];
+  for(const mark of ["keep", "rework", "delete"]){
+    lines.push(`${MAP_TESTER_MARK_LABELS[mark]}: ${groups[mark].length ? groups[mark].join(", ") : "—"}`);
+  }
+  lines.push(`без пометки: ${groups.unmarked.length ? groups.unmarked.join(", ") : "—"}`);
+  return lines.join("\n");
+}
+
+async function copyMapTesterMarks(){
+  const summary = buildMapTesterMarksSummary();
+  try {
+    if(!navigator?.clipboard?.writeText) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(summary);
+    setMapTesterStatus("Пометки скопированы в буфер обмена.");
+  } catch(_error){
+    // Без clipboard API показываем текст для ручного копирования.
+    window.prompt("Скопируй пометки вручную:", summary);
+  }
+}
+
+function openMapTesterDialog(){
+  if(!(mapTesterDialog instanceof HTMLElement)) return;
+  setMapTesterStatus("");
+  renderMapTesterLists();
+  mapTesterDialog.hidden = false;
+  mapTesterDialog.setAttribute("aria-hidden", "false");
+}
+
+function closeMapTesterDialog(options = {}){
+  if(!(mapTesterDialog instanceof HTMLElement)) return;
+  const wasOpen = !mapTesterDialog.hidden;
+  mapTesterDialog.hidden = true;
+  mapTesterDialog.setAttribute("aria-hidden", "true");
+
+  if(options.silent || !wasOpen) return;
+  // Окно закрыли после завершённого раунда — продолжаем на текущей карте.
+  if(isMapTesterModeActive() && isGameOver){
+    startNewRound();
+  }
+}
+
+function playMapTesterMap(mapIndex){
+  if(!Number.isInteger(mapIndex) || !MAPS[mapIndex]) return;
+  settingsBridge.setMapIndex(mapIndex, { persist: false });
+  closeMapTesterDialog({ silent: true });
+  startNewRound();
+}
+
+if(mapTesterCloseBtn instanceof HTMLElement){
+  mapTesterCloseBtn.addEventListener("click", () => closeMapTesterDialog());
+}
+
+if(mapTesterCopyBtn instanceof HTMLElement){
+  mapTesterCopyBtn.addEventListener("click", () => { copyMapTesterMarks(); });
+}
+
+if(mapTesterEndRoundBtn instanceof HTMLElement){
+  mapTesterEndRoundBtn.addEventListener("click", () => {
+    if(!isMapTesterModeActive() || isGameOver) return;
+    // Раунд завершается без победителя и очков; после разрешения полётов
+    // finalizePostFlightState откроет окно карт.
+    lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
+  });
 }
 
 function ensureMapSpriteAssets(sprites = []){
