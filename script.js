@@ -7892,6 +7892,10 @@ setupMenuPressFeedback([
 let selectedMode = "hotSeat";
 let selectedRuleset = "classic";
 let mapEditorControlMode = "bricks";
+// Карта, выбранная в окне Map Tester. loadSettings() каждый раунд перечитывает
+// settings.mapIndex из localStorage, поэтому выбор тестера хранится отдельно
+// и принудительно применяется в loadSettingsForRuleset.
+let mapTesterSelectedMapIndex = null;
 let lastModePlaneTarget = null;
 let lastRulesPlaneTarget = null;
 let lastModeSelectionButton = null;
@@ -11171,6 +11175,9 @@ function loadSettingsForRuleset(ruleset = selectedRuleset){
     settings.arcadeMode = false;
   }
   if(ruleset === "maptester"){
+    if(Number.isInteger(mapTesterSelectedMapIndex) && MAPS[mapTesterSelectedMapIndex]){
+      settingsBridge.setMapIndex(mapTesterSelectedMapIndex, { persist: false });
+    }
     settings.randomizeMapEachRound = false;
     settings.arcadeMode = false;
   }
@@ -18902,6 +18909,7 @@ if(editorBtn){
 if(mapTesterBtn){
   mapTesterBtn.addEventListener('click', async () => {
     selectedRuleset = "maptester";
+    mapTesterSelectedMapIndex = null;
     syncMapEditorResetButtonVisibility();
     loadSettingsForRuleset(selectedRuleset);
     settings.randomizeMapEachRound = false;
@@ -49923,6 +49931,7 @@ function closeMapTesterDialog(options = {}){
 
 function playMapTesterMap(mapIndex){
   if(!Number.isInteger(mapIndex) || !MAPS[mapIndex]) return;
+  mapTesterSelectedMapIndex = mapIndex;
   settingsBridge.setMapIndex(mapIndex, { persist: false });
   closeMapTesterDialog({ silent: true });
   startNewRound();
