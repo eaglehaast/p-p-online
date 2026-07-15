@@ -7898,6 +7898,16 @@ let mapEditorControlMode = "bricks";
 // settings.mapIndex из localStorage, поэтому выбор тестера хранится отдельно
 // и принудительно применяется в loadSettingsForRuleset.
 let mapTesterSelectedMapIndex = null;
+// Карта, открытая в редакторе «на доработку» (второй клик по ✎ в тестере).
+// Пока установлена, редактор открывается с этой картой, а скачанный файл
+// получает суффикс _v2 в имени (имя карты внутри не меняется).
+let mapEditorReworkMapId = null;
+
+function getMapEditorReworkMapIndex(){
+  if(typeof mapEditorReworkMapId !== "string" || mapEditorReworkMapId.length === 0) return null;
+  const reworkIndex = MAPS.findIndex((map) => map?.id === mapEditorReworkMapId);
+  return reworkIndex >= 0 ? reworkIndex : null;
+}
 let lastModePlaneTarget = null;
 let lastRulesPlaneTarget = null;
 let lastModeSelectionButton = null;
@@ -10736,9 +10746,13 @@ function downloadMapJsonFile(serializedMap, mapName = "", mapDifficulty = ""){
     ? sanitizedMapDifficulty
     : "";
   const resolvedName = sanitizedMapName.length > 0 ? sanitizedMapName : resolveExportMapId();
+  // Доработка существующей карты: версия только в имени файла, не внутри карты.
+  const versionSuffix = typeof mapEditorReworkMapId === "string" && mapEditorReworkMapId.length > 0
+    ? "_v2"
+    : "";
   link.download = resolvedDifficulty.length > 0
-    ? `gs_maps_${resolvedDifficulty}_${resolvedName}.json`
-    : `gs_maps_${resolvedName}.json`;
+    ? `gs_maps_${resolvedDifficulty}_${resolvedName}${versionSuffix}.json`
+    : `gs_maps_${resolvedName}${versionSuffix}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -10826,12 +10840,19 @@ function openMapEditorSaveDialog(){
   if(!(mapEditorSaveNameInput instanceof HTMLInputElement)) return;
   if(selectedRuleset !== "mapeditor") return;
 
-  mapEditorSaveNameInput.value = "";
+  // В режиме доработки имя и сложность предзаполняются исходной картой:
+  // сохранение по умолчанию даёт файл gs_maps_<tier>_<имя>_v2.json.
+  const reworkIndex = getMapEditorReworkMapIndex();
+  const reworkMap = Number.isInteger(reworkIndex) ? MAPS[reworkIndex] : null;
+  const prefillName = reworkMap ? String(reworkMap.name || reworkMap.id).slice(0, 10) : "";
+  const prefillTier = reworkMap ? normalizeMapTier(reworkMap.tier) : null;
+
+  mapEditorSaveNameInput.value = prefillName;
   document
     .querySelectorAll('input[name="mapEditorDifficulty"]')
     .forEach((input) => {
       if(input instanceof HTMLInputElement){
-        input.checked = false;
+        input.checked = prefillTier !== null && input.value === prefillTier;
       }
     });
 
@@ -11177,7 +11198,8 @@ function loadSettings(){
 function loadSettingsForRuleset(ruleset = selectedRuleset){
   loadSettings();
   if(ruleset === "mapeditor"){
-    settingsBridge.setMapIndex(0, { persist: false });
+    const reworkIndex = getMapEditorReworkMapIndex();
+    settingsBridge.setMapIndex(Number.isInteger(reworkIndex) ? reworkIndex : 0, { persist: false });
     settings.randomizeMapEachRound = false;
     settings.arcadeMode = false;
   }
@@ -18900,6 +18922,7 @@ if(advancedSettingsBtn){
 if(editorBtn){
   editorBtn.addEventListener('click', async () => {
     selectedRuleset = "mapeditor";
+    mapEditorReworkMapId = null;
     mapEditorControlMode = "bricks";
     syncMapEditorResetButtonVisibility();
     loadSettingsForRuleset(selectedRuleset);
@@ -50068,7 +50091,17 @@ function buildMapTesterListItem(map, mapIndex, marks, options = {}){
     markButton.textContent = glyph;
     markButton.title = MAP_TESTER_MARK_LABELS[mark];
     markButton.setAttribute("aria-pressed", currentMark === mark ? "true" : "false");
-    markButton.addEventListener("click", () => toggleMapTesterMark(map?.id, mark));
+    if(mark === "rework" && currentMark === "rework"){
+      markButton.title = "Ещё клик — открыть карту в редакторе";
+    }
+    markButton.addEventListener("click", () => {
+      // Второй клик по активной ✎ уносит карту в Map Editor на доработку.
+      if(mark === "rework" && loadMapTesterMarks()[map?.id] === "rework"){
+        openMapInEditorForRework(map);
+        return;
+      }
+      toggleMapTesterMark(map?.id, mark);
+    });
     item.appendChild(markButton);
   }
 
@@ -50219,6 +50252,27 @@ function playMapTesterMap(mapIndex){
   settingsBridge.setMapIndex(mapIndex, { persist: false });
   closeMapTesterDialog({ silent: true });
   startNewRound();
+}
+
+// Переход из тестера в Map Editor с открытой картой (доработка).
+// Повторяет вход через кнопку Map Editor, но вместо карты №0 редактор
+// открывает выбранную; пометка ✎ на карте сохраняется.
+async function openMapInEditorForRework(map){
+  if(!map || typeof map.id !== "string") return;
+  mapEditorReworkMapId = map.id;
+  closeMapTesterDialog({ silent: true });
+
+  selectedRuleset = "mapeditor";
+  mapEditorControlMode = "bricks";
+  syncMapEditorResetButtonVisibility();
+  loadSettingsForRuleset(selectedRuleset);
+  settings.randomizeMapEachRound = false;
+  applyCurrentMap();
+  syncRulesButtonSkins(selectedRuleset);
+  lastRulesSelectionButton = editorBtn;
+  updateModeSelection(editorBtn);
+
+  await handlePlayStart();
 }
 
 if(mapTesterCloseBtn instanceof HTMLElement){
