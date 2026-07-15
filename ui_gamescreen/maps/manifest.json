@@ -6,6 +6,18 @@
     "ui_gamescreen/maps/gs_maps_hard_clearSky.json",
     "ui_gamescreen/maps/gs_maps_easy_fiveBricks.json",
     "ui_gamescreen/maps/gs_maps_hard_horserows.json",
-    "ui_gamescreen/maps/gs_maps_easy_weakBrick.json"
+    "ui_gamescreen/maps/gs_maps_easy_weakBrick.json",
+    "ui_gamescreen/maps/gs_maps_hard_pockets2.json",
+    "ui_gamescreen/maps/gs_maps_easy_cross.json",
+    "ui_gamescreen/maps/gs_maps_easy_shelters.json",
+    "ui_gamescreen/maps/gs_maps_easy_x-attacks.json",
+    "ui_gamescreen/maps/gs_maps_easy_edges.json",
+    "ui_gamescreen/maps/gs_maps_hard_labyrinth.json",
+    "ui_gamescreen/maps/gs_maps_hard_labyrinth1.json",
+    "ui_gamescreen/maps/gs_maps_hard_pockets.json",
+    "ui_gamescreen/maps/gs_maps_easy_speedbumps.json",
+    "ui_gamescreen/maps/gs_maps_easy_thick_wall.json",
+    "ui_gamescreen/maps/gs_maps_hard_threeways.json",
+    "ui_gamescreen/maps/gs_maps_easy_tilt_cente.json"
   ]
 }

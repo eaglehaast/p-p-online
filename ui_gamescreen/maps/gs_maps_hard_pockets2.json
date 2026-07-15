@@ -1,11 +1,11 @@
 {
   "formatVersion": 1,
   "map": {
-    "id": "speedbumps",
-    "name": "speedbumps",
+    "id": "pockets2",
+    "name": "pockets 2",
     "mode": "data",
-    "tier": "easy",
-    "difficulty": "easy",
+    "tier": "hard",
+    "difficulty": "hard",
     "sprites": [
       {
         "spriteName": "brick_1_default",
@@ -284,33 +284,71 @@
         "scale": -1
       },
       {
-        "spriteName": "brick_3_mini",
-        "x": 280,
-        "y": 320
-      },
-      {
-        "spriteName": "brick_3_mini",
-        "x": 220,
-        "y": 320
-      },
-      {
-        "spriteName": "brick_3_mini",
+        "spriteName": "brick_5_corner",
         "x": 120,
-        "y": 300
+        "y": 340
       },
       {
-        "spriteName": "brick_3_mini",
+        "spriteName": "brick_5_corner",
+        "x": 200,
+        "y": 260,
+        "rotate": 180
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 200,
+        "y": 340,
+        "rotate": 270
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 120,
+        "y": 260,
+        "rotate": 90
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 260,
+        "y": 200
+      },
+      {
+        "spriteName": "brick_5_corner",
         "x": 60,
-        "y": 300
+        "y": 400,
+        "rotate": 180
       },
       {
-        "spriteName": "brick_3_mini",
-        "x": 20,
-        "y": 380
+        "spriteName": "brick_4_diagonal",
+        "x": 240,
+        "y": 240,
+        "scaleX": -1
       },
       {
-        "spriteName": "brick_3_mini",
-        "x": 320,
+        "spriteName": "brick_5_corner",
+        "x": 60,
+        "y": 200,
+        "rotate": 270
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 260,
+        "y": 400,
+        "rotate": 90
+      },
+      {
+        "spriteName": "brick_4_diagonal",
+        "x": 240,
+        "y": 340
+      },
+      {
+        "spriteName": "brick_4_diagonal",
+        "x": 60,
+        "y": 340,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_4_diagonal",
+        "x": 60,
         "y": 240
       }
     ],
@@ -335,6 +373,7 @@
           "height": 20
         }
       }
-    ]
+    ],
+    "archived": true
   }
 }
