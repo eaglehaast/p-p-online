@@ -49835,20 +49835,126 @@ function isMapArchived(map){
   return getMapEffectivePlacement(map) === "archive";
 }
 
+function setMapTesterPlacement(map, placement){
+  if(!map || typeof map.id !== "string") return;
+  if(!MAP_TESTER_PLACEMENT_CYCLE.includes(placement)) return;
+
+  const placements = loadMapTesterPlacements();
+  if(placement === getMapNaturalPlacement(map)){
+    delete placements[map.id];
+  } else {
+    placements[map.id] = placement;
+  }
+  saveMapTesterPlacements(placements);
+  renderMapTesterLists();
+}
+
 function cycleMapTesterPlacement(map){
   if(!map || typeof map.id !== "string") return;
   const current = getMapEffectivePlacement(map);
   const cycleIndex = MAP_TESTER_PLACEMENT_CYCLE.indexOf(current);
   const next = MAP_TESTER_PLACEMENT_CYCLE[(cycleIndex + 1) % MAP_TESTER_PLACEMENT_CYCLE.length];
+  setMapTesterPlacement(map, next);
+}
 
-  const placements = loadMapTesterPlacements();
-  if(next === getMapNaturalPlacement(map)){
-    delete placements[map.id];
-  } else {
-    placements[map.id] = next;
+/* --- Перетаскивание карты между контейнерами Easy / Hard / Archive ---
+ * За ручку ⠿ слева строку можно подцепить указателем; на время перетаскивания
+ * доступные контейнеры подсвечиваются, отпускание над контейнером переносит
+ * карту (то же размещение, что и кнопка ⟳).
+ */
+const MAP_TESTER_DRAG_THRESHOLD_PX = 4;
+let mapTesterDragState = null;
+
+function getMapTesterDropSections(){
+  if(!(mapTesterDialog instanceof HTMLElement)) return [];
+  return Array.from(mapTesterDialog.querySelectorAll("[data-placement]"));
+}
+
+function beginMapTesterDrag(event, map, handleEl){
+  if(mapTesterDragState) return;
+  if(!(handleEl instanceof HTMLElement)) return;
+  event.preventDefault();
+
+  mapTesterDragState = {
+    map,
+    pointerId: event.pointerId,
+    handleEl,
+    ghostEl: null,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+    hoveredSection: null
+  };
+  try {
+    handleEl.setPointerCapture(event.pointerId);
+  } catch(_error){ /* pointer capture недоступен — тянем без него */ }
+}
+
+function activateMapTesterDrag(){
+  const state = mapTesterDragState;
+  if(!state || state.active) return;
+  state.active = true;
+
+  const ghost = document.createElement("div");
+  ghost.className = "map-tester-dialog__drag-ghost";
+  ghost.textContent = state.map?.name || state.map?.id || "map";
+  document.body.appendChild(ghost);
+  state.ghostEl = ghost;
+
+  const currentPlacement = getMapEffectivePlacement(state.map);
+  for(const section of getMapTesterDropSections()){
+    if(section.dataset.placement !== currentPlacement){
+      section.classList.add("map-tester-dialog__section--drop-target");
+    }
   }
-  saveMapTesterPlacements(placements);
-  renderMapTesterLists();
+}
+
+function updateMapTesterDrag(event){
+  const state = mapTesterDragState;
+  if(!state || event.pointerId !== state.pointerId) return;
+
+  if(!state.active){
+    const movedPx = Math.hypot(event.clientX - state.startX, event.clientY - state.startY);
+    if(movedPx < MAP_TESTER_DRAG_THRESHOLD_PX) return;
+    activateMapTesterDrag();
+  }
+
+  if(state.ghostEl instanceof HTMLElement){
+    state.ghostEl.style.left = `${event.clientX + 12}px`;
+    state.ghostEl.style.top = `${event.clientY + 12}px`;
+  }
+
+  const elementUnderPointer = document.elementFromPoint(event.clientX, event.clientY);
+  const section = elementUnderPointer?.closest?.("[data-placement]") || null;
+  const isAllowedTarget = section instanceof HTMLElement
+    && section.classList.contains("map-tester-dialog__section--drop-target");
+  const nextHovered = isAllowedTarget ? section : null;
+
+  if(state.hoveredSection !== nextHovered){
+    state.hoveredSection?.classList.remove("map-tester-dialog__section--drop-hover");
+    nextHovered?.classList.add("map-tester-dialog__section--drop-hover");
+    state.hoveredSection = nextHovered;
+  }
+}
+
+function finishMapTesterDrag(event, options = {}){
+  const state = mapTesterDragState;
+  if(!state || (event && event.pointerId !== state.pointerId)) return;
+  mapTesterDragState = null;
+
+  const dropSection = !options.cancelled ? state.hoveredSection : null;
+
+  state.ghostEl?.remove();
+  for(const section of getMapTesterDropSections()){
+    section.classList.remove("map-tester-dialog__section--drop-target", "map-tester-dialog__section--drop-hover");
+  }
+  try {
+    state.handleEl?.releasePointerCapture?.(state.pointerId);
+  } catch(_error){ /* уже отпущено */ }
+
+  if(dropSection instanceof HTMLElement && state.active){
+    setMapTesterPlacement(state.map, dropSection.dataset.placement);
+  }
 }
 
 function isMapTesterModeActive(){
@@ -49909,6 +50015,16 @@ function describeMapTesterMap(map){
 function buildMapTesterListItem(map, mapIndex, marks, options = {}){
   const item = document.createElement("li");
   item.className = "map-tester-dialog__item";
+
+  const dragHandle = document.createElement("span");
+  dragHandle.className = "map-tester-dialog__drag-handle";
+  dragHandle.textContent = "⠿";
+  dragHandle.title = "Перетащить карту в другой список";
+  dragHandle.addEventListener("pointerdown", (event) => beginMapTesterDrag(event, map, dragHandle));
+  dragHandle.addEventListener("pointermove", updateMapTesterDrag);
+  dragHandle.addEventListener("pointerup", (event) => finishMapTesterDrag(event));
+  dragHandle.addEventListener("pointercancel", (event) => finishMapTesterDrag(event, { cancelled: true }));
+  item.appendChild(dragHandle);
 
   if(options.showTierBadge){
     const tierBadge = document.createElement("span");
