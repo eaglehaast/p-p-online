@@ -32919,6 +32919,99 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       }
     }
 
+    // Last resort BEFORE giving up: the guaranteed and simple direct-move
+    // builders pick ONE plane and fail when its short-distance trajectory
+    // crosses an own mine. If that happens (likely after AI placed mines
+    // that now cover the launch column), try every other alive own plane
+    // with a short forward vector that does NOT pass through an own mine.
+    // Without this, AI silently skips the entire turn the moment any own
+    // mine sits near any plane's nose.
+    const aiColorForRescue = plannedMove?.plane?.color
+      || (Array.isArray(context?.aiPlanes) && context.aiPlanes[0]?.color)
+      || null;
+    if(aiColorForRescue){
+      const ownPlanes = Array.isArray(points)
+        ? points.filter((p) => (
+          p && p.color === aiColorForRescue
+          && p.isAlive && !p.burning
+          && Number.isFinite(p.x) && Number.isFinite(p.y)
+        ))
+        : [];
+      const shortDistancePx = Math.max(10, Number.isFinite(CELL_SIZE) ? CELL_SIZE * 1.2 : 18);
+      const durationSec = FIELD_FLIGHT_DURATION_SEC > 0 ? FIELD_FLIGHT_DURATION_SEC : 1;
+      const rescueEnemies = Array.isArray(context?.enemies) ? context.enemies : [];
+      const dirs = [
+        { x: 0, y: -1 }, { x: 1, y: -1 }, { x: 1, y: 0 }, { x: 1, y: 1 },
+        { x: 0, y: 1 }, { x: -1, y: 1 }, { x: -1, y: 0 }, { x: -1, y: -1 },
+      ];
+      // Prefer aim toward the nearest enemy: sort dirs by alignment with
+      // that direction so the rescue launch has some tactical sense.
+      let preferredAim = null;
+      for(const plane of ownPlanes){
+        let nearestEnemy = null;
+        let nearestD = Number.POSITIVE_INFINITY;
+        for(const enemy of rescueEnemies){
+          if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) continue;
+          const d = Math.hypot(enemy.x - plane.x, enemy.y - plane.y);
+          if(d < nearestD){ nearestD = d; nearestEnemy = enemy; }
+        }
+        if(nearestEnemy){
+          preferredAim = { x: nearestEnemy.x - plane.x, y: nearestEnemy.y - plane.y };
+        }
+        const sortedDirs = preferredAim
+          ? dirs.slice().sort((a, b) => {
+              const aDot = a.x * preferredAim.x + a.y * preferredAim.y;
+              const bDot = b.x * preferredAim.x + b.y * preferredAim.y;
+              return bDot - aDot;
+            })
+          : dirs;
+        for(const dir of sortedDirs){
+          const dirLen = Math.hypot(dir.x, dir.y);
+          if(dirLen <= 0) continue;
+          const ndx = dir.x / dirLen;
+          const ndy = dir.y / dirLen;
+          const landingX = plane.x + ndx * shortDistancePx;
+          const landingY = plane.y + ndy * shortDistancePx;
+          // Skip if this segment crosses any of our own mines (the very
+          // condition that blocked the original launch).
+          const mineMeta = (typeof getMineThreatMetaForSegment === "function")
+            ? getMineThreatMetaForSegment(plane.x, plane.y, landingX, landingY, plane, { mineOwner: plane.color })
+            : null;
+          if(mineMeta && (mineMeta.pathHit || mineMeta.landingThreat)) continue;
+          const rescueMove = {
+            plane,
+            vx: (landingX - plane.x) / durationSec,
+            vy: (landingY - plane.y) / durationSec,
+            goalName: fallbackDetails.goal || plannedMove?.goalName || aiRoundState?.currentGoal || "fail_safe_rescue_avoid_own_mine",
+            decisionReason: "fail_safe_rescue_avoid_own_mine",
+            routeClass: "direct",
+            isFallbackMove: true,
+          };
+          const rescueValidation = validateAiLaunchMoveCandidate(rescueMove);
+          if(!rescueValidation.ok) continue;
+          const launchResult = issueAIMove(rescueMove.plane, rescueMove.vx, rescueMove.vy, { isFallbackMove: true });
+          if(launchResult?.ok){
+            logAiDecision("ai_fail_safe_rescue_avoid_own_mine_started", {
+              fallbackReason,
+              planeId: plane.id ?? null,
+              goal: fallbackDetails.goal || aiRoundState?.currentGoal || null,
+              reasonCode: "fail_safe_rescue_avoid_own_mine_started",
+              dir: { x: Number(ndx.toFixed(2)), y: Number(ndy.toFixed(2)) },
+              guaranteedRejectReason: guaranteedValidation.reason || "invalid_guaranteed_direct_move",
+              simpleRejectReason: simpleValidation.reason || "invalid_simple_direct_move",
+            });
+            return { launched: true, mode: "rescue_avoid_own_mine" };
+          }
+        }
+      }
+      logAiDecision("ai_failsafe_skipped_turn_due_to_own_mines", {
+        fallbackReason,
+        ownPlanesConsidered: ownPlanes.length,
+        guaranteedRejectReason: guaranteedValidation.reason || "invalid_guaranteed_direct_move",
+        simpleRejectReason: simpleValidation.reason || "invalid_simple_direct_move",
+      });
+    }
+
     return {
       launched: false,
       mode: null,
