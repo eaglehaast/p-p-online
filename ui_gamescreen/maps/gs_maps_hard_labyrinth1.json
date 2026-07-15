@@ -1,11 +1,11 @@
 {
   "formatVersion": 1,
   "map": {
-    "id": "Pockets",
-    "name": "Pockets",
+    "id": "labyrinth1",
+    "name": "labyrinth1",
     "mode": "data",
-    "tier": "middle",
-    "difficulty": "middle",
+    "tier": "hard",
+    "difficulty": "hard",
     "sprites": [
       {
         "spriteName": "brick_1_default",
@@ -285,71 +285,195 @@
       },
       {
         "spriteName": "brick_5_corner",
-        "x": 120,
+        "x": 100,
         "y": 340
       },
       {
         "spriteName": "brick_5_corner",
-        "x": 200,
-        "y": 260,
-        "rotate": 180
-      },
-      {
-        "spriteName": "brick_5_corner",
-        "x": 200,
-        "y": 340,
-        "rotate": 270
-      },
-      {
-        "spriteName": "brick_5_corner",
         "x": 120,
-        "y": 260,
-        "rotate": 90
-      },
-      {
-        "spriteName": "brick_5_corner",
-        "x": 260,
-        "y": 200
-      },
-      {
-        "spriteName": "brick_5_corner",
-        "x": 60,
-        "y": 400,
-        "rotate": 180
-      },
-      {
-        "spriteName": "brick_4_diagonal",
-        "x": 240,
         "y": 240,
+        "rotate": 90
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 80,
+        "y": 540
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 80,
+        "y": 580
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 140,
+        "y": 580
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 140,
+        "y": 460
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 80,
+        "y": 420
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 200,
+        "y": 580
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 160,
+        "y": 460,
+        "rotate": 90,
         "scaleX": -1
       },
       {
+        "spriteName": "brick_1_default",
+        "x": 80,
+        "y": 500
+      },
+      {
         "spriteName": "brick_5_corner",
-        "x": 60,
-        "y": 200,
+        "x": 200,
+        "y": 360,
         "rotate": 270
       },
       {
         "spriteName": "brick_5_corner",
-        "x": 260,
-        "y": 400,
-        "rotate": 90
+        "x": 220,
+        "y": 260,
+        "rotate": 180
       },
       {
-        "spriteName": "brick_4_diagonal",
-        "x": 240,
-        "y": 340
-      },
-      {
-        "spriteName": "brick_4_diagonal",
-        "x": 60,
-        "y": 340,
+        "spriteName": "brick_1_default",
+        "x": 340,
+        "y": 280,
+        "rotate": 90,
         "scaleX": -1
       },
       {
-        "spriteName": "brick_4_diagonal",
+        "spriteName": "brick_1_default",
+        "x": 300,
+        "y": 280,
+        "rotate": 90,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 20,
+        "y": 340,
+        "rotate": 90,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 260,
+        "y": 580
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 260,
+        "y": 540
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 280,
+        "y": 420
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 140,
+        "y": 540
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 140,
+        "y": 500
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 200,
+        "y": 20
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 140,
+        "y": 20
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 200,
+        "y": 60
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 200,
+        "y": 100
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 200,
+        "y": 140
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 160,
+        "y": 160,
+        "rotate": 90,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 80,
+        "y": 20
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 80,
+        "y": 60
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 260,
+        "y": 20
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 260,
+        "y": 60
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 260,
+        "y": 100
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 260,
+        "y": 180
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 20,
+        "y": 180,
+        "rotate": 90,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_1_default",
         "x": 60,
-        "y": 240
+        "y": 180
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 300,
+        "y": 440,
+        "rotate": 90,
+        "scaleX": -1
       }
     ],
     "flags": [
@@ -373,6 +497,7 @@
           "height": 20
         }
       }
-    ]
+    ],
+    "archived": true
   }
 }

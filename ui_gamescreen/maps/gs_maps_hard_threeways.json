@@ -1,11 +1,11 @@
 {
   "formatVersion": 1,
   "map": {
-    "id": "clearSky",
-    "name": "edges",
+    "id": "threeways",
+    "name": "threeways",
     "mode": "data",
-    "tier": "easy",
-    "difficulty": "easy",
+    "tier": "hard",
+    "difficulty": "hard",
     "sprites": [
       {
         "spriteName": "brick_1_default",
@@ -85,6 +85,11 @@
       {
         "spriteName": "brick_1_default",
         "x": 340,
+        "y": 20
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 340,
         "y": 60
       },
       {
@@ -210,6 +215,13 @@
       },
       {
         "spriteName": "brick_1_default",
+        "x": 320,
+        "y": 0,
+        "rotate": -90,
+        "scale": -1
+      },
+      {
+        "spriteName": "brick_1_default",
         "x": 0,
         "y": 620,
         "rotate": -90,
@@ -270,6 +282,163 @@
         "y": 620,
         "rotate": -90,
         "scale": -1
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 20,
+        "y": 120,
+        "rotate": 180
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 300,
+        "y": 120,
+        "rotate": 90
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 160,
+        "y": 140,
+        "rotate": 90,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_3_mini",
+        "x": 240,
+        "y": 140
+      },
+      {
+        "spriteName": "brick_3_mini",
+        "x": 100,
+        "y": 140
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 20,
+        "y": 480,
+        "rotate": 270
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 160,
+        "y": 480,
+        "rotate": 90,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_3_mini",
+        "x": 100,
+        "y": 480
+      },
+      {
+        "spriteName": "brick_3_mini",
+        "x": 240,
+        "y": 480
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 300,
+        "y": 480
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 100,
+        "y": 160
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 100,
+        "y": 440
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 240,
+        "y": 160
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 240,
+        "y": 440
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 100,
+        "y": 200,
+        "rotate": 180
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 80,
+        "y": 280,
+        "rotate": 90
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 100,
+        "y": 240
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 240,
+        "y": 280,
+        "rotate": 180
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 240,
+        "y": 240
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 220,
+        "y": 200,
+        "rotate": 90
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 160,
+        "y": 300,
+        "rotate": 90,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 160,
+        "y": 320,
+        "rotate": 90,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 240,
+        "y": 320,
+        "rotate": 270
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 80,
+        "y": 320
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 240,
+        "y": 360
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 100,
+        "y": 360
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 220,
+        "y": 400
+      },
+      {
+        "spriteName": "brick_5_corner",
+        "x": 100,
+        "y": 400,
+        "rotate": 270
       }
     ],
     "flags": [
@@ -293,6 +462,7 @@
           "height": 20
         }
       }
-    ]
+    ],
+    "archived": true
   }
 }
