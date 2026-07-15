@@ -49768,6 +49768,8 @@ const MAP_TESTER_MARK_BUTTONS = Object.freeze([
   { mark: "rework", glyph: "✎" },
   { mark: "delete", glyph: "✕" }
 ]);
+// Первый клик по карте только выделяет её, второй по той же — запускает раунд.
+let mapTesterArmedMapIndex = null;
 
 function isMapTesterModeActive(){
   return selectedRuleset === "maptester";
@@ -49836,8 +49838,20 @@ function buildMapTesterListItem(map, mapIndex, marks){
   if(mapLabel === currentMapName){
     playButton.classList.add("map-tester-dialog__play-btn--current");
   }
-  playButton.title = "Сыграть раунд на этой карте";
-  playButton.addEventListener("click", () => playMapTesterMap(mapIndex));
+  if(mapIndex === mapTesterArmedMapIndex){
+    playButton.classList.add("map-tester-dialog__play-btn--armed");
+  }
+  playButton.title = mapIndex === mapTesterArmedMapIndex
+    ? "Ещё клик — сыграть раунд на этой карте"
+    : "Клик — выделить карту";
+  playButton.addEventListener("click", () => {
+    if(mapTesterArmedMapIndex === mapIndex){
+      playMapTesterMap(mapIndex);
+      return;
+    }
+    mapTesterArmedMapIndex = mapIndex;
+    renderMapTesterLists();
+  });
   item.appendChild(playButton);
 
   const currentMark = marks[map?.id];
@@ -49915,6 +49929,7 @@ async function copyMapTesterMarks(){
 function openMapTesterDialog(){
   if(!(mapTesterDialog instanceof HTMLElement)) return;
   setMapTesterStatus("");
+  mapTesterArmedMapIndex = null;
   const dialogTitle = document.getElementById("mapTesterDialogTitle");
   if(dialogTitle instanceof HTMLElement){
     dialogTitle.textContent = typeof currentMapName === "string" && currentMapName !== "unknown map"
