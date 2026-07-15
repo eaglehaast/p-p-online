@@ -12184,6 +12184,7 @@ if(typeof window !== "undefined"){
   //   aiDumpBadMove({ index: 1 }); // one move before the most recent
   //   aiDumpBadMove({ limit: 3 }); // the last N moves as an array
   //   aiDumpBadMove({ clear: true });
+  //   (the last 12 AI moves are kept in a ring buffer)
   window.aiDumpBadMove = function(opts){
     if(opts && opts.clear){ AI_MOVE_DUMP_BUFFER.length = 0; return "cleared"; }
     if(AI_MOVE_DUMP_BUFFER.length === 0) return "no AI moves recorded yet";
