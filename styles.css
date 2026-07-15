@@ -868,6 +868,13 @@ body, button {
     color: #fff7d1;
   }
 
+  /* Выделена первым кликом — второй клик запустит раунд */
+  .map-tester-dialog__play-btn--armed {
+    border: 2px solid #95d2ff;
+    background: rgba(70, 140, 210, 0.3);
+    color: #eaf6ff;
+  }
+
   .map-tester-dialog__mark-btn {
     flex: 0 0 auto;
     width: 34px;
