@@ -10968,7 +10968,9 @@ function getMapTierForRound(roundNumber){
 function getPlayableMapIndicesForRound(roundNumber = 1){
   const targetTier = getMapTierForRound(roundNumber);
   const playableMapIndices = getPlayableMapIndices();
-  const tierMatches = playableMapIndices.filter(index => normalizeMapTier(MAPS[index]?.tier) === targetTier);
+  // Тир берётся с учётом локального переноса в Map Tester: карта, перенесённая
+  // из easy в hard, не должна выпадать в лёгких раундах (и наоборот).
+  const tierMatches = playableMapIndices.filter(index => getMapEffectivePlacement(MAPS[index]) === targetTier);
   if(tierMatches.length){
     return tierMatches;
   }
@@ -49765,26 +49767,88 @@ function syncMapEditorResetButtonVisibility(){
 const MAP_TESTER_MARKS_STORAGE_KEY = "mapTester.marks";
 const MAP_TESTER_MARK_LABELS = Object.freeze({
   keep: "оставить",
-  rework: "доработать",
-  delete: "удалить"
+  rework: "доработать"
 });
 const MAP_TESTER_MARK_BUTTONS = Object.freeze([
   { mark: "keep", glyph: "✓" },
-  { mark: "rework", glyph: "✎" },
-  { mark: "delete", glyph: "✕" }
+  { mark: "rework", glyph: "✎" }
 ]);
+// Размещение карты — одно из трёх полей окна. Кнопка ⟳ гоняет карту по циклу.
+const MAP_TESTER_PLACEMENTS_STORAGE_KEY = "mapTester.placements";
+const MAP_TESTER_PLACEMENT_CYCLE = Object.freeze(["easy", "hard", "archive"]);
 // Первый клик по карте только выделяет её, второй по той же — запускает раунд.
 let mapTesterArmedMapIndex = null;
 // Папка Archive внизу окна: раскрыта/свёрнута (состояние живёт, пока открыта игра).
 let mapTesterArchiveOpen = false;
 
-// Карта в архиве, если помечена «удалить» в тестере (localStorage) или
-// заархивирована в самом JSON карты ("archived": true — постоянное состояние
-// для всех игроков, проставляется в репозитории).
+// «Родное» размещение карты — из её JSON: "archived": true → архив
+// (постоянное состояние для всех игроков, проставляется в репозитории),
+// иначе тир easy/hard.
+function getMapNaturalPlacement(map){
+  if(map?.archived === true) return "archive";
+  return normalizeMapTier(map?.tier);
+}
+
+function loadMapTesterPlacements(){
+  let placements;
+  try {
+    const parsed = JSON.parse(getStoredSetting(MAP_TESTER_PLACEMENTS_STORAGE_KEY) || "{}");
+    placements = parsed && typeof parsed === "object" ? parsed : {};
+  } catch(_error){
+    placements = {};
+  }
+
+  // Миграция: старая пометка «удалить» означала архив.
+  const marks = loadMapTesterMarks();
+  let migrated = false;
+  for(const [mapId, mark] of Object.entries(marks)){
+    if(mark !== "delete") continue;
+    if(!placements[mapId]){
+      placements[mapId] = "archive";
+    }
+    delete marks[mapId];
+    migrated = true;
+  }
+  if(migrated){
+    saveMapTesterMarks(marks);
+    saveMapTesterPlacements(placements);
+  }
+
+  return placements;
+}
+
+function saveMapTesterPlacements(placements){
+  setStoredSetting(MAP_TESTER_PLACEMENTS_STORAGE_KEY, JSON.stringify(placements));
+}
+
+// Фактическое размещение: локальный перенос из тестера поверх родного.
+function getMapEffectivePlacement(map){
+  if(!map || typeof map.id !== "string") return "hard";
+  const override = loadMapTesterPlacements()[map.id];
+  if(MAP_TESTER_PLACEMENT_CYCLE.includes(override)){
+    return override;
+  }
+  return getMapNaturalPlacement(map);
+}
+
 function isMapArchived(map){
-  if(!map || typeof map.id !== "string") return false;
-  if(map.archived === true) return true;
-  return loadMapTesterMarks()[map.id] === "delete";
+  return getMapEffectivePlacement(map) === "archive";
+}
+
+function cycleMapTesterPlacement(map){
+  if(!map || typeof map.id !== "string") return;
+  const current = getMapEffectivePlacement(map);
+  const cycleIndex = MAP_TESTER_PLACEMENT_CYCLE.indexOf(current);
+  const next = MAP_TESTER_PLACEMENT_CYCLE[(cycleIndex + 1) % MAP_TESTER_PLACEMENT_CYCLE.length];
+
+  const placements = loadMapTesterPlacements();
+  if(next === getMapNaturalPlacement(map)){
+    delete placements[map.id];
+  } else {
+    placements[map.id] = next;
+  }
+  saveMapTesterPlacements(placements);
+  renderMapTesterLists();
 }
 
 function isMapTesterModeActive(){
@@ -49892,6 +49956,14 @@ function buildMapTesterListItem(map, mapIndex, marks, options = {}){
     item.appendChild(markButton);
   }
 
+  const cycleButton = document.createElement("button");
+  cycleButton.type = "button";
+  cycleButton.className = "map-tester-dialog__mark-btn map-tester-dialog__mark-btn--cycle";
+  cycleButton.textContent = "⟳";
+  cycleButton.title = "Переместить: easy → hard → archive → easy";
+  cycleButton.addEventListener("click", () => cycleMapTesterPlacement(map));
+  item.appendChild(cycleButton);
+
   return item;
 }
 
@@ -49908,14 +49980,15 @@ function renderMapTesterLists(){
 
   MAPS.forEach((map, mapIndex) => {
     if(!map || typeof map.id !== "string") return;
-    if(isMapArchived(map)){
+    const placement = getMapEffectivePlacement(map);
+    if(placement === "archive"){
       archivedCount += 1;
       if(mapTesterArchiveList instanceof HTMLElement){
         mapTesterArchiveList.appendChild(buildMapTesterListItem(map, mapIndex, marks, { showTierBadge: true }));
       }
       return;
     }
-    const listHost = normalizeMapTier(map.tier) === "easy" ? mapTesterEasyList : mapTesterHardList;
+    const listHost = placement === "easy" ? mapTesterEasyList : mapTesterHardList;
     listHost.appendChild(buildMapTesterListItem(map, mapIndex, marks));
   });
 
@@ -49949,19 +50022,37 @@ function syncMapTesterArchiveUi(archivedCount){
 
 function buildMapTesterMarksSummary(){
   const marks = loadMapTesterMarks();
-  const groups = { keep: [], rework: [], delete: [], unmarked: [] };
+  const groups = { keep: [], rework: [], archive: [], moved: [], unmarked: [] };
 
   for(const map of MAPS){
     if(!map || typeof map.id !== "string") continue;
-    const entry = `${normalizeMapTier(map.tier)} ${describeMapTesterMap(map)}`;
+    const naturalPlacement = getMapNaturalPlacement(map);
+    const placement = getMapEffectivePlacement(map);
+    const entry = `${naturalPlacement} ${describeMapTesterMap(map)}`;
     const mark = marks[map.id];
-    (groups[mark] || groups.unmarked).push(entry);
+    let grouped = false;
+
+    if(mark === "keep" || mark === "rework"){
+      groups[mark].push(entry);
+      grouped = true;
+    }
+    if(placement === "archive" && naturalPlacement !== "archive"){
+      groups.archive.push(entry);
+      grouped = true;
+    } else if(placement !== naturalPlacement){
+      groups.moved.push(`${describeMapTesterMap(map)}: ${naturalPlacement} → ${placement}`);
+      grouped = true;
+    }
+    if(!grouped && naturalPlacement !== "archive"){
+      groups.unmarked.push(entry);
+    }
   }
 
   const lines = ["Пометки Map Tester:"];
-  for(const mark of ["keep", "rework", "delete"]){
-    lines.push(`${MAP_TESTER_MARK_LABELS[mark]}: ${groups[mark].length ? groups[mark].join(", ") : "—"}`);
-  }
+  lines.push(`оставить: ${groups.keep.length ? groups.keep.join(", ") : "—"}`);
+  lines.push(`доработать: ${groups.rework.length ? groups.rework.join(", ") : "—"}`);
+  lines.push(`в архив: ${groups.archive.length ? groups.archive.join(", ") : "—"}`);
+  lines.push(`перенос тира: ${groups.moved.length ? groups.moved.join(", ") : "—"}`);
   lines.push(`без пометки: ${groups.unmarked.length ? groups.unmarked.join(", ") : "—"}`);
   return lines.join("\n");
 }

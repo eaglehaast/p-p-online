@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 
-// Smoke test: архивные карты (пометка «удалить» в Map Tester или "archived": true
-// в JSON карты) не должны попадать в ротацию случайных карт (classic и
-// randomizeMapEachRound). При этом они остаются в MAPS и выбираются вручную
-// через Advanced Settings — тут проверяется только пул ротации.
+// Smoke test: ротация случайных карт (classic и randomizeMapEachRound) должна
+// уважать размещения Map Tester. Карта в архиве (перенесена кнопкой ⟳ или
+// "archived": true в JSON) не попадает в пул вообще; карта, перенесённая между
+// easy и hard, выпадает в раундах своего нового тира. Ручной выбор в Advanced
+// Settings не ограничивается — тут проверяется только пул ротации.
 
 const fs = require('fs');
 const vm = require('vm');
@@ -34,38 +35,42 @@ const source = fs.readFileSync('script.js', 'utf8');
 const MAPS = [
   { id: 'easyA', name: 'easyA', tier: 'easy' },
   { id: 'easyB', name: 'easyB', tier: 'easy' },
-  { id: 'easyMarked', name: 'easyMarked', tier: 'easy' },              // помечена «удалить»
+  { id: 'easyMoved', name: 'easyMoved', tier: 'easy' },          // перенесена ⟳ в hard
+  { id: 'easyArchivedLocal', name: 'easyArchivedLocal', tier: 'easy' }, // перенесена ⟳ в архив
   { id: 'hardA', name: 'hardA', tier: 'hard' },
   { id: 'hardJsonArchived', name: 'hardJsonArchived', tier: 'hard', archived: true }
 ];
 
+const PLACEMENTS = { easyMoved: 'hard', easyArchivedLocal: 'archive' };
+
 const context = {
   MAPS,
-  // Пометки тестера: easyMarked в архиве через localStorage-пометку.
-  loadMapTesterMarks: () => ({ easyMarked: 'delete' })
+  MAP_TESTER_PLACEMENT_CYCLE: Object.freeze(['easy', 'hard', 'archive']),
+  loadMapTesterPlacements: () => PLACEMENTS
 };
 vm.createContext(context);
 
-for(const fnName of ['isMapArchived', 'getRandomMapSentinelIndex', 'getPlayableMapIndices', 'normalizeMapTier', 'getMapTierForRound', 'getPlayableMapIndicesForRound']){
+for(const fnName of ['normalizeMapTier', 'getMapNaturalPlacement', 'getMapEffectivePlacement', 'isMapArchived', 'getRandomMapSentinelIndex', 'getPlayableMapIndices', 'getMapTierForRound', 'getPlayableMapIndicesForRound']){
   vm.runInContext(extractFunctionSource(source, fnName), context);
 }
 
 const playable = vm.runInContext('getPlayableMapIndices()', context);
-assert(JSON.stringify(playable) === JSON.stringify([0, 1, 3]),
-  `rotation pool must exclude archived maps, got [${playable}]`);
+assert(JSON.stringify(playable) === JSON.stringify([0, 1, 2, 4]),
+  `rotation pool must exclude archived maps (local and json), got [${playable}]`);
 
 const easyRound = vm.runInContext('getPlayableMapIndicesForRound(1)', context);
 assert(JSON.stringify(easyRound) === JSON.stringify([0, 1]),
-  `easy rounds must exclude the marked easy map, got [${easyRound}]`);
+  `easy rounds must exclude archived and moved-to-hard maps, got [${easyRound}]`);
 
 const hardRound = vm.runInContext('getPlayableMapIndicesForRound(5)', context);
-assert(JSON.stringify(hardRound) === JSON.stringify([3]),
-  `hard rounds must exclude the json-archived map, got [${hardRound}]`);
+assert(JSON.stringify(hardRound) === JSON.stringify([2, 4]),
+  `hard rounds must include the map moved from easy, got [${hardRound}]`);
 
 // Все hard-карты в архиве → fallback на общий пул без архивных, а не пустота.
-vm.runInContext('MAPS[3].archived = true', context);
+PLACEMENTS.easyMoved = 'archive';
+PLACEMENTS.hardA = 'archive';
 const hardAllArchived = vm.runInContext('getPlayableMapIndicesForRound(5)', context);
 assert(JSON.stringify(hardAllArchived) === JSON.stringify([0, 1]),
   `with every hard map archived the pool must fall back to non-archived maps, got [${hardAllArchived}]`);
 
-console.log('Smoke test passed: archived maps are excluded from random rotation (marked and json-archived), fallback stays non-archived.');
+console.log('Smoke test passed: rotation honours Map Tester placements (archive excluded, tier moves respected, fallback stays non-archived).');
