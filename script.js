@@ -859,6 +859,8 @@ const mapTesterHardList = document.getElementById("mapTesterHardList");
 const mapTesterCopyBtn = document.getElementById("mapTesterCopyBtn");
 const mapTesterCloseBtn = document.getElementById("mapTesterCloseBtn");
 const mapTesterEndRoundBtn = document.getElementById("mapTesterEndRoundBtn");
+const mapTesterArchiveToggle = document.getElementById("mapTesterArchiveToggle");
+const mapTesterArchiveList = document.getElementById("mapTesterArchiveList");
 const mapEditorBrickSidebar = document.getElementById("mapEditorBrickSidebar");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
@@ -10934,9 +10936,12 @@ function getRandomMapSentinelIndex(){
 }
 
 function getPlayableMapIndices(){
+  // Архивные карты не участвуют в ротации (classic и рандом по раундам);
+  // выбрать их руками в Advanced Settings по-прежнему можно.
   return MAPS
     .map((_, index) => index)
-    .filter(index => index !== getRandomMapSentinelIndex());
+    .filter(index => index !== getRandomMapSentinelIndex())
+    .filter(index => !isMapArchived(MAPS[index]));
 }
 
 let randomMapPairSequenceNumber = null;
@@ -49770,6 +49775,17 @@ const MAP_TESTER_MARK_BUTTONS = Object.freeze([
 ]);
 // Первый клик по карте только выделяет её, второй по той же — запускает раунд.
 let mapTesterArmedMapIndex = null;
+// Папка Archive внизу окна: раскрыта/свёрнута (состояние живёт, пока открыта игра).
+let mapTesterArchiveOpen = false;
+
+// Карта в архиве, если помечена «удалить» в тестере (localStorage) или
+// заархивирована в самом JSON карты ("archived": true — постоянное состояние
+// для всех игроков, проставляется в репозитории).
+function isMapArchived(map){
+  if(!map || typeof map.id !== "string") return false;
+  if(map.archived === true) return true;
+  return loadMapTesterMarks()[map.id] === "delete";
+}
 
 function isMapTesterModeActive(){
   return selectedRuleset === "maptester";
@@ -49826,9 +49842,16 @@ function describeMapTesterMap(map){
   return name === id ? id : `${id} (${name})`;
 }
 
-function buildMapTesterListItem(map, mapIndex, marks){
+function buildMapTesterListItem(map, mapIndex, marks, options = {}){
   const item = document.createElement("li");
   item.className = "map-tester-dialog__item";
+
+  if(options.showTierBadge){
+    const tierBadge = document.createElement("span");
+    tierBadge.className = "map-tester-dialog__tier-badge";
+    tierBadge.textContent = normalizeMapTier(map?.tier);
+    item.appendChild(tierBadge);
+  }
 
   const playButton = document.createElement("button");
   playButton.type = "button";
@@ -49878,9 +49901,20 @@ function renderMapTesterLists(){
   const marks = loadMapTesterMarks();
   mapTesterEasyList.textContent = "";
   mapTesterHardList.textContent = "";
+  let archivedCount = 0;
+  if(mapTesterArchiveList instanceof HTMLElement){
+    mapTesterArchiveList.textContent = "";
+  }
 
   MAPS.forEach((map, mapIndex) => {
     if(!map || typeof map.id !== "string") return;
+    if(isMapArchived(map)){
+      archivedCount += 1;
+      if(mapTesterArchiveList instanceof HTMLElement){
+        mapTesterArchiveList.appendChild(buildMapTesterListItem(map, mapIndex, marks, { showTierBadge: true }));
+      }
+      return;
+    }
     const listHost = normalizeMapTier(map.tier) === "easy" ? mapTesterEasyList : mapTesterHardList;
     listHost.appendChild(buildMapTesterListItem(map, mapIndex, marks));
   });
@@ -49892,6 +49926,24 @@ function renderMapTesterLists(){
       emptyItem.textContent = "нет карт";
       listHost.appendChild(emptyItem);
     }
+  }
+
+  syncMapTesterArchiveUi(archivedCount);
+}
+
+function syncMapTesterArchiveUi(archivedCount){
+  if(mapTesterArchiveToggle instanceof HTMLElement){
+    mapTesterArchiveToggle.textContent = `${mapTesterArchiveOpen ? "▾" : "▸"} Archive (${archivedCount})`;
+    mapTesterArchiveToggle.setAttribute("aria-expanded", mapTesterArchiveOpen ? "true" : "false");
+  }
+  if(mapTesterArchiveList instanceof HTMLElement){
+    if(mapTesterArchiveList.childElementCount === 0){
+      const emptyItem = document.createElement("li");
+      emptyItem.className = "map-tester-dialog__item map-tester-dialog__item--empty";
+      emptyItem.textContent = "архив пуст";
+      mapTesterArchiveList.appendChild(emptyItem);
+    }
+    mapTesterArchiveList.hidden = !mapTesterArchiveOpen;
   }
 }
 
@@ -49964,6 +50016,13 @@ function playMapTesterMap(mapIndex){
 
 if(mapTesterCloseBtn instanceof HTMLElement){
   mapTesterCloseBtn.addEventListener("click", () => closeMapTesterDialog());
+}
+
+if(mapTesterArchiveToggle instanceof HTMLElement){
+  mapTesterArchiveToggle.addEventListener("click", () => {
+    mapTesterArchiveOpen = !mapTesterArchiveOpen;
+    renderMapTesterLists();
+  });
 }
 
 if(mapTesterCopyBtn instanceof HTMLElement){

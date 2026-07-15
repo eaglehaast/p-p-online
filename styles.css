@@ -821,6 +821,43 @@ body, button {
     color: #ffe38a;
   }
 
+  .map-tester-dialog__section--archive {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(245, 232, 204, 0.25);
+  }
+
+  .map-tester-dialog__archive-toggle {
+    display: block;
+    width: 100%;
+    margin: 0 0 6px;
+    padding: 4px 6px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #c9b896;
+    font: 700 20px/1.1 "Patrick Hand", cursive;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .map-tester-dialog__archive-toggle:hover {
+    background: rgba(245, 232, 204, 0.1);
+  }
+
+  .map-tester-dialog__tier-badge {
+    flex: 0 0 auto;
+    min-width: 38px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: rgba(245, 232, 204, 0.12);
+    font: 700 11px/1.2 "Roboto", sans-serif;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.8;
+  }
+
   .map-tester-dialog__list {
     margin: 0 0 6px;
     padding: 0;
