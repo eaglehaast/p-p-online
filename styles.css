@@ -861,6 +861,13 @@ body, button {
     background: rgba(245, 232, 204, 0.18);
   }
 
+  /* Карта текущего раунда */
+  .map-tester-dialog__play-btn--current {
+    border-color: #ffe38a;
+    background: rgba(255, 227, 138, 0.16);
+    color: #fff7d1;
+  }
+
   .map-tester-dialog__mark-btn {
     flex: 0 0 auto;
     width: 34px;

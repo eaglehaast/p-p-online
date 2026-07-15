@@ -49831,7 +49831,11 @@ function buildMapTesterListItem(map, mapIndex, marks){
   const playButton = document.createElement("button");
   playButton.type = "button";
   playButton.className = "map-tester-dialog__play-btn";
-  playButton.textContent = map?.name || map?.id || `map #${mapIndex}`;
+  const mapLabel = map?.name || map?.id || `map #${mapIndex}`;
+  playButton.textContent = mapLabel;
+  if(mapLabel === currentMapName){
+    playButton.classList.add("map-tester-dialog__play-btn--current");
+  }
   playButton.title = "Сыграть раунд на этой карте";
   playButton.addEventListener("click", () => playMapTesterMap(mapIndex));
   item.appendChild(playButton);
@@ -49911,6 +49915,12 @@ async function copyMapTesterMarks(){
 function openMapTesterDialog(){
   if(!(mapTesterDialog instanceof HTMLElement)) return;
   setMapTesterStatus("");
+  const dialogTitle = document.getElementById("mapTesterDialogTitle");
+  if(dialogTitle instanceof HTMLElement){
+    dialogTitle.textContent = typeof currentMapName === "string" && currentMapName !== "unknown map"
+      ? `Карты — сейчас: ${currentMapName}`
+      : "Карты";
+  }
   renderMapTesterLists();
   mapTesterDialog.hidden = false;
   mapTesterDialog.setAttribute("aria-hidden", "false");
