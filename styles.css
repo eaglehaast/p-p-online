@@ -866,6 +866,11 @@ body, button {
     gap: 6px;
   }
 
+  /* display: grid выше перебил бы UA-правило для [hidden] — возвращаем скрытие */
+  .map-tester-dialog__list[hidden] {
+    display: none;
+  }
+
   .map-tester-dialog__item {
     display: flex;
     align-items: center;
@@ -944,6 +949,58 @@ body, button {
   .map-tester-dialog__mark-btn--rework.map-tester-dialog__mark-btn--active {
     background: rgba(170, 130, 20, 0.55);
     border-color: #ffe38a;
+  }
+
+  /* Ручка перетаскивания слева в строке карты */
+  .map-tester-dialog__drag-handle {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: rgba(245, 232, 204, 0.06);
+    color: rgba(245, 232, 204, 0.55);
+    font-size: 14px;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+  }
+
+  .map-tester-dialog__drag-handle:hover {
+    background: rgba(245, 232, 204, 0.16);
+    color: rgba(245, 232, 204, 0.9);
+  }
+
+  .map-tester-dialog__drag-handle:active {
+    cursor: grabbing;
+  }
+
+  /* Призрак перетаскиваемой карты — следует за указателем */
+  .map-tester-dialog__drag-ghost {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(149, 210, 255, 0.7);
+    background: rgba(28, 60, 96, 0.92);
+    color: #eaf6ff;
+    font: 700 16px/1 "Patrick Hand", cursive;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Доступные контейнеры во время перетаскивания */
+  .map-tester-dialog__section--drop-target {
+    outline: 2px dashed rgba(149, 210, 255, 0.55);
+    outline-offset: 3px;
+    border-radius: 8px;
+  }
+
+  .map-tester-dialog__section--drop-hover {
+    outline-style: solid;
+    background: rgba(70, 140, 210, 0.18);
   }
 
   /* Кнопка-цикл перемещения easy → hard → archive → easy */

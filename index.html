@@ -202,22 +202,22 @@
                 <h2 id="mapTesterDialogTitle" class="map-editor-save-dialog__title">Карты</h2>
                 <p id="mapTesterStatus" class="map-tester-dialog__status" hidden></p>
 
-                <div class="map-tester-dialog__section">
+                <div class="map-tester-dialog__section" data-placement="easy">
                   <h3 class="map-tester-dialog__tier-title">Easy</h3>
                   <ul id="mapTesterEasyList" class="map-tester-dialog__list"></ul>
                 </div>
 
-                <div class="map-tester-dialog__section">
+                <div class="map-tester-dialog__section" data-placement="hard">
                   <h3 class="map-tester-dialog__tier-title">Hard</h3>
                   <ul id="mapTesterHardList" class="map-tester-dialog__list"></ul>
                 </div>
 
-                <div class="map-tester-dialog__section map-tester-dialog__section--archive">
+                <div class="map-tester-dialog__section map-tester-dialog__section--archive" data-placement="archive">
                   <button id="mapTesterArchiveToggle" class="map-tester-dialog__archive-toggle" type="button" aria-expanded="false">▸ Archive (0)</button>
                   <ul id="mapTesterArchiveList" class="map-tester-dialog__list" hidden></ul>
                 </div>
 
-                <p class="map-tester-dialog__hint">Пометки: ✓ оставить, ✎ доработать. Кнопка ⟳ перемещает карту вниз по кругу: easy → hard → Archive → easy. Архивные карты не выпадают в обычных играх, но доступны в Advanced Settings. Клик по названию — выделить карту, второй клик — сыграть на ней раунд.</p>
+                <p class="map-tester-dialog__hint">Пометки: ✓ оставить, ✎ доработать. Перенос между списками — кнопкой ⟳ (easy → hard → Archive → easy) или перетаскиванием за ⠿ слева. Архивные карты не выпадают в обычных играх, но доступны в Advanced Settings. Клик по названию — выделить карту, второй клик — сыграть на ней раунд.</p>
 
                 <div class="map-editor-save-dialog__actions">
                   <button id="mapTesterCopyBtn" class="map-editor-reset-btn" type="button">Copy marks</button>
