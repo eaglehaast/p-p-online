@@ -946,9 +946,14 @@ body, button {
     border-color: #ffe38a;
   }
 
-  .map-tester-dialog__mark-btn--delete.map-tester-dialog__mark-btn--active {
-    background: rgba(165, 55, 30, 0.6);
-    border-color: #ffab8a;
+  /* Кнопка-цикл перемещения easy → hard → archive → easy */
+  .map-tester-dialog__mark-btn--cycle {
+    background: rgba(70, 140, 210, 0.2);
+    border-color: rgba(149, 210, 255, 0.45);
+  }
+
+  .map-tester-dialog__mark-btn--cycle:hover {
+    background: rgba(70, 140, 210, 0.4);
   }
 
   .map-editor-save-dialog {
