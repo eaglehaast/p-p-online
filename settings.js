@@ -1214,6 +1214,7 @@ let isAnimating = false;
 const mapPreviewContainer = selectInSettings('#frame_field_1_visual');
 const mapPreview = selectInSettings('#mapPreview');
 const flameTrailImage = selectInSettings('#flameTrail');
+const flameTrailEchoImage = selectInSettings('#flameTrailEcho');
 const contrailImages = [
   selectInSettings('#contrail1'),
   selectInSettings('#contrail2')
@@ -1234,6 +1235,7 @@ let previewOscillationDir = 1;
 let previewArrow = null;
 let previewAnimationId = null;
 let previewSimulationInitialized = false;
+const FLAME_TRAIL_LOOP_MS = 3600;
 const previewPlaneBaselines = new WeakMap();
 let mapPreviewBricksCanvas = null;
 let mapPreviewBricksCtx = null;
@@ -2945,6 +2947,9 @@ function updateRangeFlame(value = rangeCommittedValue){
     const widthScale = trailRatio;
     const heightScale = 0.8 + 0.2 * trailRatio;
     flameTrailImage.style.transform = `scale(${widthScale}, ${heightScale})`;
+    if(flameTrailEchoImage instanceof HTMLElement){
+      flameTrailEchoImage.style.transform = `scale(${widthScale}, ${heightScale})`;
+    }
   }
 
   contrailImages.forEach((image) => {
@@ -2955,6 +2960,21 @@ function updateRangeFlame(value = rangeCommittedValue){
       image.style.transform = `scale(${ratio * 0.9})`;
     }
   });
+}
+
+function startDelayedGifLoop(image, delayMs){
+  if(!(image instanceof HTMLImageElement)) return;
+  const src = image.dataset?.src;
+  if(typeof src !== 'string' || src.length === 0) return;
+
+  window.setTimeout(() => {
+    image.src = src;
+  }, delayMs);
+}
+
+function setupFlameTrailLoopMasking(){
+  if(!(flameTrailEchoImage instanceof HTMLImageElement)) return;
+  startDelayedGifLoop(flameTrailEchoImage, Math.round(FLAME_TRAIL_LOOP_MS / 2));
 }
 
 function commitRangeValue(value){
@@ -4953,10 +4973,11 @@ if(isFieldDebugMarkerEnabled() &&
 
   updateRangeDisplay();
   updateRangeFlame();
-updateAmplitudeDisplay();
-updateAmplitudeIndicator();
-syncFieldSelectorState();
-updateUiFrameScale();
+  setupFlameTrailLoopMasking();
+  updateAmplitudeDisplay();
+  updateAmplitudeIndicator();
+  syncFieldSelectorState();
+  updateUiFrameScale();
 
 settingsBridge.onShow = handleSettingsLayerShow;
 settingsBridge.onHide = handleSettingsLayerHide;
