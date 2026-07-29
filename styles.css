@@ -919,7 +919,7 @@ body, button {
 
   .map-tester-dialog__mark-btn {
     flex: 0 0 auto;
-    width: 34px;
+    width: 28px;
     height: 34px;
     padding: 0;
     border: 1px solid rgba(245, 232, 204, 0.25);
@@ -949,6 +949,16 @@ body, button {
   .map-tester-dialog__mark-btn--rework.map-tester-dialog__mark-btn--active {
     background: rgba(170, 130, 20, 0.55);
     border-color: #ffe38a;
+  }
+
+  .map-tester-dialog__mark-btn--archive.map-tester-dialog__mark-btn--active {
+    background: rgba(70, 110, 165, 0.6);
+    border-color: #95d2ff;
+  }
+
+  .map-tester-dialog__mark-btn--delete.map-tester-dialog__mark-btn--active {
+    background: rgba(165, 55, 30, 0.6);
+    border-color: #ffab8a;
   }
 
   /* Ручка перетаскивания слева в строке карты */
@@ -1004,15 +1014,6 @@ body, button {
   }
 
   /* Кнопка-цикл перемещения easy → hard → archive → easy */
-  .map-tester-dialog__mark-btn--cycle {
-    background: rgba(70, 140, 210, 0.2);
-    border-color: rgba(149, 210, 255, 0.45);
-  }
-
-  .map-tester-dialog__mark-btn--cycle:hover {
-    background: rgba(70, 140, 210, 0.4);
-  }
-
   .map-editor-save-dialog {
     position: absolute;
     inset: 0;

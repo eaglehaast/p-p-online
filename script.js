@@ -49790,15 +49790,19 @@ function syncMapEditorResetButtonVisibility(){
 const MAP_TESTER_MARKS_STORAGE_KEY = "mapTester.marks";
 const MAP_TESTER_MARK_LABELS = Object.freeze({
   keep: "оставить",
-  rework: "доработать"
+  rework: "доработать",
+  archive: "в архив",
+  delete: "удалить"
 });
 const MAP_TESTER_MARK_BUTTONS = Object.freeze([
   { mark: "keep", glyph: "✓" },
-  { mark: "rework", glyph: "✎" }
+  { mark: "rework", glyph: "✎" },
+  { mark: "archive", glyph: "A" },
+  { mark: "delete", glyph: "D" }
 ]);
-// Размещение карты — одно из трёх полей окна. Кнопка ⟳ гоняет карту по циклу.
+// Размещение карты — одно из трёх полей окна; меняется перетаскиванием строки.
 const MAP_TESTER_PLACEMENTS_STORAGE_KEY = "mapTester.placements";
-const MAP_TESTER_PLACEMENT_CYCLE = Object.freeze(["easy", "hard", "archive"]);
+const MAP_TESTER_PLACEMENTS = Object.freeze(["easy", "hard", "archive"]);
 // Первый клик по карте только выделяет её, второй по той же — запускает раунд.
 let mapTesterArmedMapIndex = null;
 // Папка Archive внизу окна: раскрыта/свёрнута (состояние живёт, пока открыта игра).
@@ -49813,31 +49817,12 @@ function getMapNaturalPlacement(map){
 }
 
 function loadMapTesterPlacements(){
-  let placements;
   try {
     const parsed = JSON.parse(getStoredSetting(MAP_TESTER_PLACEMENTS_STORAGE_KEY) || "{}");
-    placements = parsed && typeof parsed === "object" ? parsed : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch(_error){
-    placements = {};
+    return {};
   }
-
-  // Миграция: старая пометка «удалить» означала архив.
-  const marks = loadMapTesterMarks();
-  let migrated = false;
-  for(const [mapId, mark] of Object.entries(marks)){
-    if(mark !== "delete") continue;
-    if(!placements[mapId]){
-      placements[mapId] = "archive";
-    }
-    delete marks[mapId];
-    migrated = true;
-  }
-  if(migrated){
-    saveMapTesterMarks(marks);
-    saveMapTesterPlacements(placements);
-  }
-
-  return placements;
 }
 
 function saveMapTesterPlacements(placements){
@@ -49848,7 +49833,7 @@ function saveMapTesterPlacements(placements){
 function getMapEffectivePlacement(map){
   if(!map || typeof map.id !== "string") return "hard";
   const override = loadMapTesterPlacements()[map.id];
-  if(MAP_TESTER_PLACEMENT_CYCLE.includes(override)){
+  if(MAP_TESTER_PLACEMENTS.includes(override)){
     return override;
   }
   return getMapNaturalPlacement(map);
@@ -49860,7 +49845,7 @@ function isMapArchived(map){
 
 function setMapTesterPlacement(map, placement){
   if(!map || typeof map.id !== "string") return;
-  if(!MAP_TESTER_PLACEMENT_CYCLE.includes(placement)) return;
+  if(!MAP_TESTER_PLACEMENTS.includes(placement)) return;
 
   const placements = loadMapTesterPlacements();
   if(placement === getMapNaturalPlacement(map)){
@@ -49872,18 +49857,10 @@ function setMapTesterPlacement(map, placement){
   renderMapTesterLists();
 }
 
-function cycleMapTesterPlacement(map){
-  if(!map || typeof map.id !== "string") return;
-  const current = getMapEffectivePlacement(map);
-  const cycleIndex = MAP_TESTER_PLACEMENT_CYCLE.indexOf(current);
-  const next = MAP_TESTER_PLACEMENT_CYCLE[(cycleIndex + 1) % MAP_TESTER_PLACEMENT_CYCLE.length];
-  setMapTesterPlacement(map, next);
-}
-
 /* --- Перетаскивание карты между контейнерами Easy / Hard / Archive ---
  * За ручку ⠿ слева строку можно подцепить указателем; на время перетаскивания
  * доступные контейнеры подсвечиваются, отпускание над контейнером переносит
- * карту (то же размещение, что и кнопка ⟳).
+ * карту в целевой список.
  */
 const MAP_TESTER_DRAG_THRESHOLD_PX = 4;
 let mapTesterDragState = null;
@@ -50105,14 +50082,6 @@ function buildMapTesterListItem(map, mapIndex, marks, options = {}){
     item.appendChild(markButton);
   }
 
-  const cycleButton = document.createElement("button");
-  cycleButton.type = "button";
-  cycleButton.className = "map-tester-dialog__mark-btn map-tester-dialog__mark-btn--cycle";
-  cycleButton.textContent = "⟳";
-  cycleButton.title = "Переместить: easy → hard → archive → easy";
-  cycleButton.addEventListener("click", () => cycleMapTesterPlacement(map));
-  item.appendChild(cycleButton);
-
   return item;
 }
 
@@ -50171,28 +50140,27 @@ function syncMapTesterArchiveUi(archivedCount){
 
 function buildMapTesterMarksSummary(){
   const marks = loadMapTesterMarks();
-  const groups = { keep: [], rework: [], archive: [], moved: [], unmarked: [] };
+  const groups = { keep: [], rework: [], archive: [], delete: [], moved: [], unmarked: [] };
 
   for(const map of MAPS){
     if(!map || typeof map.id !== "string") continue;
     const naturalPlacement = getMapNaturalPlacement(map);
     const placement = getMapEffectivePlacement(map);
-    const entry = `${naturalPlacement} ${describeMapTesterMap(map)}`;
+    const entry = `${placement} ${describeMapTesterMap(map)}`;
     const mark = marks[map.id];
     let grouped = false;
 
-    if(mark === "keep" || mark === "rework"){
+    if(groups[mark]){
       groups[mark].push(entry);
       grouped = true;
     }
-    if(placement === "archive" && naturalPlacement !== "archive"){
-      groups.archive.push(entry);
-      grouped = true;
-    } else if(placement !== naturalPlacement){
+    // Перетаскивание строки в другой список — отдельная запись:
+    // по ней меняется tier / флаг archived в JSON карты.
+    if(placement !== naturalPlacement){
       groups.moved.push(`${describeMapTesterMap(map)}: ${naturalPlacement} → ${placement}`);
       grouped = true;
     }
-    if(!grouped && naturalPlacement !== "archive"){
+    if(!grouped){
       groups.unmarked.push(entry);
     }
   }
@@ -50200,8 +50168,9 @@ function buildMapTesterMarksSummary(){
   const lines = ["Пометки Map Tester:"];
   lines.push(`оставить: ${groups.keep.length ? groups.keep.join(", ") : "—"}`);
   lines.push(`доработать: ${groups.rework.length ? groups.rework.join(", ") : "—"}`);
-  lines.push(`в архив: ${groups.archive.length ? groups.archive.join(", ") : "—"}`);
-  lines.push(`перенос тира: ${groups.moved.length ? groups.moved.join(", ") : "—"}`);
+  lines.push(`в архив (A): ${groups.archive.length ? groups.archive.join(", ") : "—"}`);
+  lines.push(`удалить (D): ${groups.delete.length ? groups.delete.join(", ") : "—"}`);
+  lines.push(`перемещены в окне: ${groups.moved.length ? groups.moved.join(", ") : "—"}`);
   lines.push(`без пометки: ${groups.unmarked.length ? groups.unmarked.join(", ") : "—"}`);
   return lines.join("\n");
 }
