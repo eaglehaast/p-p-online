@@ -9,7 +9,8 @@ const MAP_FALLBACK_SPRITE_PATHS = Object.freeze({
   brick_3_mini: 'ui_gamescreen/bricks/brick_3_mini.png',
   brick_5_corner: 'ui_gamescreen/bricks/brick_5_corner.png',
   brick_4: 'ui_gamescreen/bricks/brick4_diagonal copy.png',
-  brick_4_diagonal: 'ui_gamescreen/bricks/brick4_diagonal copy.png'
+  brick_4_diagonal: 'ui_gamescreen/bricks/brick4_diagonal copy.png',
+  brick_6_45: 'ui_gamescreen/bricks/brick_6_45.png'
 });
 const MAPS = [];
 const MAPS_MANIFEST_PATH = 'ui_gamescreen/maps/manifest.json';

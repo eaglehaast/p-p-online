@@ -10647,7 +10647,22 @@ const MAP_SPRITE_BASE_SIZES = Object.freeze({
   brick_1_default: { width: 20, height: 40 },
   brick_3_mini: { width: 20, height: 20 },
   brick_4_diagonal: { width: 60, height: 60 },
-  brick_5_corner: { width: 40, height: 40 }
+  brick_5_corner: { width: 40, height: 40 },
+  brick_6_45: { width: 40, height: 40 }
+});
+
+/**
+ * Кирпичи, у которых коллайдер не совпадает с боксом картинки.
+ * brick_6_45 — ромб: картинка занимает 2×2 клетки (40×40), но сам кирпич
+ * это вписанный квадрат, повёрнутый на 45°, вершинами в серединах сторон
+ * бокса. Каждая его сторона равна диагонали клетки (CELL_SIZE * √2).
+ */
+const MAP_SPRITE_COLLIDER_OVERRIDES = Object.freeze({
+  brick_6_45: {
+    width: CELL_SIZE * Math.SQRT2,
+    height: CELL_SIZE * Math.SQRT2,
+    rotationOffsetDeg: 45
+  }
 });
 const MAP_RENDER_MODES = mapDataBridge.MAP_RENDER_MODES || { DATA: 'data' };
 const MAPS = Array.isArray(mapDataBridge.MAPS) ? mapDataBridge.MAPS : [];
@@ -43711,19 +43726,23 @@ function buildRectColliderSurfaces(collider){
 
   return corners.map((point, index) => {
     const next = corners[(index + 1) % corners.length];
-    const localA = localCorners[index];
-    const localB = localCorners[(index + 1) % localCorners.length];
-    const isVertical = localA.x === localB.x;
-    const kind = isVertical ? "V" : "H";
     const normal = getSurfaceNormal(point, next, collider);
     if(!normal) return null;
+    // Тип грани — по мировой нормали, а не по локальным осям: у повёрнутого
+    // кирпича (ромб brick_6_45) грани диагональные, и движок должен видеть
+    // их именно так. У кирпичей без поворота метки те же, что и раньше.
+    const AXIS_EPS = 1e-9;
+    const isAxisAligned = Math.abs(normal.x) < AXIS_EPS || Math.abs(normal.y) < AXIS_EPS;
+    const kind = isAxisAligned
+      ? (Math.abs(normal.x) > Math.abs(normal.y) ? "V" : "H")
+      : "DIAG";
     return {
       p1: { x: point.x, y: point.y },
       p2: { x: next.x, y: next.y },
       normal,
-      type: "axis",
+      type: isAxisAligned ? "axis" : "diag",
       kind,
-      id: `${collider.id}-axis-${index}`,
+      id: `${collider.id}-${isAxisAligned ? "axis" : "diag"}-${index}`,
       colliderId: collider.id,
       spriteName: collider.spriteName
     };
@@ -50475,6 +50494,15 @@ function buildSpriteCollider(sprite, spriteIndex){
     };
   }
 
+  // Ромб brick_6_45 столкновениями работает как вписанный повёрнутый квадрат,
+  // а не как бокс картинки: иначе прозрачные углы бокса ловили бы самолёты.
+  const colliderOverride = MAP_SPRITE_COLLIDER_OVERRIDES[spriteName] || null;
+  const colliderWidth = Number.isFinite(colliderOverride?.width) ? colliderOverride.width : baseWidth;
+  const colliderHeight = Number.isFinite(colliderOverride?.height) ? colliderOverride.height : baseHeight;
+  const colliderRotationOffsetDeg = Number.isFinite(colliderOverride?.rotationOffsetDeg)
+    ? colliderOverride.rotationOffsetDeg
+    : 0;
+
   return {
     id,
     type: "rect",
@@ -50482,9 +50510,9 @@ function buildSpriteCollider(sprite, spriteIndex){
     spriteName,
     cx,
     cy,
-    halfWidth: (baseWidth * Math.abs(scaleX)) / 2,
-    halfHeight: (baseHeight * Math.abs(scaleY)) / 2,
-    rotation: rotationRad
+    halfWidth: (colliderWidth * Math.abs(scaleX)) / 2,
+    halfHeight: (colliderHeight * Math.abs(scaleY)) / 2,
+    rotation: rotationRad + colliderRotationOffsetDeg * Math.PI / 180
   };
 }
 
