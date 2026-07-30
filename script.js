@@ -1211,8 +1211,9 @@ function buildTransferTurnTexts(player, roundValue) {
   const safeRound = Number.isFinite(parsedRound) && parsedRound > 0
     ? Math.floor(parsedRound)
     : 1;
+  const isDuelRound = typeof isDuelModeActive === "function" && isDuelModeActive();
   return {
-    topText: `ROUND ${safeRound}`,
+    topText: isDuelRound ? DUEL_MODE_BANNER_TEXT : `ROUND ${safeRound}`,
     bottomText: `${turnName} TURN`
   };
 }
@@ -9163,6 +9164,21 @@ function getStartPlaneWorldPositions(){
 
   return startPositions;
 }
+
+// Дуэль: по одному самолёту на сторону, в середине своего ряда — там, где
+// в обычном раунде стоят флаг и база. Y берётся из обычной расстановки,
+// чтобы не дублировать расчёт отступов и клампов.
+function getDuelPlaneWorldPositions(){
+  const rows = getStartPlaneWorldPositions();
+  const fieldWidth = Number.isFinite(FIELD_WIDTH) && FIELD_WIDTH > 0 ? FIELD_WIDTH : WORLD.width;
+  const centerX = FIELD_LEFT + fieldWidth / 2;
+  const centerOfRow = (row) => {
+    const rowY = row?.[0]?.y;
+    return Number.isFinite(rowY) ? [{ x: centerX, y: rowY }] : [];
+  };
+
+  return { blue: centerOfRow(rows.blue), green: centerOfRow(rows.green) };
+}
 const FLAG_LAYOUTS = {
   blue: { x: 170, y: 41, width: 20, height: 20 },
   green: { x: 170, y: 568, width: 20, height: 20 },
@@ -11249,6 +11265,65 @@ const POINTS_TO_WIN = 24;
 let greenScore = 0;
 let blueScore  = 0;
 let roundNumber = 0;
+
+/* ======= Duel mode =======
+ * Матч-пойнт с обеих сторон (23:23 при POINTS_TO_WIN = 24) — раунд идёт по
+ * особым правилам: у каждого по одному самолёту в середине своего ряда,
+ * флагов и баз нет, играют до первого сбитого. Флаг взводится один раз,
+ * в начале раунда, и держится до конца этого раунда.
+ */
+const DUEL_MODE_BANNER_TEXT = "DUEL";
+let duelModeActive = false;
+
+function isDuelModeActive(){
+  return duelModeActive === true;
+}
+
+function isDuelScoreTie(){
+  const matchPoint = POINTS_TO_WIN - 1;
+  return blueScore === matchPoint && greenScore === matchPoint;
+}
+
+function shouldStartDuelRound(){
+  // В аркадном режиме бесконечного счёта порога в 24 очка нет — дуэли тоже.
+  if(isArcadeInfiniteScoreMode()) return false;
+  return isDuelScoreTie();
+}
+
+/**
+ * Отладочная команда для консоли: PW_FORCE_DUEL()
+ * Выставляет счёт 23:23 и завершает текущий раунд без победителя. Дуэль после
+ * этого включается не принудительно, а обычной проверкой условия в начале
+ * следующего раунда — как в настоящей игре.
+ */
+function forceDuelTieForTesting(){
+  if(!document.body.classList.contains("screen--game")){
+    console.warn("[duel] PW_FORCE_DUEL: сначала запустите матч");
+    return false;
+  }
+
+  const matchPoint = POINTS_TO_WIN - 1;
+  blueScore = matchPoint;
+  greenScore = matchPoint;
+  resetMatchScoreAnimations();
+  renderScoreboard();
+
+  if(!isGameOver){
+    lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
+  }
+
+  console.info("[duel] PW_FORCE_DUEL: счёт выставлен", {
+    blueScore,
+    greenScore,
+    next: "текущий раунд завершается, следующий стартует по дуэльным правилам"
+  });
+  return true;
+}
+
+if(typeof window !== "undefined"){
+  window.PW_FORCE_DUEL = forceDuelTieForTesting;
+}
+
 let roundTextTimer = 0;
 let roundTextTimerStartTimeout = null;
 let roundTransitionTimeout = null;
@@ -18230,7 +18305,9 @@ function getHomeRowY(color){
 
 function initPoints(){
   points = [];
-  const startPositions = getStartPlaneWorldPositions();
+  const startPositions = isDuelModeActive()
+    ? getDuelPlaneWorldPositions()
+    : getStartPlaneWorldPositions();
   const firstBlueY = startPositions.blue[0]?.y ?? 0;
   const firstGreenY = startPositions.green[0]?.y ?? FIELD_TOP + FIELD_HEIGHT;
   HOME_ROW_Y = { blue: firstBlueY, green: firstGreenY };
@@ -18353,6 +18430,8 @@ function isPlaneInactiveForLaunch(plane){
 }
 
 function getFlagConfigsForMap(map = null){
+  // В дуэли флагов на поле нет вовсе — ни на карте, ни в фолбэке.
+  if(isDuelModeActive()) return [];
   const mapFlags = Array.isArray(map?.flags) ? map.flags : null;
   const fallbackFlags = Object.entries(FLAG_LAYOUTS).map(([color, layout]) => ({ color, layout }));
   const source = mapFlags?.length ? mapFlags : fallbackFlags;
@@ -18372,6 +18451,8 @@ function getFlagConfigsForMap(map = null){
 }
 
 function isFlagsModeEnabled(){
+  // Дуэль убирает и флаги, и базы: их не рисуют и с ними нельзя взаимодействовать.
+  if(isDuelModeActive()) return false;
   return settings.flagsEnabled !== false;
 }
 
@@ -18738,6 +18819,7 @@ function resetGame(options = {}){
 
   greenScore = 0;
   blueScore  = 0;
+  duelModeActive = false;
   resetMatchScoreAnimations();
   updateArcadeScore({ blue: 0, green: 0 });
   roundNumber = 0;
@@ -49353,6 +49435,12 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
       continue;
     }
 
+    // Слот без самолёта — в дуэли сторона выходит одним бортом, и лишние
+    // слоты не должны выглядеть как живые самолёты.
+    if (!plane) {
+      continue;
+    }
+
     const isArcadeRespawnActive = isArcadePlaneRespawnEnabled();
     const respawnAlpha = isArcadeRespawnActive && plane && isPlaneRespawnPenaltyActive(plane)
       ? getInactivePlaneAlpha(now, plane)
@@ -49401,6 +49489,7 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
+    duelModeActive = false;
     resetMatchScoreAnimations();
     updateArcadeScore({ blue: 0, green: 0 });
     roundNumber = 0;
@@ -49545,6 +49634,14 @@ function startNewRound(){
     roundTextTimerStartTimeout = null;
   }
   clearAiPostInventoryLaunchTimeout("start_new_round");
+
+  // Дуэль взводится до применения карты: applyCurrentMap заново расставляет
+  // самолёты и флаги, и они должны сразу лечь по дуэльным правилам.
+  duelModeActive = shouldStartDuelRound();
+  if(duelModeActive){
+    console.log("[duel] duel round", { blueScore, greenScore, pointsToWin: POINTS_TO_WIN });
+  }
+
   const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
   if(shouldRandomize){
     if(settings.mapIndex !== getRandomMapSentinelIndex()){
