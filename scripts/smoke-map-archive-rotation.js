@@ -2,7 +2,7 @@
 'use strict';
 
 // Smoke test: ротация случайных карт (classic и randomizeMapEachRound) должна
-// уважать размещения Map Tester. Карта в архиве (перенесена кнопкой ⟳ или
+// уважать размещения Map Tester. Карта в архиве (перетащена в папку Archive или
 // "archived": true в JSON) не попадает в пул вообще; карта, перенесённая между
 // easy и hard, выпадает в раундах своего нового тира. Ручной выбор в Advanced
 // Settings не ограничивается — тут проверяется только пул ротации.
@@ -35,8 +35,8 @@ const source = fs.readFileSync('script.js', 'utf8');
 const MAPS = [
   { id: 'easyA', name: 'easyA', tier: 'easy' },
   { id: 'easyB', name: 'easyB', tier: 'easy' },
-  { id: 'easyMoved', name: 'easyMoved', tier: 'easy' },          // перенесена ⟳ в hard
-  { id: 'easyArchivedLocal', name: 'easyArchivedLocal', tier: 'easy' }, // перенесена ⟳ в архив
+  { id: 'easyMoved', name: 'easyMoved', tier: 'easy' },          // перетащена в hard
+  { id: 'easyArchivedLocal', name: 'easyArchivedLocal', tier: 'easy' }, // перетащена в архив
   { id: 'hardA', name: 'hardA', tier: 'hard' },
   { id: 'hardJsonArchived', name: 'hardJsonArchived', tier: 'hard', archived: true }
 ];
@@ -45,7 +45,7 @@ const PLACEMENTS = { easyMoved: 'hard', easyArchivedLocal: 'archive' };
 
 const context = {
   MAPS,
-  MAP_TESTER_PLACEMENT_CYCLE: Object.freeze(['easy', 'hard', 'archive']),
+  MAP_TESTER_PLACEMENTS: Object.freeze(['easy', 'hard', 'archive']),
   loadMapTesterPlacements: () => PLACEMENTS
 };
 vm.createContext(context);
