@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "map": {
-    "id": "clearSky",
-    "name": "<<<",
+    "id": "chevrons",
+    "name": "chevrons",
     "mode": "data",
     "tier": "easy",
     "difficulty": "easy",
@@ -395,6 +395,7 @@
           "height": 20
         }
       }
-    ]
+    ],
+    "archived": true
   }
 }
