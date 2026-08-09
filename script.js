@@ -50053,9 +50053,10 @@ function updateMapTesterDrag(event){
   }
 }
 
+// Возвращает { dragged }: перетаскивание это было или обычный клик по карточке.
 function finishMapTesterDrag(event, options = {}){
   const state = mapTesterDragState;
-  if(!state || (event && event.pointerId !== state.pointerId)) return;
+  if(!state || (event && event.pointerId !== state.pointerId)) return { dragged: false };
   mapTesterDragState = null;
 
   const dropSection = !options.cancelled ? state.hoveredSection : null;
@@ -50071,6 +50072,8 @@ function finishMapTesterDrag(event, options = {}){
   if(dropSection instanceof HTMLElement && state.active){
     setMapTesterPlacement(state.map, dropSection.dataset.placement);
   }
+
+  return { dragged: state.active === true };
 }
 
 function isMapTesterModeActive(){
@@ -50128,20 +50131,130 @@ function describeMapTesterMap(map){
   return name === id ? id : `${id} (${name})`;
 }
 
+/* --- Превью карты в окне тестера ---
+ * Карта рисуется тем же drawMapSprites, что и настоящее поле, поэтому
+ * превью совпадает с игрой. Готовые превью кешируются по id карты:
+ * перерисовка списка (например, после пометки) не перерисовывает 45 полей.
+ */
+// Кирпичи рамки выходят за границы поля, поэтому превью рисуется с полями:
+// иначе периметр карты обрезается по краю канваса.
+const MAP_TESTER_PREVIEW_MARGIN = 12;
+const MAP_TESTER_PREVIEW_WORLD_WIDTH = WORLD.width + MAP_TESTER_PREVIEW_MARGIN * 2;
+const MAP_TESTER_PREVIEW_WORLD_HEIGHT = WORLD.height + MAP_TESTER_PREVIEW_MARGIN * 2;
+const MAP_TESTER_PREVIEW_WIDTH = 96;
+const MAP_TESTER_PREVIEW_HEIGHT = Math.round(
+  MAP_TESTER_PREVIEW_WIDTH * MAP_TESTER_PREVIEW_WORLD_HEIGHT / MAP_TESTER_PREVIEW_WORLD_WIDTH
+);
+const MAP_TESTER_PREVIEW_PIXEL_RATIO = 2;
+const mapTesterPreviewCache = new Map();
+
+function areMapTesterPreviewAssetsReady(map){
+  const spriteNames = new Set((map?.sprites || []).map((sprite) => (
+    typeof sprite?.spriteName === "string" ? sprite.spriteName : MAP_DEFAULT_SPRITE_NAME
+  )));
+  for(const spriteName of spriteNames){
+    const asset = MAP_SPRITE_ASSETS[spriteName] || MAP_SPRITE_ASSETS[MAP_DEFAULT_SPRITE_NAME];
+    if(!isSpriteReady(asset)) return false;
+  }
+  return true;
+}
+
+function drawMapTesterPreview(canvas, map){
+  const ctx = canvas.getContext("2d");
+  if(!ctx) return;
+
+  const scale = canvas.width / MAP_TESTER_PREVIEW_WORLD_WIDTH;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.translate(MAP_TESTER_PREVIEW_MARGIN, MAP_TESTER_PREVIEW_MARGIN);
+  drawMapSprites(ctx, map?.sprites || []);
+
+  // Флаги — просто цветные метки: по ним видно, где чья половина.
+  for(const flag of (map?.flags || [])){
+    const layout = flag?.layout || flag;
+    if(!Number.isFinite(layout?.x) || !Number.isFinite(layout?.y)) continue;
+    ctx.fillStyle = colorFor(flag?.color);
+    ctx.fillRect(layout.x, layout.y, layout.width ?? FLAG_WIDTH, layout.height ?? FLAG_WIDTH);
+  }
+  ctx.restore();
+}
+
+function getMapTesterPreviewCanvas(map){
+  const cached = map?.id ? mapTesterPreviewCache.get(map.id) : null;
+  if(cached) return cached;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = MAP_TESTER_PREVIEW_WIDTH * MAP_TESTER_PREVIEW_PIXEL_RATIO;
+  canvas.height = MAP_TESTER_PREVIEW_HEIGHT * MAP_TESTER_PREVIEW_PIXEL_RATIO;
+  drawMapTesterPreview(canvas, map);
+
+  // Пока кирпичи не догрузились, превью не кешируем — перерисуем позже.
+  if(map?.id && areMapTesterPreviewAssetsReady(map)){
+    mapTesterPreviewCache.set(map.id, canvas);
+  }
+  return canvas;
+}
+
+// Перерисовать окно, когда докачаются спрайты кирпичей (первый заход в игру).
+function scheduleMapTesterPreviewRefresh(){
+  const assets = ensureMapSpriteAssets();
+  const pending = Object.values(assets).filter((asset) => asset instanceof HTMLImageElement && !isSpriteReady(asset));
+  if(pending.length === 0) return;
+
+  for(const asset of pending){
+    asset.addEventListener("load", () => {
+      mapTesterPreviewCache.clear();
+      if(mapTesterDialog instanceof HTMLElement && !mapTesterDialog.hidden){
+        renderMapTesterLists();
+      }
+    }, { once: true });
+  }
+}
+
+function activateMapTesterCard(mapIndex){
+  // Первый клик по карте выделяет её, второй по той же — запускает раунд.
+  if(mapTesterArmedMapIndex === mapIndex){
+    playMapTesterMap(mapIndex);
+    return;
+  }
+  mapTesterArmedMapIndex = mapIndex;
+  renderMapTesterLists();
+}
+
 function buildMapTesterListItem(map, mapIndex, marks, options = {}){
   const item = document.createElement("li");
   item.className = "map-tester-dialog__item";
+  const mapLabel = map?.name || map?.id || `map #${mapIndex}`;
+  const isCurrentMap = mapLabel === currentMapName;
+  const isArmed = mapIndex === mapTesterArmedMapIndex;
+  if(isCurrentMap) item.classList.add("map-tester-dialog__item--current");
+  if(isArmed) item.classList.add("map-tester-dialog__item--armed");
 
-  const dragHandle = document.createElement("span");
-  dragHandle.className = "map-tester-dialog__drag-handle";
-  dragHandle.textContent = "⠿";
-  dragHandle.title = "Перетащить карту в другой список";
-  dragHandle.addEventListener("pointerdown", (event) => beginMapTesterDrag(event, map, dragHandle));
-  dragHandle.addEventListener("pointermove", updateMapTesterDrag);
-  dragHandle.addEventListener("pointerup", (event) => finishMapTesterDrag(event));
-  dragHandle.addEventListener("pointercancel", (event) => finishMapTesterDrag(event, { cancelled: true }));
-  item.appendChild(dragHandle);
+  const preview = document.createElement("canvas");
+  preview.className = "map-tester-dialog__preview";
+  preview.width = MAP_TESTER_PREVIEW_WIDTH * MAP_TESTER_PREVIEW_PIXEL_RATIO;
+  preview.height = MAP_TESTER_PREVIEW_HEIGHT * MAP_TESTER_PREVIEW_PIXEL_RATIO;
+  preview.title = isArmed
+    ? "Ещё клик — сыграть раунд на этой карте"
+    : "Клик — выделить карту, перетаскивание — в другой список";
+  const previewCtx = preview.getContext("2d");
+  previewCtx?.drawImage(getMapTesterPreviewCanvas(map), 0, 0);
 
+  // Превью — и кнопка, и «ручка»: если указатель сдвинулся, это перетаскивание,
+  // если нет — обычный клик по карте.
+  preview.addEventListener("pointerdown", (event) => beginMapTesterDrag(event, map, preview));
+  preview.addEventListener("pointermove", updateMapTesterDrag);
+  preview.addEventListener("pointerup", (event) => {
+    const result = finishMapTesterDrag(event);
+    if(!result.dragged){
+      activateMapTesterCard(mapIndex);
+    }
+  });
+  preview.addEventListener("pointercancel", (event) => finishMapTesterDrag(event, { cancelled: true }));
+  item.appendChild(preview);
+
+  // Бейдж тира лежит поверх превью, чтобы не отнимать ширину у названия.
   if(options.showTierBadge){
     const tierBadge = document.createElement("span");
     tierBadge.className = "map-tester-dialog__tier-badge";
@@ -50152,26 +50265,13 @@ function buildMapTesterListItem(map, mapIndex, marks, options = {}){
   const playButton = document.createElement("button");
   playButton.type = "button";
   playButton.className = "map-tester-dialog__play-btn";
-  const mapLabel = map?.name || map?.id || `map #${mapIndex}`;
   playButton.textContent = mapLabel;
-  if(mapLabel === currentMapName){
-    playButton.classList.add("map-tester-dialog__play-btn--current");
-  }
-  if(mapIndex === mapTesterArmedMapIndex){
-    playButton.classList.add("map-tester-dialog__play-btn--armed");
-  }
-  playButton.title = mapIndex === mapTesterArmedMapIndex
-    ? "Ещё клик — сыграть раунд на этой карте"
-    : "Клик — выделить карту";
-  playButton.addEventListener("click", () => {
-    if(mapTesterArmedMapIndex === mapIndex){
-      playMapTesterMap(mapIndex);
-      return;
-    }
-    mapTesterArmedMapIndex = mapIndex;
-    renderMapTesterLists();
-  });
+  playButton.title = `${mapLabel} — ${preview.title}`;
+  playButton.addEventListener("click", () => activateMapTesterCard(mapIndex));
   item.appendChild(playButton);
+
+  const marksRow = document.createElement("div");
+  marksRow.className = "map-tester-dialog__marks-row";
 
   const currentMark = marks[map?.id];
   for(const { mark, glyph } of MAP_TESTER_MARK_BUTTONS){
@@ -50195,9 +50295,10 @@ function buildMapTesterListItem(map, mapIndex, marks, options = {}){
       }
       toggleMapTesterMark(map?.id, mark);
     });
-    item.appendChild(markButton);
+    marksRow.appendChild(markButton);
   }
 
+  item.appendChild(marksRow);
   return item;
 }
 
@@ -50314,6 +50415,7 @@ function openMapTesterDialog(){
       : "Карты";
   }
   renderMapTesterLists();
+  scheduleMapTesterPreviewRefresh();
   mapTesterDialog.hidden = false;
   mapTesterDialog.setAttribute("aria-hidden", "false");
 }
