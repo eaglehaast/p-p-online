@@ -829,10 +829,54 @@ body, button {
     border-top: 1px solid rgba(245, 232, 204, 0.25);
   }
 
+  /* Заголовок архива липкий: при прокрутке длинного списка он остаётся
+     на виду вместе с мини-контейнерами для дропа. */
+  .map-tester-dialog__archive-header {
+    position: sticky;
+    top: -10px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0 2px;
+    background: rgba(33, 24, 14, 0.97);
+  }
+
+  .map-tester-dialog__quick-drops {
+    display: flex;
+    gap: 5px;
+    margin-left: auto;
+  }
+
+  .map-tester-dialog__quick-drops[hidden],
+  .map-tester-dialog__quick-drop[hidden] {
+    display: none;
+  }
+
+  .map-tester-dialog__quick-drop {
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: 1px dashed rgba(149, 210, 255, 0.65);
+    background: rgba(70, 140, 210, 0.2);
+    color: #eaf6ff;
+    font: 700 15px/1.2 "Patrick Hand", cursive;
+  }
+
+  /* Подсветка цели под курсором — общий класс, что и у больших зон */
+  .map-tester-dialog__quick-drop.map-tester-dialog__section--drop-target {
+    outline: none;
+  }
+
+  .map-tester-dialog__quick-drop.map-tester-dialog__section--drop-hover {
+    border-style: solid;
+    background: rgba(70, 140, 210, 0.55);
+    color: #fff;
+  }
+
   .map-tester-dialog__archive-toggle {
     display: block;
-    width: 100%;
-    margin: 0 0 6px;
+    flex: 1 1 auto;
+    margin: 0;
     padding: 4px 6px;
     border: none;
     border-radius: 6px;
