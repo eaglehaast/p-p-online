@@ -16899,7 +16899,78 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }
       }
 
+      // Сколько целей путь только ЗАДЕВАЕТ: не гарантированное попадание, но реальный
+      // шанс (прицел ИИ гуляет). Уверенные цели сюда не попадают — они уже посчитаны.
+      const countChancePasses = (path, hitEnemyRefs) => {
+        if(!Array.isArray(path) || path.length < 2) return 0;
+        const nearPath = (x, y, tol) => {
+          for(let i = 0; i < path.length - 1; i += 1){
+            if(getDistanceFromPointToSegment(x, y, path[i].x, path[i].y, path[i + 1].x, path[i + 1].y) <= tol) return true;
+          }
+          return false;
+        };
+        let chances = 0;
+        for(const e of sweepEnemies){
+          if(hitEnemyRefs.includes(e.enemy)) continue;
+          if(nearPath(e.enemy.x, e.enemy.y, enemySweepTol + AI_SWEEP_CHANCE_BAND_PX)) chances += 1;
+        }
+        for(const c of sweepCargos){
+          if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, sweepPlane, path)) continue;
+          if(nearPath(c.center.x, c.center.y, enemySweepTol + AI_SWEEP_CHANCE_BAND_PX)) chances += 1;
+        }
+        return chances;
+      };
+
+      const evaluateSweepSim = (sim) => {
+        if(!sim || !Array.isArray(sim.predictedPath) || sim.predictedPath.length < 2) return null;
+        // Маршрут, таранящий мину, самоподрывается на полпути — целей это не стоит.
+        if(typeof doesFlightPathCrossMine === "function" && doesFlightPathCrossMine(sim.predictedPath, plane)) return null;
+        let cargoHit = 0, enemyHit = 0;
+        const enemyRefs = [];
+        for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, sweepPlane, sim.predictedPath)) cargoHit += 1; }
+        for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, sim.predictedPath, enemySweepTol)){ enemyHit += 1; enemyRefs.push(e.enemy); } }
+        const flagHit = countFlagsOnPath(sim.predictedPath);
+        // rawCount drives the pair/dominate tiers (flag = ONE target, so it can't force
+        // an ignore-safety dominate by itself); value picks the best DIRECTION, where a
+        // safe flag outweighs a single cargo/kill.
+        const rawCount = cargoHit + enemyHit + flagHit;
+        const value = cargoHit + enemyHit + flagHit * AI_FLAG_SWEEP_TARGET_WEIGHT;
+        const chances = countChancePasses(sim.predictedPath, enemyRefs);
+        return {
+          rawCount, value, cargoHit, enemyHit, enemyRefs, flagHit, chances,
+          // Ценность «на удачу» — только для сравнения базового и заправленного
+          // маршрутов; выбор базового направления она не трогает.
+          valueWithChance: value + chances * AI_SWEEP_CHANCE_WEIGHT,
+          bounceCount: sim.bounceCount,
+          travel: Number.isFinite(sim.travelDistance) ? sim.travelDistance : Number.POSITIVE_INFINITY,
+          end: sim.predictedPath[sim.predictedPath.length - 1],
+        };
+      };
+
+      // Заправленный проход: тот же угол, но удвоенная дальность. Нужен, чтобы найти
+      // маршруты, которых на базовой дальности просто нет.
+      const sweepColorEarly = plane.color || aiColor;
+      const fuelOnHandForSweep = typeof evaluateInventoryState === "function"
+        && Number(evaluateInventoryState(sweepColorEarly)?.counts?.[INVENTORY_ITEM_TYPES.FUEL] ?? 0) > 0
+        && !plane.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.FUEL]
+        && typeof applyItemToOwnPlane === "function";
+      let boostedSimsLeft = fuelOnHandForSweep ? AI_FUEL_SWEEP_BOOSTED_SIM_BUDGET : 0;
+      const simulateBoosted = (dir, scale) => {
+        if(boostedSimsLeft <= 0) return null;
+        boostedSimsLeft -= 1;
+        const prevBuffs = plane.activeTurnBuffs && typeof plane.activeTurnBuffs === "object" ? { ...plane.activeTurnBuffs } : {};
+        let sim = null;
+        // silent: это ПРОБА дальности, а не настоящее применение — оранжевое кольцо
+        // «топливо применено» не должно мигать на каждом переборе.
+        if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, sweepColorEarly, plane, { silent: true })){
+          sim = simulateAIShot(plane, { dx: dir.nx, dy: dir.ny, scale }, { maxBounces: AI_SWEEP_MAX_BOUNCES });
+        }
+        plane.activeTurnBuffs = prevBuffs;
+        return sim;
+      };
+
       let best = null;
+      let bestBoosted = null;
       let simBudget = 0;
       for(const dir of directions){
         const scales = dir.anchor ? AI_SWEEP_ANCHOR_SCALES : [1];
@@ -16909,31 +16980,57 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             if(!isAiTurnStillApplicable()) return null;
           }
           const sim = simulateAIShot(plane, { dx: dir.nx, dy: dir.ny, scale }, { maxBounces: AI_SWEEP_MAX_BOUNCES });
-          if(!sim || !Array.isArray(sim.predictedPath) || sim.predictedPath.length < 2) continue;
-          // A sweep line that rams a mine self-detonates mid-flight — no targets are
-          // worth that. Skip the direction (mines aren't colliders, so the sim flew
-          // straight through it).
-          if(typeof doesFlightPathCrossMine === "function" && doesFlightPathCrossMine(sim.predictedPath, plane)) continue;
-          let cargoHit = 0, enemyHit = 0;
-          const enemyRefs = [];
-          for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, sweepPlane, sim.predictedPath)) cargoHit += 1; }
-          for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, sim.predictedPath, enemySweepTol)){ enemyHit += 1; enemyRefs.push(e.enemy); } }
-          const flagHit = countFlagsOnPath(sim.predictedPath);
-          // rawCount drives the pair/dominate tiers (flag = ONE target, so it can't force
-          // an ignore-safety dominate by itself); value picks the best DIRECTION, where a
-          // safe flag outweighs a single cargo/kill.
-          const rawCount = cargoHit + enemyHit + flagHit;
-          if(rawCount < AI_MULTI_TARGET_PAIR_MIN) continue;
-          const value = cargoHit + enemyHit + flagHit * AI_FLAG_SWEEP_TARGET_WEIGHT;
-          const travel = Number.isFinite(sim.travelDistance) ? sim.travelDistance : Number.POSITIVE_INFINITY;
-          const better = !best
-            || value > best.value
-            || (value === best.value && sim.bounceCount < best.bounceCount)
-            || (value === best.value && sim.bounceCount === best.bounceCount && travel < best.travel);
-          if(better){
-            best = { nx: dir.nx, ny: dir.ny, scale, count: rawCount, value, cargoHit, enemyHit, enemyRefs, flagHit, bounceCount: sim.bounceCount, travel, end: sim.predictedPath[sim.predictedPath.length - 1] };
+          const evalBase = evaluateSweepSim(sim);
+
+          if(evalBase && evalBase.rawCount >= AI_MULTI_TARGET_PAIR_MIN){
+            const better = !best
+              || evalBase.value > best.value
+              || (evalBase.value === best.value && evalBase.bounceCount < best.bounceCount)
+              || (evalBase.value === best.value && evalBase.bounceCount === best.bounceCount && evalBase.travel < best.travel);
+            if(better){
+              best = { nx: dir.nx, ny: dir.ny, scale, count: evalBase.rawCount, ...evalBase };
+            }
+          }
+
+          // Заправленный вариант того же направления. Полный угловой перебор дорог,
+          // поэтому пробуем направления «к цели» и те, что хоть что-то дают на базе.
+          const worthBoostedProbe = fuelOnHandForSweep
+            && (dir.anchor || (evalBase && evalBase.rawCount + evalBase.chances >= 1));
+          if(worthBoostedProbe){
+            const evalBoost = evaluateSweepSim(simulateBoosted(dir, scale));
+            if(evalBoost && evalBoost.rawCount >= AI_MULTI_TARGET_PAIR_MIN){
+              const betterBoost = !bestBoosted
+                || evalBoost.valueWithChance > bestBoosted.valueWithChance
+                || (evalBoost.valueWithChance === bestBoosted.valueWithChance && evalBoost.bounceCount < bestBoosted.bounceCount);
+              if(betterBoost){
+                bestBoosted = {
+                  nx: dir.nx, ny: dir.ny, scale,
+                  count: evalBoost.rawCount,
+                  ...evalBoost,
+                  baseCount: evalBase ? evalBase.rawCount : 0,
+                  baseValueWithChance: evalBase ? evalBase.valueWithChance : 0,
+                };
+              }
+            }
           }
         }
+      }
+
+      // Заправленный маршрут забирает ход, если он ощутимо ценнее лучшего базового:
+      // это и есть «улететь в зону, где много врагов» — на базовой дальности такого
+      // направления нет вовсе (best === null) или оно там заметно беднее.
+      let fuelSweepRoute = null;
+      if(bestBoosted && (!best || bestBoosted.valueWithChance > best.valueWithChance + AI_FUEL_SWEEP_MIN_VALUE_GAIN)){
+        fuelSweepRoute = {
+          baseCount: bestBoosted.baseCount,
+          boostedCount: bestBoosted.rawCount,
+          boostedChances: bestBoosted.chances,
+          boostedValueWithChance: Number(bestBoosted.valueWithChance.toFixed(2)),
+          replacedBaseValueWithChance: best ? Number(best.valueWithChance.toFixed(2)) : null,
+          boostedBounceCount: bestBoosted.bounceCount,
+          onlyWithFuel: !best,
+        };
+        best = bestBoosted;
       }
       if(!best) return null;
 
@@ -17007,6 +17104,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         landingRisk,
         travel: best.travel,
         aiFuelRicochetExtend,
+        // Маршрут найден заправленным перебором: без топлива он бессмыслен, поэтому
+        // выбор баффов обязан выдать бак (см. pickAiBuffsForSelectedPlan).
+        aiFuelSweepRoute: fuelSweepRoute,
         // Counted with the wide wings span — the buff picker should grant wings so the
         // grazing kills in this spray actually land.
         aiWingsSweepWiden: wingsOnHand,
@@ -17637,7 +17737,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     if(Array.isArray(selectedPlanEnhancementSequence)
       && selectedPlanEnhancementSequence.some((entry) =>
         entry?.itemType === INVENTORY_ITEM_TYPES.FUEL
-        && (entry?.reason === "ricochet_sweep_extend_more_targets" || entry?.reason === "flag_capture_fuel"))){
+        && (entry?.reason === "ricochet_sweep_extend_more_targets"
+          || entry?.reason === "flag_capture_fuel"
+          || entry?.reason === "fuel_sweep_route"))){
       selectedPlan.fuelReplanned = true;
     }
     aiThinkingTimingStageEnd("inventory_enhance");
@@ -21292,6 +21394,20 @@ const AI_SWEEP_ANGLE_STEP_DEG = 20;
 const AI_SWEEP_MAX_BOUNCES = 2;
 const AI_SWEEP_ANCHOR_SCALES = [1, 0.7];
 const AI_SWEEP_ENEMY_HIT_TOLERANCE_PX = CELL_SIZE; // ~ danger half-width (18) + margin
+
+/* Заправленный поиск направления для сметающего маршрута.
+ * Перебор направлений идёт на базовой дальности, поэтому направление, которое
+ * на 30 клетках пусто, а на 60 прошивает скопление врагов, невидимо в принципе.
+ * С баком в запасе те же направления пересимулируются на удвоенной дальности:
+ * маршрут вдвое длиннее — больше ломаных линий по полю, больше пересечений.
+ */
+const AI_FUEL_SWEEP_BOOSTED_SIM_BUDGET = 48;   // потолок доп. симуляций за ход
+// «Пролёт рядом»: попадание не гарантировано (прицел ИИ гуляет), но шанс реальный.
+// Считаем такие цели отдельно и с малым весом — уверенные цели всё равно главнее.
+const AI_SWEEP_CHANCE_BAND_PX = CELL_SIZE * 1.5;
+const AI_SWEEP_CHANCE_WEIGHT = 0.35;
+// Насколько заправленный маршрут должен превзойти базовый, чтобы менять направление.
+const AI_FUEL_SWEEP_MIN_VALUE_GAIN = 0.5;
 
 // Enemy sweep tolerance for the multi-target search. Normally the danger half-width
 // (+margin); when the plane can spend WINGS this turn, the beneficial span roughly
@@ -31477,6 +31593,10 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
   // the flag and heads to base). Spend the fuel; forceFuelMoveToMaxRange flies exactly
   // that simulated route (fuelReplanned is set in the scheduler for this reason).
   const flagFuelCapture = fuelAvailable && selectedPlan?.aiFlagFuelCapture === true;
+  // Маршрут, выбранный заправленным перебором сметающих направлений: на базовой
+  // дальности он либо не существует, либо заметно беднее. Топливо тут — часть плана,
+  // а не улучшение, поэтому выдаём его наравне с захватом флага.
+  const fuelSweepRoute = fuelAvailable && !!selectedPlan?.aiFuelSweepRoute;
 
   // Fuel is evaluated independently — it can stack with crosshair and/or wings.
   // Only spend it when it buys real extra reach (advantage over not using it):
@@ -31485,6 +31605,8 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
   // the base move can't. The flag capture is the point when it was chosen, so it wins.
   if(flagFuelCapture){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "flag_capture_fuel" });
+  } else if(fuelSweepRoute){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "fuel_sweep_route" });
   } else if(ricochetSweepExtends){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "ricochet_sweep_extend_more_targets" });
   } else if(harpyStrikeOpportunity){
