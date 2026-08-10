@@ -213,11 +213,19 @@
                 </div>
 
                 <div class="map-tester-dialog__section map-tester-dialog__section--archive" data-placement="archive">
-                  <button id="mapTesterArchiveToggle" class="map-tester-dialog__archive-toggle" type="button" aria-expanded="false">▸ Archive (0)</button>
+                  <div class="map-tester-dialog__archive-header">
+                    <button id="mapTesterArchiveToggle" class="map-tester-dialog__archive-toggle" type="button" aria-expanded="false">▸ Archive (0)</button>
+                    <!-- Мини-контейнеры для дропа: видны только во время перетаскивания.
+                         Заголовок липкий, поэтому они доступны и внизу длинного архива. -->
+                    <div id="mapTesterQuickDrops" class="map-tester-dialog__quick-drops" hidden aria-hidden="true">
+                      <span class="map-tester-dialog__quick-drop" data-placement="easy">Easy</span>
+                      <span class="map-tester-dialog__quick-drop" data-placement="hard">Hard</span>
+                    </div>
+                  </div>
                   <ul id="mapTesterArchiveList" class="map-tester-dialog__list" hidden></ul>
                 </div>
 
-                <p class="map-tester-dialog__hint">Клик по карте — выделить, второй клик — сыграть на ней раунд. Перетаскивание превью — перенос в другой список. Пометки: ✓ оставить, ✎ доработать (второй клик по ✎ открывает карту в редакторе, файл сохранится как *_v2), A в архив, D удалить. Архивные карты не выпадают в обычных играх, но доступны в Advanced Settings.</p>
+                <p class="map-tester-dialog__hint">Клик по карте — выделить, второй клик — сыграть на ней раунд. Перетаскивание превью — перенос в другой список; в заголовке Archive при этом появляются быстрые контейнеры Easy и Hard. Пометки: ✓ оставить, ✎ доработать (второй клик по ✎ открывает карту в редакторе, файл сохранится как *_v2), A в архив, D удалить. Архивные карты не выпадают в обычных играх, но доступны в Advanced Settings.</p>
 
                 <div class="map-editor-save-dialog__actions">
                   <button id="mapTesterCopyBtn" class="map-editor-reset-btn" type="button">Copy marks</button>

@@ -861,6 +861,7 @@ const mapTesterCloseBtn = document.getElementById("mapTesterCloseBtn");
 const mapTesterEndRoundBtn = document.getElementById("mapTesterEndRoundBtn");
 const mapTesterArchiveToggle = document.getElementById("mapTesterArchiveToggle");
 const mapTesterArchiveList = document.getElementById("mapTesterArchiveList");
+const mapTesterQuickDrops = document.getElementById("mapTesterQuickDrops");
 const mapEditorBrickSidebar = document.getElementById("mapEditorBrickSidebar");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
@@ -50023,6 +50024,26 @@ function activateMapTesterDrag(){
       section.classList.add("map-tester-dialog__section--drop-target");
     }
   }
+
+  setMapTesterQuickDropsVisible(true, currentPlacement);
+}
+
+/**
+ * Мини-контейнеры easy/hard в липком заголовке архива. Архив длинный: когда
+ * список прокручен вниз, зоны Easy и Hard уезжают за пределы окна и утащить
+ * карту наверх нечем. Эти контейнеры видны только во время перетаскивания и
+ * работают обычными drop-целями (у них тот же data-placement).
+ */
+function setMapTesterQuickDropsVisible(visible, currentPlacement = null){
+  if(!(mapTesterQuickDrops instanceof HTMLElement)) return;
+
+  mapTesterQuickDrops.hidden = !visible;
+  mapTesterQuickDrops.setAttribute("aria-hidden", visible ? "false" : "true");
+
+  for(const chip of mapTesterQuickDrops.querySelectorAll("[data-placement]")){
+    // Контейнер зоны, в которой карта уже лежит, прятать: перенос в неё бессмыслен.
+    chip.hidden = visible && chip.dataset.placement === currentPlacement;
+  }
 }
 
 function updateMapTesterDrag(event){
@@ -50065,6 +50086,7 @@ function finishMapTesterDrag(event, options = {}){
   for(const section of getMapTesterDropSections()){
     section.classList.remove("map-tester-dialog__section--drop-target", "map-tester-dialog__section--drop-hover");
   }
+  setMapTesterQuickDropsVisible(false);
   try {
     state.handleEl?.releasePointerCapture?.(state.pointerId);
   } catch(_error){ /* уже отпущено */ }
