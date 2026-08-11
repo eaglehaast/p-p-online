@@ -21363,6 +21363,22 @@ const AI_BEST_EFFORT_ATTEMPT_MAX_APPROACH_PX = CELL_SIZE * 3.5; // ~70px — a r
 const AI_DYNAMITE_SURPLUS_THRESHOLD = 5;
 const AI_DYNAMITE_MAX_BRICKS_CAP = 6;
 const AI_DYNAMITE_BASE_BRICK_COST = 0.04;
+// «Прорыв из-под запертой стены». Игрок затыкает узкие проходы минами: сами проходы
+// геометрически чисты, поэтому обычный планировщик считает цель достижимой, а маршрут
+// потом отбрасывается как ведущий в мину — и ИИ уходит в фолбек и топчется у базы,
+// хотя динамит в инвентаре есть. Взорвать кирпич РЯДОМ с миной и пролететь в новый
+// проём — правильный ход, но целей в тот же ход он не собирает, поэтому обычные
+// критерии («собрал больше / приземлился безопаснее / выше счёт») его никогда не берут.
+//   - BREAKOUT_MIN_PROGRESS_PX: насколько ближе к цели должен вывести коридор, чтобы
+//     считаться прорывом, а не перелётом в никуда.
+//   - MINED_LANE_OFFSET_CELLS: боковые смещения прицела (в клетках) при поиске линии,
+//     которая обходит мину и проходит через кирпич — там и будет новый проём.
+//   - BREAKOUT_LANDING_MARGIN_PX: насколько за взорванный кирпич садится прорыв. Выход
+//     из-под стены неизбежно открывает самолёт — но садиться надо СРАЗУ за проёмом, а не
+//     улетать на всю дальность в тыл врага: это самое мелкое из возможных пересечений.
+const AI_DYNAMITE_BREAKOUT_MIN_PROGRESS_PX = CELL_SIZE * 4;
+const AI_DYNAMITE_MINED_LANE_OFFSET_CELLS = Object.freeze([2, -2, 3, -3, 4, -4, 5, -5]);
+const AI_DYNAMITE_BREAKOUT_LANDING_MARGIN_PX = CELL_SIZE * 4;
 // Step 2 (maximize targets on a route). A "dominate" candidate simulates real
 // trajectories (incl. wall ricochets via simulateAIShot) and counts how many
 // targets (cargo + enemy planes, combined) the flown path sweeps. The densest
@@ -25784,6 +25800,35 @@ function getAiDynamiteSurplusPolicy(dynamiteCharges){
   return { maxBricks, costPerBlocker, aggressive: charges >= threshold, charges };
 }
 
+// «ИИ топчется»: выбранный план — фолбек (побег от мин, подход к центру, гарантированный
+// сдвиг), он не собирает ни одной цели и не имеет счёта. Именно в этом состоянии игрок
+// видит запертого компьютера с полным инвентарём: настоящих планов нет, а фолбек ничего
+// не даёт. Для такого плана прорубленный коридор ценен сам по себе. Чистая функция.
+function isAiStuckFallbackPlan(planText, planScore, planStats){
+  const text = `${planText || ""}`.toLowerCase();
+  const fallbackMarkers = [
+    "mine_escape", "fallback", "last_resort", "guaranteed", "center", "reposition", "hold", "idle",
+  ];
+  if(!fallbackMarkers.some((marker) => text.includes(marker))) return false;
+  if(Number(planScore) > 0) return false; // у плана есть собственная ценность — не топтание
+  return (Number(planStats?.totalPickups) || 0) === 0 && (Number(planStats?.enemyHits) || 0) === 0;
+}
+
+// Прорыв засчитывается, когда ИИ заперт (см. isAiStuckFallbackPlan), прорубленный
+// коридор реально выводит ближе к цели и при этом сам не собирает целей — то есть
+// обычные критерии его отвергнут, а он единственный размыкает блокаду. Чистая функция.
+//
+// Порога «безопасности посадки» здесь намеренно нет: за стеной самолёт видно всегда, и
+// любой такой порог запрещал бы прорыв ровно там, где он и нужен. Цена выхода ограничена
+// геометрией — прорыв садится сразу за проёмом (BREAKOUT_LANDING_MARGIN_PX), то есть
+// пересекает стену на минимальную глубину, а не ныряет в тыл врага.
+function isAiDynamiteBreakoutAccepted(options){
+  if(!options || options.stuck !== true) return false;
+  const gain = Number(options.progressGainPx);
+  const minGain = Number.isFinite(options.minProgressPx) ? options.minProgressPx : 0;
+  return Number.isFinite(gain) && gain >= minGain;
+}
+
 function evaluateDynamiteAugmentedAcceptance(altStats, altAdjustedScore, currentPlan, currentStats, options){
   const aggressive = Boolean(options && options.aggressive);
   const currentScore = Number.isFinite(currentPlan?.score) ? currentPlan.score : 0;
@@ -25804,9 +25849,17 @@ function evaluateDynamiteAugmentedAcceptance(altStats, altAdjustedScore, current
   // so a scarce charge is never spent to swap a fat cargo sweep for a lone kill.
   const addsKill = altKills > currentKills;
   const dropsAKill = altKills < currentKills;
+  // Прорыв из блокады: текущий план — топтание, коридор ничего не собирает в этот ход,
+  // но выводит к цели. Без этого критерия запертый ИИ не потратит динамит НИКОГДА:
+  // счётный критерий выключен при currentScore === 0, а собирать на ходу прорыву нечего.
+  const breakout = isAiDynamiteBreakoutAccepted({
+    stuck: Boolean(options && options.stuck),
+    progressGainPx: options ? options.progressGainPx : null,
+    minProgressPx: options ? options.minProgressPx : null,
+  });
   const accepted = !dropsAKill
-    && (collectsMore || sameCollectsButSafer || scoreSignificantlyBetter || (aggressive && addsKill));
-  return { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, addsKill, dropsAKill };
+    && (collectsMore || sameCollectsButSafer || scoreSignificantlyBetter || (aggressive && addsKill) || breakout);
+  return { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, addsKill, dropsAKill, breakout };
 }
 
 async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context, currentPlan, dynamiteCharges){
@@ -25889,7 +25942,36 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
   const liveColliders = Array.isArray(colliders) ? colliders : [];
   if(liveColliders.length === 0) return null;
 
+  // Мины на поле меняют смысл «путь свободен». Проём между стенами, заткнутый миной,
+  // геометрически чист — но лететь туда нельзя, и обычный планировщик такой маршрут уже
+  // отверг. Прорубленный коридор, наоборот, обязан быть чист ОТ МИН, иначе ИИ взорвёт
+  // стену и тут же подорвётся.
+  const mineList = (typeof mines !== "undefined" && Array.isArray(mines)) ? mines : [];
+  const laneCrossesMine = (ax, ay) => mineList.length > 0
+    && typeof doesFlightPathCrossMine === "function"
+    && doesFlightPathCrossMine([{ x: plane.x, y: plane.y }, { x: ax, y: ay }], plane);
+
+  // Где приземлится ТЕКУЩИЙ план — точка отсчёта для «прорыв ли это»: насколько
+  // коридор продвигает нас к своей цели по сравнению с тем, что план даёт и так.
+  const currentLandingX = Number.isFinite(currentPlan?.landingX) ? currentPlan.landingX : plane.x;
+  const currentLandingY = Number.isFinite(currentPlan?.landingY) ? currentPlan.landingY : plane.y;
+  const currentScore = Number.isFinite(currentPlan?.score) ? currentPlan.score : 0;
+  const currentStats = countTargetsAndSafetyOnSegment(plane, currentLandingX, currentLandingY, color, context, aliveEnemies);
+  // Заперт ли ИИ прямо сейчас. Считаем ДО перебора: пока он не заперт, никакой лишней
+  // работы по поиску прорыва не выполняется вовсе.
+  const stuck = (typeof isAiStuckFallbackPlan === "function")
+    && isAiStuckFallbackPlan(
+      `${currentPlan?.goalName || ""} ${currentPlan?.decisionReason || ""}`,
+      currentScore,
+      currentStats,
+    );
+
   let bestAlt = null;
+  // Отдельная дорожка для прорыва: короткий бросок СКВОЗЬ новый проём с посадкой сразу
+  // за стеной. Обычный перебор её никогда не выберет — он взвешен по дальности, и самый
+  // «ценный» коридор всегда ведёт в тыл врага, под все стволы сразу. А запертому ИИ
+  // нужно ровно одно: оказаться по ту сторону стены живым.
+  let bestBreakout = null;
 
   // Evaluate a single carved lane: aim from the plane at (aimX,aimY), remove the bricks
   // that block that straight line (up to the surplus-scaled cap), and score the swept
@@ -25935,6 +26017,9 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
       ? FIELD_FLIGHT_DURATION_SEC : 1;
     const altLandingX = plane.x + planAfter.vx * altDur;
     const altLandingY = plane.y + planAfter.vy * altDur;
+    // Коридор, ведущий в мину, не годится ни за какие цели: заряд потрачен, самолёт
+    // подорвался на полпути. Проверяем реальный отрезок полёта, а не линию прицела.
+    if(laneCrossesMine(altLandingX, altLandingY)) return null;
     const altStats = countTargetsAndSafetyOnSegment(plane, altLandingX, altLandingY, color, context, aliveEnemies);
 
     // Flag-safety guard. Flag-grab into enemy retaliation range loses the
@@ -25976,7 +26061,64 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     const dynamiteCost = blockerIds.length * baseScore * dynamitePolicy.costPerBlocker;
 
     const adjustedScore = baseScore * target.value + massPickupBonus - dynamiteCost;
-    return { target, blockers, plan: planAfter, adjustedScore, nDynamites: blockerIds.length, altLandingX, altLandingY, altStats };
+
+    // Прорыв засчитывается только если коридор реально ВЫВОДИТ за стену в этот же ход:
+    // точка приземления должна лежать дальше последнего взорванного кирпича по линии
+    // полёта. Иначе заряд потрачен на стену, за которую мы даже не пролетим.
+    const aimLen = Math.hypot(aimX - plane.x, aimY - plane.y);
+    let clearsBlockers = false;
+    let landingBeyondPx = 0;
+    let lastBlockerProjPx = Number.NaN;
+    if(aimLen > 1){
+      const ux = (aimX - plane.x) / aimLen;
+      const uy = (aimY - plane.y) / aimLen;
+      const landingProj = (altLandingX - plane.x) * ux + (altLandingY - plane.y) * uy;
+      let lastBlockerProj = Number.NEGATIVE_INFINITY;
+      for(const b of blockers){
+        const bx = Number.isFinite(b?.cx) ? b.cx : (Number.isFinite(b?.centerX) ? b.centerX : null);
+        const by = Number.isFinite(b?.cy) ? b.cy : (Number.isFinite(b?.centerY) ? b.centerY : null);
+        if(!Number.isFinite(bx) || !Number.isFinite(by)) continue;
+        lastBlockerProj = Math.max(lastBlockerProj, (bx - plane.x) * ux + (by - plane.y) * uy);
+      }
+      if(Number.isFinite(lastBlockerProj)){
+        lastBlockerProjPx = lastBlockerProj;
+        landingBeyondPx = landingProj - lastBlockerProj;
+        clearsBlockers = landingBeyondPx > CELL_SIZE;
+      }
+    }
+    // Насколько коридор продвигает к СВОЕЙ цели против того, куда сел бы текущий план.
+    const breakoutProgressPx = Math.hypot(currentLandingX - target.x, currentLandingY - target.y)
+      - Math.hypot(altLandingX - target.x, altLandingY - target.y);
+
+    return {
+      target, blockers, plan: planAfter, adjustedScore, nDynamites: blockerIds.length,
+      altLandingX, altLandingY, altStats, clearsBlockers, landingBeyondPx, breakoutProgressPx,
+      aimX, aimY, lastBlockerProjPx,
+    };
+  };
+
+  // Короткий бросок сквозь только что пробитый проём: та же линия, но посадка сразу за
+  // стеной. Именно так выходят из блокады — а не улетают в тыл врага на всю дальность.
+  const evaluateBreakoutHop = async (from, towardTarget) => {
+    const aimLen = Math.hypot(from.aimX - plane.x, from.aimY - plane.y);
+    if(!(aimLen > 1) || !Number.isFinite(from.lastBlockerProjPx)) return null;
+    const ux = (from.aimX - plane.x) / aimLen;
+    const uy = (from.aimY - plane.y) / aimLen;
+    const stopPx = from.lastBlockerProjPx + AI_DYNAMITE_BREAKOUT_LANDING_MARGIN_PX;
+    const exitX = plane.x + ux * stopPx;
+    const exitY = plane.y + uy * stopPx;
+    if(laneCrossesMine(exitX, exitY)) return null;
+    const hop = await evaluateCarvedLane(
+      { x: exitX, y: exitY, kind: "wall_breakout", value: 0.35, ref: null },
+      exitX,
+      exitY,
+    );
+    if(!hop || !hop.clearsBlockers) return null;
+    // Прогресс меряем к НАСТОЯЩЕЙ цели, ради которой пробивался проход, а не к точке выхода.
+    hop.breakoutProgressPx = Math.hypot(currentLandingX - towardTarget.x, currentLandingY - towardTarget.y)
+      - Math.hypot(hop.altLandingX - towardTarget.x, hop.altLandingY - towardTarget.y);
+    hop.breakoutTowardKind = towardTarget.kind;
+    return hop;
   };
 
   for(const target of targets){
@@ -25988,34 +26130,78 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
 
     // If the direct path is already clear, dynamite isn't needed for this target.
     // The main planner would have considered it naturally; skip here.
-    if(typeof isPathClear === "function" && isPathClear(plane.x, plane.y, target.x, target.y)) continue;
+    // ИСКЛЮЧЕНИЕ: линия чиста геометрически, но заткнута миной. Тогда цель «видна», а
+    // лететь к ней нельзя — обычный планировщик её уже отбросил, и без коридора в стороне
+    // ИИ так и будет топтаться. Такую цель НЕ пропускаем.
+    const directClear = typeof isPathClear === "function" && isPathClear(plane.x, plane.y, target.x, target.y);
+    const directMined = laneCrossesMine(target.x, target.y);
+    if(directClear && !directMined) continue;
 
     // The lane that STOPS at the target, and the CORRIDOR that carries on through it to
     // full range. Prefer the corridor when it adds a KILL, or sweeps strictly more targets
     // without landing more exposed — otherwise the shorter, safer lane stands.
-    const laneCand = await evaluateCarvedLane(target, target.x, target.y);
-    let cand = laneCand;
-    const corridorEnd = corridorEndpointThrough(target.x, target.y);
-    if(corridorEnd){
-      const corridorCand = await evaluateCarvedLane(target, corridorEnd.x, corridorEnd.y);
-      if(corridorCand){
-        const laneKills = laneCand?.altStats.enemyHits ?? 0;
-        const lanePickups = laneCand?.altStats.totalPickups ?? -1;
-        const laneThreats = laneCand?.altStats.threatsNearLanding ?? Number.POSITIVE_INFINITY;
-        const addsKill = corridorCand.altStats.enemyHits > laneKills;
-        const sweepsMoreSafely = corridorCand.altStats.totalPickups > lanePickups
-          && corridorCand.altStats.threatsNearLanding <= laneThreats;
-        if(!laneCand || addsKill || sweepsMoreSafely) cand = corridorCand;
+    const bestOfLaneAndCorridor = async (laneTarget, aimX, aimY) => {
+      const laneCand = await evaluateCarvedLane(laneTarget, aimX, aimY);
+      let picked = laneCand;
+      const corridorEnd = corridorEndpointThrough(aimX, aimY);
+      if(corridorEnd){
+        const corridorCand = await evaluateCarvedLane(laneTarget, corridorEnd.x, corridorEnd.y);
+        if(corridorCand){
+          const laneKills = laneCand?.altStats.enemyHits ?? 0;
+          const lanePickups = laneCand?.altStats.totalPickups ?? -1;
+          const laneThreats = laneCand?.altStats.threatsNearLanding ?? Number.POSITIVE_INFINITY;
+          const addsKill = corridorCand.altStats.enemyHits > laneKills;
+          const sweepsMoreSafely = corridorCand.altStats.totalPickups > lanePickups
+            && corridorCand.altStats.threatsNearLanding <= laneThreats;
+          if(!laneCand || addsKill || sweepsMoreSafely) picked = corridorCand;
+        }
+      }
+      return picked;
+    };
+
+    let cand = await bestOfLaneAndCorridor(target, target.x, target.y);
+
+    // Проход к цели заткнут миной: прямо на неё лететь нельзя (и коридор «в лоб» мы
+    // только что отвергли по мине). Пробуем параллельные линии в стороне — там, где
+    // стену можно прорубить и пролететь МИМО мины. Это и есть «взорвать стены между
+    // минами». Считаем только при наличии мин, поэтому на чистых картах цена нулевая.
+    if(!cand && directMined){
+      const len = Math.hypot(target.x - plane.x, target.y - plane.y);
+      const px = len > 1 ? -(target.y - plane.y) / len : 0;
+      const py = len > 1 ? (target.x - plane.x) / len : 0;
+      for(const cells of AI_DYNAMITE_MINED_LANE_OFFSET_CELLS){
+        if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
+        if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
+        const offset = cells * CELL_SIZE;
+        const aimX = target.x + px * offset;
+        const aimY = target.y + py * offset;
+        if(laneCrossesMine(aimX, aimY)) continue;
+        // Обход мины — самостоятельная цель («пролететь»), а не подмена исходной:
+        // вес скромный, чтобы настоящий сметающий коридор всегда был предпочтительнее.
+        const breakoutTarget = { x: aimX, y: aimY, kind: "mined_gap_bypass", value: 0.35, ref: null };
+        const bypass = await bestOfLaneAndCorridor(breakoutTarget, aimX, aimY);
+        if(bypass){ cand = bypass; break; }
       }
     }
     if(!cand) continue;
+
+    // Дорожка прорыва: если ИИ заперт, у того же направления пробуем короткий выход
+    // сразу за стену. Лучший — тот, что дальше всех продвигает к цели.
+    if(stuck){
+      const hop = await evaluateBreakoutHop(cand, target);
+      if(hop && (!bestBreakout
+        || hop.breakoutProgressPx > bestBreakout.breakoutProgressPx
+        || (hop.breakoutProgressPx === bestBreakout.breakoutProgressPx && hop.nDynamites < bestBreakout.nDynamites))){
+        bestBreakout = hop;
+      }
+    }
 
     if(!bestAlt || cand.adjustedScore > bestAlt.adjustedScore){
       bestAlt = cand;
     }
   }
 
-  if(!bestAlt){
+  if(!bestAlt && !bestBreakout){
     logDynamiteDebug("dynamite_augmented_plan_no_alternative", {
       planeId: plane?.id ?? null,
       dynamiteCharges,
@@ -26033,39 +26219,57 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
   //   (A) Collects more enemies/cargo along its segment than the current plan.
   //   (B) Lands somewhere safer (fewer enemies within retaliation range).
   //   (C) Score-wise meaningfully better.
-  const currentScore = Number.isFinite(currentPlan?.score) ? currentPlan.score : 0;
-  const currentLandingX = Number.isFinite(currentPlan?.landingX) ? currentPlan.landingX : plane.x;
-  const currentLandingY = Number.isFinite(currentPlan?.landingY) ? currentPlan.landingY : plane.y;
-  const currentStats = countTargetsAndSafetyOnSegment(plane, currentLandingX, currentLandingY, color, context, aliveEnemies);
-
+  //   (D) Прорыв: ИИ заперт, а коридор выводит его за стену — см. isAiDynamiteBreakoutAccepted.
   const acceptanceThreshold = 1.01;
-  const { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, addsKill, dropsAKill } =
-    evaluateDynamiteAugmentedAcceptance(bestAlt.altStats, bestAlt.adjustedScore, currentPlan, currentStats, { aggressive: dynamitePolicy.aggressive });
+  const considerCandidate = (candidate, track) => {
+    const progressGainPx = candidate.clearsBlockers ? candidate.breakoutProgressPx : Number.NaN;
+    const verdict = evaluateDynamiteAugmentedAcceptance(
+      candidate.altStats, candidate.adjustedScore, currentPlan, currentStats,
+      {
+        aggressive: dynamitePolicy.aggressive,
+        // Прорыв разрешён только дорожке прорыва: длинный «ценный» коридор всегда ведёт
+        // в тыл врага, и подставлять под него запертый самолёт нельзя.
+        stuck: stuck && track === "breakout",
+        progressGainPx,
+        minProgressPx: AI_DYNAMITE_BREAKOUT_MIN_PROGRESS_PX,
+      },
+    );
+    logDynamiteDebug("dynamite_augmented_plan_evaluation", {
+      planeId: plane?.id ?? null,
+      track,
+      bestTargetKind: candidate.target.kind,
+      breakoutTowardKind: candidate.breakoutTowardKind ?? null,
+      bestAdjustedScore: Number(candidate.adjustedScore.toFixed(3)),
+      currentScore: Number(currentScore.toFixed(3)),
+      threshold: acceptanceThreshold,
+      accepted: verdict.accepted,
+      nDynamites: candidate.nDynamites,
+      maxBricks: maxDynamites,
+      aggressive: dynamitePolicy.aggressive,
+      colliderIds: candidate.blockers.map((b) => b?.id ?? null),
+      altStats: candidate.altStats,
+      currentStats,
+      stuck,
+      clearsBlockers: candidate.clearsBlockers,
+      landingBeyondPx: Number(candidate.landingBeyondPx.toFixed(1)),
+      progressGainPx: Number.isFinite(progressGainPx) ? Number(progressGainPx.toFixed(1)) : null,
+      decision: {
+        collectsMore: verdict.collectsMore,
+        sameCollectsButSafer: verdict.sameCollectsButSafer,
+        scoreSignificantlyBetter: verdict.scoreSignificantlyBetter,
+        addsKill: verdict.addsKill,
+        dropsAKill: verdict.dropsAKill,
+        breakout: verdict.breakout,
+      },
+    });
+    return verdict.accepted;
+  };
 
-  logDynamiteDebug("dynamite_augmented_plan_evaluation", {
-    planeId: plane?.id ?? null,
-    bestTargetKind: bestAlt.target.kind,
-    bestAdjustedScore: Number(bestAlt.adjustedScore.toFixed(3)),
-    currentScore: Number(currentScore.toFixed(3)),
-    threshold: acceptanceThreshold,
-    accepted,
-    nDynamites: bestAlt.nDynamites,
-    maxBricks: maxDynamites,
-    aggressive: dynamitePolicy.aggressive,
-    colliderIds: bestAlt.blockers.map((b) => b?.id ?? null),
-    altStats: bestAlt.altStats,
-    currentStats,
-    decision: {
-      collectsMore,
-      sameCollectsButSafer,
-      scoreSignificantlyBetter,
-      addsKill,
-      dropsAKill,
-    },
-  });
-  if(!accepted) return null;
-
-  return bestAlt;
+  // Сначала обычная дорожка (поведение без изменений), и только если она ничего не дала —
+  // прорыв: ИИ всё равно топчется, терять нечего.
+  if(bestAlt && considerCandidate(bestAlt, "value")) return bestAlt;
+  if(bestBreakout && considerCandidate(bestBreakout, "breakout")) return bestBreakout;
+  return null;
 }
 
 // "Don't stop short on the target." A straight launch that lands ON its target (a
