@@ -44,6 +44,8 @@ const context = {
 };
 vm.createContext(context);
 vm.runInContext(extractFunctionSource(source, 'getAiDynamiteSurplusPolicy'), context);
+// Приёмка опирается на критерий прорыва — тянем его в контекст вместе с ней.
+vm.runInContext(extractFunctionSource(source, 'isAiDynamiteBreakoutAccepted'), context);
 vm.runInContext(extractFunctionSource(source, 'evaluateDynamiteAugmentedAcceptance'), context);
 const policy = (n) => context.getAiDynamiteSurplusPolicy(n);
 const accept = (alt, altScore, cur, curStats, opts) =>

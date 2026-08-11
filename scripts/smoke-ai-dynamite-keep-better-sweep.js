@@ -36,6 +36,8 @@ function assert(condition, message){
 const source = fs.readFileSync('script.js', 'utf8');
 const context = { Math, Number };
 vm.createContext(context);
+// Приёмка опирается на критерий прорыва — тянем его в контекст вместе с ней.
+vm.runInContext(extractFunctionSource(source, 'isAiDynamiteBreakoutAccepted'), context);
 vm.runInContext(extractFunctionSource(source, 'evaluateDynamiteAugmentedAcceptance'), context);
 const evalAccept = (altStats, altScore, plan, curStats) =>
   context.evaluateDynamiteAugmentedAcceptance(altStats, altScore, plan, curStats);
