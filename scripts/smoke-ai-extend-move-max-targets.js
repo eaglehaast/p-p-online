@@ -85,6 +85,8 @@ const context = {
 vm.createContext(context);
 // extractFunctionSource anchors on "function <name>(", dropping a leading "async";
 // this function is async, so restore the keyword before evaluating.
+// Удлинение хода теперь ещё и отказывается лететь в открытый край — тянем предикат.
+vm.runInContext(extractFunctionSource(source, 'isAiSimSharpEdgeSuicide'), context);
 vm.runInContext('async ' + extractFunctionSource(source, 'extendDirectMoveToMaxTargets'), context);
 
 const plane6 = { id: 'blue-6', color: 'blue', x: 239, y: 48 };
