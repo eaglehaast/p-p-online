@@ -110,6 +110,9 @@ function buildStand({ fuelInStock = 1, enemies, cargos = [], extraBaseEnemies = 
   };
   vm.createContext(context);
   vm.runInContext(extractFunctionSource(source, 'getDistanceFromPointToSegment'), context);
+  vm.runInContext(extractFunctionSource(source, 'isAiSharpEdgeLethal'), context);
+  vm.runInContext(extractFunctionSource(source, 'isAiSimSharpEdgeSuicide'), context);
+  vm.runInContext(extractFunctionSource(source, 'doesAiPathGrazeSharpEdge'), context);
   vm.runInContext(extractArrowSource(source, 'isEnemyOnPredictedPath'), context);
   vm.runInContext(extractArrowSource(source, 'buildBestMultiTargetSweepCandidate'), context);
   return { context, plane, sims, run: () => context.buildBestMultiTargetSweepCandidate(plane, BASE_RANGE_PX) };

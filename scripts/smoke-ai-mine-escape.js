@@ -85,6 +85,10 @@ const context = {
 };
 vm.createContext(context);
 vm.runInContext(extractFunctionSource(source, 'doesFlightPathCrossMine'), context);
+// Веер побега теперь работает и от смертельных краёв — тянем его предикаты.
+vm.runInContext(extractFunctionSource(source, 'isAiSharpEdgeLethal'), context);
+vm.runInContext(extractFunctionSource(source, 'isAiSimSharpEdgeSuicide'), context);
+vm.runInContext(extractFunctionSource(source, 'doesAiPathGrazeSharpEdge'), context);
 vm.runInContext(extractFunctionSource(source, 'buildAiMineEscapeMove'), context);
 
 const centerPlane = { x: 180, y: 320, color: 'blue' };

@@ -9820,6 +9820,91 @@ function getAiPlannedMovePredictedPath(plane, move){
   ];
 }
 
+// Проходит ли маршрут вплотную к ОТКРЫТОМУ краю поля — «зацепил полосу смерти».
+// Проверяются вершины пути: чтобы отрезок прошёл близко к границе, а его концы — нет,
+// он должен идти к ней вплотную параллельно, и тогда концы тоже внутри полосы.
+function doesAiPathGrazeSharpEdge(path){
+  if(!isAiSharpEdgeLethal() || !Array.isArray(path) || path.length === 0) return false;
+  const left = (typeof FIELD_LEFT === "number" ? FIELD_LEFT : 0) + (typeof FIELD_BORDER_OFFSET_X === "number" ? FIELD_BORDER_OFFSET_X : 0);
+  const top = (typeof FIELD_TOP === "number" ? FIELD_TOP : 0) + (typeof FIELD_BORDER_OFFSET_Y === "number" ? FIELD_BORDER_OFFSET_Y : 0);
+  const right = (typeof FIELD_LEFT === "number" ? FIELD_LEFT : 0) + (typeof FIELD_WIDTH === "number" ? FIELD_WIDTH : 0) - (typeof FIELD_BORDER_OFFSET_X === "number" ? FIELD_BORDER_OFFSET_X : 0);
+  const bottom = (typeof FIELD_TOP === "number" ? FIELD_TOP : 0) + (typeof FIELD_HEIGHT === "number" ? FIELD_HEIGHT : 0) - (typeof FIELD_BORDER_OFFSET_Y === "number" ? FIELD_BORDER_OFFSET_Y : 0);
+  if(!(right > left) || !(bottom > top)) return false;
+  const margin = AI_SHARP_EDGE_DANGER_MARGIN_PX;
+  for(const pt of path){
+    if(!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+    // Ближайшая точка НА границе — по той стороне, к которой мы ближе всего.
+    const dLeft = pt.x - left;
+    const dRight = right - pt.x;
+    const dTop = pt.y - top;
+    const dBottom = bottom - pt.y;
+    let nearest = { d: dLeft, x: left, y: pt.y };
+    if(dRight < nearest.d) nearest = { d: dRight, x: right, y: pt.y };
+    if(dTop < nearest.d) nearest = { d: dTop, x: pt.x, y: top };
+    if(dBottom < nearest.d) nearest = { d: dBottom, x: pt.x, y: bottom };
+    if(!(nearest.d < margin)) continue;
+    // Край рядом — но открыт ли он? Кирпич между нами и границей делает участок обычной
+    // стеной, от которой рикошет безопасен, и штрафовать такой маршрут нельзя.
+    if(typeof isPathClear === "function" && !isPathClear(pt.x, pt.y, nearest.x, nearest.y)) continue;
+    return true;
+  }
+  return false;
+}
+
+// Насколько далеко МОЖНО лететь по данному углу, чтобы не воткнуться в открытый край.
+// Возвращает исходную дистанцию, если маршрут края не касается, иначе — точку остановки
+// перед ним. Ход не отменяется, а обрезается — тот же приём, что и клип по мине.
+//
+// Считается своей трассировкой, а не simulateAIShot, по двум причинам: симуляция не умеет
+// пройти дальше дальности самолёта (а вектор запуска бывает длиннее — например, когда
+// топливо применяется уже после планирования), и обрывается на двух отскоках, из-за чего
+// маршрут «дважды от кирпича, потом в край» выглядел безопасным. Отражение/скольжение
+// повторяют resolveFlightSurfaceCollision.
+function getAiSharpEdgeSafeFlightDistancePx(plane, dirX, dirY, desiredDistancePx){
+  if(!isAiSharpEdgeLethal() || typeof findFirstSurfaceHit !== "function") return desiredDistancePx;
+  if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return desiredDistancePx;
+  const len = Math.hypot(Number(dirX) || 0, Number(dirY) || 0);
+  if(!(len > 1e-6) || !(desiredDistancePx > 0)) return desiredDistancePx;
+  const radius = (typeof POINT_RADIUS === "number") ? POINT_RADIUS : 11;
+  const slideThreshold = (typeof SLIDE_THRESHOLD === "number") ? SLIDE_THRESHOLD : 0.2;
+  let ux = dirX / len;
+  let uy = dirY / len;
+  let curr = { x: plane.x, y: plane.y };
+  let remaining = desiredDistancePx;
+  let travelled = 0;
+  for(let bounce = 0; bounce <= AI_SHARP_EDGE_CHECK_MAX_BOUNCES && remaining > 1e-3; bounce += 1){
+    const end = { x: curr.x + ux * remaining, y: curr.y + uy * remaining };
+    const hit = findFirstSurfaceHit(curr, end, radius);
+    if(!hit) return desiredDistancePx; // долетает и края не касается
+    const segLen = remaining * hit.t;
+    const hitX = curr.x + ux * segLen;
+    const hitY = curr.y + uy * segLen;
+    if(hit.surface?.type === "field"){
+      const toEdge = travelled + segLen;
+      const safe = toEdge - AI_SHARP_EDGE_FLIGHT_CLIP_MARGIN_PX;
+      // Самолёт вплотную к краю: запаса нет, но остановиться на полпути до края всё
+      // равно лучше, чем воткнуться в него. Ход останется коротким — это осознанно.
+      return safe > 0 ? Math.min(desiredDistancePx, safe) : Math.max(0, toEdge * 0.5);
+    }
+    travelled += segLen;
+    remaining -= segLen;
+    const dot = ux * hit.normal.x + uy * hit.normal.y;
+    if(Math.abs(dot) < slideThreshold){
+      ux -= dot * hit.normal.x;
+      uy -= dot * hit.normal.y;
+    } else {
+      ux -= 2 * dot * hit.normal.x;
+      uy -= 2 * dot * hit.normal.y;
+    }
+    const newLen = Math.hypot(ux, uy);
+    if(!(newLen > 1e-6)) return desiredDistancePx;
+    ux /= newLen;
+    uy /= newLen;
+    curr = { x: hitX + hit.normal.x * 0.5, y: hitY + hit.normal.y * 0.5 };
+  }
+  return desiredDistancePx;
+}
+
 function doesCargoIntersectBeneficialZoneAlongPath(cargo, plane, path){
   if(!cargo || !plane || !Array.isArray(path) || path.length < 2) return false;
   for(let i = 0; i < path.length - 1; i += 1){
@@ -16925,6 +17010,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         if(!sim || !Array.isArray(sim.predictedPath) || sim.predictedPath.length < 2) return null;
         // Маршрут, таранящий мину, самоподрывается на полпути — целей это не стоит.
         if(typeof doesFlightPathCrossMine === "function" && doesFlightPathCrossMine(sim.predictedPath, plane)) return null;
+        // Ровно та же логика для открытого края поля при «острых краях»: сколько бы целей
+        // ни собрал такой пролёт, он заканчивается смертью самолёта.
+        if(isAiSimSharpEdgeSuicide(sim) || doesAiPathGrazeSharpEdge(sim.predictedPath)) return null;
         let cargoHit = 0, enemyHit = 0;
         const enemyRefs = [];
         for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, sweepPlane, sim.predictedPath)) cargoHit += 1; }
@@ -23207,7 +23295,11 @@ const AI_MINE_ESCAPE_THREAD_MARGIN_PX = 22;
 function buildAiMineEscapeMove(plane, context){
   if(!plane || typeof simulateAIShot !== "function" || typeof doesFlightPathCrossMine !== "function") return null;
   const mineList = (typeof mines !== "undefined" && Array.isArray(mines)) ? mines : [];
-  if(mineList.length === 0) return null;
+  // Открытый край поля при «острых краях» — такая же ловушка, как мины: безопасных
+  // направлений может не остаться, и веер безопасных прыжков нужен ровно так же.
+  // Поэтому веер работает и без единой мины на поле, если края смертельны.
+  const sharpEdgeLethal = isAiSharpEdgeLethal();
+  if(mineList.length === 0 && !sharpEdgeLethal) return null;
   const range = (typeof getPlaneEffectiveRangePx === "function") ? getPlaneEffectiveRangePx(plane) : 0;
   if(!(range > 0)) return null;
   const dur = (typeof FIELD_FLIGHT_DURATION_SEC === "number" && FIELD_FLIGHT_DURATION_SEC > 0) ? FIELD_FLIGHT_DURATION_SEC : 1;
@@ -23277,6 +23369,8 @@ function buildAiMineEscapeMove(plane, context){
       const sim = simulateAIShot(plane, { dx: nx, dy: ny, scale }, { maxBounces: 1 });
       if(!sim || !Array.isArray(sim.predictedPath) || sim.predictedPath.length < 2) continue;
       if(doesFlightPathCrossMine(sim.predictedPath, plane)) continue; // this hop still rams a mine
+      // ...а этот разбивается о край поля или идёт по самой его кромке
+      if(isAiSimSharpEdgeSuicide(sim) || doesAiPathGrazeSharpEdge(sim.predictedPath)) continue;
       const end = sim.predictedPath[sim.predictedPath.length - 1];
       let nearestMine = Number.POSITIVE_INFINITY;
       for(const m of mineList){
@@ -26359,6 +26453,11 @@ async function extendDirectMoveToMaxTargets(selectedPlan, context, readyCargoLis
     const currentSim = sims?.currentSim || null;
     const boostedSim = sims?.boostedSim || null;
     if(!boostedSim || !Array.isArray(boostedSim.predictedPath) || boostedSim.predictedPath.length < 2) return false;
+
+    // Долететь «до упора» по той же линии — верный способ воткнуться в открытый край
+    // поля, если он не закрыт кирпичом: короткий ход был безопасен, а удлинённый уже нет.
+    // Ни одна лишняя цель этого не стоит.
+    if(isAiSimSharpEdgeSuicide(boostedSim) && !isAiSimSharpEdgeSuicide(currentSim)) return false;
 
     const cur = countOnPath(currentSim?.predictedPath);
     const boosted = countOnPath(boostedSim.predictedPath);
@@ -30586,6 +30685,28 @@ const AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS = MINE_TRIGGER_RADIUS * 3.0;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
 const AI_OWN_MINE_PATH_PENALTY = 900;
 const AI_OWN_MINE_LANDING_PENALTY = 1100;
+// Смерть о край поля при включённых «острых краях» — это гарантированная потеря самолёта,
+// то есть строго хуже, чем таран собственной мины (там ещё есть шанс, что мина не в счёт).
+// Штраф ВЫШЕ бонуса за убийство (1200), поэтому размен «убил одного и разбился» никогда не
+// выигрывает сам собой. Это штраф, а не запрет: если ВСЕ направления смертельны, ИИ всё
+// равно выберет наименее плохое и сходит, а не зависнет.
+const AI_SHARP_EDGE_DEATH_PENALTY = 2400;
+// На сколько останавливаться, НЕ долетая до смертельного края, когда ход обрезается.
+// Запас нужен под разброс прицела ИИ (buildHumanizedAiTargetAim): ошибка по силе доходит
+// до 3% дальности, а на рикошетном классе — ×1.34, то есть ~15px перелёта на полном ходу.
+// Радиус самолёта симуляция уже учитывает сама, так что двух клеток хватает с запасом.
+const AI_SHARP_EDGE_FLIGHT_CLIP_MARGIN_PX = CELL_SIZE * 2;
+// Проверка «не разобьётся ли ход о край» должна видеть ВЕСЬ полёт. Обычный перебор
+// обрывает симуляцию на AI_SIM_MAX_BOUNCES_DEFAULT (2) отскоках, и маршрут, который
+// дважды отскочил от кирпичей и только потом воткнулся в край, выглядел безопасным.
+// Здесь симуляция всего одна на готовый ход, так что глубину можно взять с запасом.
+const AI_SHARP_EDGE_CHECK_MAX_BOUNCES = 8;
+// Полоса опасности вдоль ОТКРЫТОГО края — прямой аналог радиуса срабатывания мины.
+// Прицел ИИ намеренно неточен (buildHumanizedAiTargetAim: до 0.85° по углу и 3% по силе),
+// поэтому маршрут, прошедший «в двух пикселях» от края, на практике иногда в него влетает.
+// Считается только там, где край действительно открыт: если между точкой и границей стоит
+// кирпич, лететь вдоль него безопасно, и такие маршруты штрафовать нельзя.
+const AI_SHARP_EDGE_DANGER_MARGIN_PX = CELL_SIZE * 1.5;
 const AI_DEFENSIVE_MINE_OFFSETS = Object.freeze([
   { ox: 0, oy: 0 },
   { ox: 1, oy: 0 },
@@ -33969,13 +34090,21 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       // Optional mine clip (set by the scheduler when a mine sits on the fuel extension):
       // fly to this distance instead of full boosted range, stopping short of the mine
       // while still using fuel's reach up to that point.
-      const flightDistancePx = (Number.isFinite(plannedMove?.aiFuelMaxDistancePx) && plannedMove.aiFuelMaxDistancePx > 0)
+      let flightDistancePx = (Number.isFinite(plannedMove?.aiFuelMaxDistancePx) && plannedMove.aiFuelMaxDistancePx > 0)
         ? Math.min(boostedFlightDistancePx, plannedMove.aiFuelMaxDistancePx)
         : boostedFlightDistancePx;
+      const launchAngle = Math.atan2(plannedMove.vy, plannedMove.vx);
+      // Острые края: обычный ход мог до края не доставать, а заправленный «до упора» —
+      // уже втыкается в него. Обрезаем так же, как по мине выше: тот же угол, но не
+      // долетая до смертельного края.
+      const edgeSafeDistancePx = (typeof getAiSharpEdgeSafeFlightDistancePx === "function" && Number.isFinite(launchAngle))
+        ? getAiSharpEdgeSafeFlightDistancePx(plannedMove.plane, Math.cos(launchAngle), Math.sin(launchAngle), flightDistancePx)
+        : flightDistancePx;
+      const clippedForSharpEdge = edgeSafeDistancePx < flightDistancePx - 0.01;
+      if(clippedForSharpEdge) flightDistancePx = edgeSafeDistancePx;
       const boostedSpeedPxPerSec = FIELD_FLIGHT_DURATION_SEC > 0
         ? flightDistancePx / FIELD_FLIGHT_DURATION_SEC
         : 0;
-      const launchAngle = Math.atan2(plannedMove.vy, plannedMove.vx);
       if(!Number.isFinite(boostedSpeedPxPerSec) || boostedSpeedPxPerSec <= 0 || !Number.isFinite(launchAngle)){
         logAiDecision("fuel_launch_forced_max_range_skipped", {
           planeId: plannedMove?.plane?.id ?? null,
@@ -34003,7 +34132,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         planeId: plannedMove?.plane?.id ?? null,
         boostedFlightRangeCells: Number(boostedFlightRangeCells.toFixed(2)),
         boostedFlightDistancePx: Number(boostedFlightDistancePx.toFixed(1)),
-        clippedForMine: flightDistancePx < boostedFlightDistancePx - 0.01,
+        clippedForMine: flightDistancePx < boostedFlightDistancePx - 0.01 && !clippedForSharpEdge,
+        clippedForSharpEdge,
         flightDistancePx: Number(flightDistancePx.toFixed(1)),
         launchAngleDeg: Number((((launchAngle * 180) / Math.PI + 360) % 360).toFixed(2)),
         vx: Number(plannedMove.vx.toFixed(4)),
@@ -44979,6 +45109,22 @@ function buildAiNavigationMaskFromBrickFrame(){
   return aiNavigationMask;
 }
 
+// Правило «острые края» (settings.sharpEdges, включено по умолчанию): касание ГРАНИЦЫ
+// ПОЛЯ убивает самолёт — см. resolveFlightSurfaceCollision. Кирпич, стоящий у борта, к
+// этому отношения не имеет: от него рикошет обычный и безопасный, смертельна только сама
+// граница. Поэтому опасность появляется ровно там, где борт ничем не закрыт — на картах
+// без рамки (sharpedge*) это весь периметр, а на обычной карте — дыра, которую только что
+// пробили динамитом.
+function isAiSharpEdgeLethal(){
+  return typeof settings === "object" && settings !== null && settings.sharpEdges === true;
+}
+
+// Симуляция, которая заканчивается смертью о край. Чистая функция — предикат на результат
+// simulateAIShot, чтобы все планировщики отбраковывали такой маршрут одинаково.
+function isAiSimSharpEdgeSuicide(sim){
+  return Boolean(sim && sim.sharpEdgeDeath === true);
+}
+
 function simulateAIShot(plane, launchVector, options = {}){
   if(!plane || !launchVector) return null;
   const maxBounces = Number.isFinite(options.maxBounces) ? Math.max(0, Math.floor(options.maxBounces)) : AI_SIM_MAX_BOUNCES_DEFAULT;
@@ -45000,6 +45146,10 @@ function simulateAIShot(plane, launchVector, options = {}){
   let outcomeType = "range_end";
   let impactPoint = { x: curr.x, y: curr.y };
   let hitTarget = false;
+  // Острые края: граница поля — не зеркало, а смерть. Без этого перебор строит рикошеты
+  // от бортов, которых нет, и ИИ раз за разом убивает свои самолёты о край.
+  const sharpEdgeLethal = isAiSharpEdgeLethal();
+  let sharpEdgeDeath = false;
   const EPS_PUSH = 0.5;
   while(remainingDistance > 1e-3){
     const end = { x: curr.x + dirX * remainingDistance, y: curr.y + dirY * remainingDistance };
@@ -45008,14 +45158,25 @@ function simulateAIShot(plane, launchVector, options = {}){
       ? { x: curr.x + (end.x - curr.x) * hit.t, y: curr.y + (end.y - curr.y) * hit.t }
       : end;
     predictedPath.push({ x: segmentEnd.x, y: segmentEnd.y });
+    // Этот отрезок упирается в открытый край поля -> самолёт гибнет на его конце, что бы
+    // он по дороге ни задел. Цель, сбитая на этом же отрезке, засчитывается (она гибнет
+    // раньше), но маршрут всё равно помечен как самоубийственный.
+    const lethalEdgeAhead = sharpEdgeLethal && hit?.surface?.type === "field";
     if(target){
       const d = getDistanceFromPointToSegment(target.x, target.y, curr.x, curr.y, segmentEnd.x, segmentEnd.y);
       if(d <= hitRadius){
         outcomeType = bounceCount > 0 ? "target_hit_after_ricochet" : "target_hit_direct";
         hitTarget = true;
+        sharpEdgeDeath = lethalEdgeAhead;
         impactPoint = { x: target.x, y: target.y };
         break;
       }
+    }
+    if(lethalEdgeAhead){
+      outcomeType = "sharp_edge_death";
+      sharpEdgeDeath = true;
+      impactPoint = { x: segmentEnd.x, y: segmentEnd.y };
+      break;
     }
     if(!hit){
       outcomeType = "range_end";
@@ -45075,6 +45236,7 @@ function simulateAIShot(plane, launchVector, options = {}){
     bounces,
     ownMinePathHit,
     ownMineLandingThreat,
+    sharpEdgeDeath,
   };
 }
 
@@ -45093,6 +45255,12 @@ function scoreAISimulatedCandidate(simResult, options = {}){
   score -= impactPenalty * 1.35;
   if(simResult.ownMinePathHit) score -= AI_OWN_MINE_PATH_PENALTY;
   if(simResult.ownMineLandingThreat) score -= AI_OWN_MINE_LANDING_PENALTY;
+  // Маршрут упирается в открытый край поля: самолёт гибнет. Один общий штраф здесь
+  // накрывает ВЕСЬ перебор выстрелов (enumerateAIShotCandidates и его async-двойник).
+  if(isAiSimSharpEdgeSuicide(simResult)) score -= AI_SHARP_EDGE_DEATH_PENALTY;
+  // Прошёл впритирку к открытому краю: формально жив, но разброс прицела делает такой
+  // маршрут рулеткой. Половина штрафа — это не запрет, а «выбери линию подальше».
+  else if(doesAiPathGrazeSharpEdge(simResult.predictedPath)) score -= AI_SHARP_EDGE_DEATH_PENALTY * 0.5;
   return score;
 }
 
@@ -46226,6 +46394,32 @@ function issueAIMove(plane, vx, vy, options = {}){
     });
     vx *= scaleFactor;
     vy *= scaleFactor;
+  }
+
+  // Острые края: полёт, упирающийся в ОТКРЫТЫЙ край поля, убивает самолёт. Переборы,
+  // идущие через симуляцию, такие маршруты уже штрафуют и отбраковывают, но планы,
+  // построенные геометрией (подход к центру, гарантированный сдвиг, вынужденный ход
+  // «лишь бы не пропустить»), симуляцию не спрашивают вовсе. Это общий чокпойнт ВСЕХ
+  // источников запуска, поэтому клип стоит здесь: ход не отменяется, а укорачивается по
+  // тому же углу — ровно как клип по мине. Идёт ПОСЛЕ подтяжки до минимальной дистанции,
+  // и вправе опустить ход ниже её: короткий ход всё же лучше гарантированной потери
+  // самолёта, а сама подтяжка иначе вернула бы его в край.
+  if(typeof getAiSharpEdgeSafeFlightDistancePx === "function"){
+    const flightDistPx = Math.hypot(vx, vy) * FIELD_FLIGHT_DURATION_SEC;
+    const edgeSafePx = getAiSharpEdgeSafeFlightDistancePx(plane, vx, vy, flightDistPx);
+    if(flightDistPx > 0.0001 && edgeSafePx < flightDistPx - 0.5){
+      const edgeScale = edgeSafePx / flightDistPx;
+      logAiDecision("sharp_edge_launch_clipped", {
+        planeId: plane?.id ?? null,
+        fromDistPx: Number(flightDistPx.toFixed(1)),
+        toDistPx: Number(edgeSafePx.toFixed(1)),
+        belowMinDistance: edgeSafePx < minDistPx,
+        routeClass: options?.launchMeta?.routeClass || options?.routeClass || null,
+        isFallbackMove: options?.isFallbackMove === true,
+      });
+      vx *= edgeScale;
+      vy *= edgeScale;
+    }
   }
 
   // Set the recovery-suppression cooldown right when a launch attempt enters the gate. Even if
