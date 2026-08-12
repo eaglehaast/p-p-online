@@ -16219,7 +16219,8 @@ function tryBuildAiFlagDeliveryPlan(plane, options = {}){
     compareLabel: ["return_with_flag", plane?.id ?? ""],
   });
   let deliverUsesFuel = false;
-  if(!reachesBase(deliverMove)){
+  let delivers = reachesBase(deliverMove);
+  if(!delivers){
     // Home beyond base range — spend fuel to reach it, but only on a DIRECT line
     // (forceFuelMoveToMaxRange extends the launch angle straight through home; a
     // ricochet's bounce path would not be preserved by that extension).
@@ -16233,31 +16234,54 @@ function tryBuildAiFlagDeliveryPlan(plane, options = {}){
     if(reachesBase(boosted) && (Number(boosted?.bounceCount) || 0) === 0){
       deliverMove = boosted;
       deliverUsesFuel = true;
-    } else {
-      deliverMove = null;
+      delivers = true;
     }
   }
   if(!deliverMove) return null;
 
   const deliverLanding = getAiMoveLandingPoint(deliverMove);
+  if(!deliverLanding) return null;
+
+  // Донести за один ход нельзя — значит несём БЛИЖЕ к базе. Раньше здесь был выход в
+  // null, и носильщик проваливался в обычное планирование: летел за грузом, в атаку,
+  // куда угодно, только не домой. Флаг стоит дороже любой такой цели, поэтому ход
+  // носильщика — это ход к своей базе, даже если доставка случится только через ход.
+  const homeDistBefore = Math.hypot(homeAnchor.x - plane.x, homeAnchor.y - plane.y);
+  const homeDistAfter = Math.hypot(homeAnchor.x - deliverLanding.x, homeAnchor.y - deliverLanding.y);
+  const advanceGain = homeDistBefore - homeDistAfter;
+  // Если и приблизиться не выходит (дорога домой перекрыта), плана нет — пусть работает
+  // обычный отбор, чем ходить в никуда.
+  if(!delivers && !(advanceGain >= AI_FLAG_FUEL_CAPTURE_MIN_ADVANCE_PX)) return null;
+
   if(typeof logAiDecision === "function"){
     logAiDecision("flag_delivery_route", {
       planeId: plane?.id ?? null,
       homeBase: { x: Number(homeAnchor.x.toFixed(1)), y: Number(homeAnchor.y.toFixed(1)) },
+      delivers,
+      advanceGainPx: Number(advanceGain.toFixed(1)),
       usesFuel: deliverUsesFuel,
       bounceCount: Number(deliverMove.bounceCount) || 0,
       routeClass: deliverMove.routeClass || "direct",
-      landing: deliverLanding ? { x: Number(deliverLanding.x.toFixed(1)), y: Number(deliverLanding.y.toFixed(1)) } : null,
+      landing: { x: Number(deliverLanding.x.toFixed(1)), y: Number(deliverLanding.y.toFixed(1)) },
     });
   }
   return {
     ...deliverMove,
     plane,
     goalName: "return_with_flag",
-    decisionReason: deliverUsesFuel ? "return_with_flag_deliver_fuel" : "return_with_flag_deliver",
+    decisionReason: delivers
+      ? (deliverUsesFuel ? "return_with_flag_deliver_fuel" : "return_with_flag_deliver")
+      : "return_with_flag_advance",
     routeClass: deliverMove.routeClass || "direct",
+    // Точка приземления обязательна: план без неё планировщик молча заменяет
+    // «гарантированным сдвигом» (см. buildGuaranteedAdvanceMove в scheduleComputerMove),
+    // из-за чего доставка флага не выполнялась, даже когда маршрут был построен.
+    landingX: deliverLanding.x,
+    landingY: deliverLanding.y,
     targetPoint: { x: homeAnchor.x, y: homeAnchor.y, kind: "home_base" },
-    planTier: -1,
+    // Доставка — верхний приоритет; «поднести ближе» идёт ниже настоящей доставки, но
+    // выше обычных целей (та же шкала, что у заправленного захвата флага).
+    planTier: delivers ? -1 : 0,
     planDistance: Number.isFinite(deliverMove.totalDist) ? deliverMove.totalDist : 0,
     hasDirectEnemy: false,
     readyCargoCount: Number.isFinite(options?.readyCargoCount) ? options.readyCargoCount : 0,
@@ -16404,7 +16428,14 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       enemies: enemyPlanes,
       homeBase: getBaseAnchor("blue"),
       availableEnemyFlags: typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("green") : [],
-      shouldUseFlagsMode: Boolean(settings?.flagsMode),
+      // Настройки с именем flagsMode не существует — режим флагов включает
+      // settings.flagsEnabled, а каноничный доступ к нему — isFlagsModeEnabled()
+      // (он же гасит флаги в дуэли). Из-за неверного имени shouldUseFlagsMode был
+      // ВСЕГДА false, и весь флаговый слой ИИ (доставка своего же захваченного флага,
+      // заправленный захват, флаги как цели сметающих маршрутов и ролей) не работал.
+      shouldUseFlagsMode: (typeof isFlagsModeEnabled === "function")
+        ? isFlagsModeEnabled() === true
+        : settings?.flagsEnabled !== false,
     };
     const shotSimulationQuality = typeof buildAiShotSimulationQualityProfile === "function"
       ? buildAiShotSimulationQualityProfile(launchReadyPlanes.length, enemyPlanes.length, {
