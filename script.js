@@ -182,6 +182,11 @@ function setScreenMode(mode) {
   document.body.classList.toggle('screen--menu', mode === 'MENU');
   document.body.classList.toggle('screen--game', mode === 'GAME');
   document.body.classList.toggle('screen--settings', mode === 'SETTINGS');
+  // Разворот — свойство игрового экрана: уходя в меню или настройки, возвращаем
+  // портрет, иначе повёрнутым окажется и меню.
+  if(mode !== 'GAME' && typeof setBoardLandscape === "function"){
+    setBoardLandscape(false);
+  }
   syncMapEditorResetButtonVisibility();
   syncFieldCssVars();
 }
@@ -233,6 +238,16 @@ const wrapperSyncDebugState = {
   logged: false
 };
 
+// Горизонтальная ориентация: кадр 460x800 повёрнут на 90° по часовой (см. styles.css,
+// html.is-board-landscape #uiFrame). Точка кадра (u,v) видна в (X,Y) = (H - v, u), где
+// H — высота кадра. Обратное преобразование ниже возвращает ввод в координаты дизайна,
+// иначе клики уезжают: getBoundingClientRect у повёрнутого кадра — это его габаритная
+// коробка (800x460), а не сам кадр.
+function isBoardLandscapeActive(){
+  return typeof document !== "undefined"
+    && document.documentElement?.classList?.contains("is-board-landscape") === true;
+}
+
 function toDesignCoords(clientX, clientY) {
   const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
   const rootStyle = window.getComputedStyle(document.documentElement);
@@ -241,9 +256,21 @@ function toDesignCoords(clientX, clientY) {
   const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
   const pinchScale = getEffectivePinchScale();
   const effectiveScale = uiScale * pinchScale;
+  const localX = (clientX - rect.left) / effectiveScale;
+  const localY = (clientY - rect.top) / effectiveScale;
+  if(isBoardLandscapeActive()){
+    return {
+      x: localY,
+      y: FRAME_BASE_HEIGHT - localX,
+      rect,
+      uiScale,
+      pinchScale,
+      effectiveScale
+    };
+  }
   return {
-    x: (clientX - rect.left) / effectiveScale,
-    y: (clientY - rect.top) / effectiveScale,
+    x: localX,
+    y: localY,
     rect,
     uiScale,
     pinchScale,
@@ -859,6 +886,7 @@ const mapTesterHardList = document.getElementById("mapTesterHardList");
 const mapTesterCopyBtn = document.getElementById("mapTesterCopyBtn");
 const mapTesterCloseBtn = document.getElementById("mapTesterCloseBtn");
 const mapTesterEndRoundBtn = document.getElementById("mapTesterEndRoundBtn");
+const orientationToggleBtn = document.getElementById("orientationToggleBtn");
 const mapTesterArchiveToggle = document.getElementById("mapTesterArchiveToggle");
 const mapTesterArchiveList = document.getElementById("mapTesterArchiveList");
 const mapTesterQuickDrops = document.getElementById("mapTesterQuickDrops");
@@ -51019,6 +51047,35 @@ if(mapTesterCopyBtn instanceof HTMLElement){
   mapTesterCopyBtn.addEventListener("click", () => { copyMapTesterMarks(); });
 }
 
+// ===== Разворот поля в горизонталь (десктоп) =============================
+// Кадр 460x800 поворачивается целиком (styles.css: html.is-board-landscape #uiFrame),
+// поэтому поле, фон, счёт и инвентари едут вместе с ним. Здесь только состояние,
+// пересчёт масштаба под новую габаритную коробку и перерисовка.
+function setBoardLandscape(active){
+  const root = document.documentElement;
+  if(!(root instanceof HTMLElement)) return;
+  const next = Boolean(active);
+  if(root.classList.contains("is-board-landscape") === next) return;
+  root.classList.toggle("is-board-landscape", next);
+  if(orientationToggleBtn instanceof HTMLElement){
+    orientationToggleBtn.setAttribute("aria-pressed", next ? "true" : "false");
+  }
+  // Масштаб кадра считается от габаритов, которые только что поменялись местами.
+  if(typeof updateUiFrameScale === "function") updateUiFrameScale();
+  void syncLayoutAndField("board orientation toggle");
+}
+
+function toggleBoardLandscape(){
+  setBoardLandscape(!isBoardLandscapeActive());
+}
+
+if(orientationToggleBtn instanceof HTMLElement){
+  orientationToggleBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    toggleBoardLandscape();
+  });
+}
+
 if(mapTesterEndRoundBtn instanceof HTMLElement){
   mapTesterEndRoundBtn.addEventListener("click", () => {
     if(!isMapTesterModeActive() || isGameOver) return;
@@ -51357,7 +51414,12 @@ function updateUiFrameScale() {
   const baseHeight = viewportHeight || fallbackHeight;
   const viewW = Math.max(1, baseWidth - paddingLeft - paddingRight);
   const viewH = Math.max(1, baseHeight - paddingTop - paddingBottom);
-  const scale = Math.min(viewW / FRAME_BASE_WIDTH, viewH / FRAME_BASE_HEIGHT);
+  // В горизонтали кадр повёрнут, поэтому в окно вписывается его габаритная коробка
+  // с переставленными сторонами.
+  const landscape = isBoardLandscapeActive();
+  const fitWidth = landscape ? FRAME_BASE_HEIGHT : FRAME_BASE_WIDTH;
+  const fitHeight = landscape ? FRAME_BASE_WIDTH : FRAME_BASE_HEIGHT;
+  const scale = Math.min(viewW / fitWidth, viewH / fitHeight);
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
   console.debug('[ui-scale]', {
     visualViewport: viewport

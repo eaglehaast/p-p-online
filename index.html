@@ -189,6 +189,23 @@
               <span>EndR</span>
             </button>
 
+            <!-- Поворот поля в горизонталь (десктоп). Живёт в правом нижнем углу
+                 игрового экрана и остаётся там же в обеих ориентациях. -->
+            <button
+              id="orientationToggleBtn"
+              class="orientation-toggle"
+              type="button"
+              aria-label="Повернуть поле"
+              aria-pressed="false"
+              title="Повернуть поле"
+            >
+              <svg class="orientation-toggle__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="6.5" y="3.5" width="11" height="17" rx="2.5" />
+                <path class="orientation-toggle__arrow" d="M3.6 8.6a9 9 0 0 1 2.2-3.4" />
+                <path class="orientation-toggle__arrow-head" d="M2.2 11.6 3.4 7.9l3.7 1.2z" />
+              </svg>
+            </button>
+
             <div
               id="mapTesterDialog"
               class="map-editor-save-dialog map-tester-dialog"
