@@ -3374,3 +3374,141 @@ button, .control-box { transition: all 0.3s ease; }
 
 /* если вдруг кому-то будет слишком крупно — можно быстро откатить масштаб
    .hud-plane{ transform: scale(1.15); }  // или 1.1 */
+
+/* ===== Горизонтальная ориентация поля (десктоп) ==========================
+   Весь дизайн живёт в кадре 460x800 (#uiFrame). Разворот делается ОДНИМ
+   поворотом самого кадра на 90° по часовой: тогда всё содержимое —
+   поле, фон-подложка, счёт и самолёты на hudCanvas, инвентари — едет вместе
+   с ним и оказывается ровно там, где нужно:
+     верх-лево (козёл) -> верх-право, левая рейка (самолёты) -> верхняя грань,
+     правая рейка (баллы) -> нижняя, верхний инвентарь -> справа, нижний -> слева.
+   Отдельно доводим руками только то, что после поворота должно читаться
+   ровно (морды, квадратики инвентаря, кнопка) и воробья, который по ТЗ
+   остаётся в левом нижнем углу.
+
+   Соответствие координат: точка кадра (u,v) после поворота видна в
+   (X, Y) = (800 - v, u). Отсюда все «перевешивания» ниже. */
+
+.orientation-toggle {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 34px;
+  height: 34px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(28, 24, 18, 0.42);
+  color: #F1E6C2;
+  cursor: pointer;
+  z-index: 350;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  opacity: 0.55;
+}
+
+/* Только для мыши: на тач-устройствах ориентацию задаёт сама система. */
+@media (hover: hover) and (pointer: fine) {
+  .orientation-toggle {
+    display: flex;
+  }
+}
+
+.orientation-toggle:hover {
+  background: rgba(28, 24, 18, 0.68);
+  opacity: 1;
+}
+
+.orientation-toggle:focus-visible {
+  outline: 2px solid rgba(241, 230, 194, 0.9);
+  outline-offset: 2px;
+  opacity: 1;
+}
+
+.orientation-toggle__icon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.orientation-toggle__arrow-head {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* Сам разворот кадра. Ширина/высота кадра не меняются — меняется только его
+   видимая габаритная коробка (800x460), под которую подстраивается --ui-scale. */
+html.is-board-landscape #uiFrame {
+  transform: translate(-50%, -50%) scale(var(--ui-scale)) rotate(90deg);
+}
+
+/* Кнопка: видимый правый нижний угол — это (X=800, Y=460), то есть угол кадра
+   (u=460, v=0) — правый ВЕРХНИЙ. Плюс встречный поворот, чтобы значок стоял ровно. */
+html.is-board-landscape .orientation-toggle {
+  right: 12px;
+  bottom: auto;
+  top: 12px;
+  transform: rotate(-90deg);
+}
+
+/* Морды. В портрете это две половины спрайта 460x800 во всю ширину кадра; в
+   горизонтали обрезаем каждую до самой головы (55x95) и ставим по углам.
+   Козёл по ТЗ уходит в правый верхний угол экрана — это угол кадра (0,0).
+   Воробей остаётся в левом нижнем углу экрана — это угол кадра (460,800).
+   Встречный поворот ставит головы ровно; сдвиг после поворота (translate идёт
+   ПОСЛЕ rotate в матрице, то есть в осях кадра) дотягивает их вплотную к углу. */
+html.is-board-landscape .turn-indicator {
+  width: 64px;
+  height: 104px;
+  background-size: 460px 800px;
+  transform-origin: 50% 50%;
+}
+
+html.is-board-landscape #mantisIndicator {
+  left: 0;
+  top: 0;
+  background-position: left top;
+  transform: translate(20px, -20px) rotate(-90deg);
+}
+
+html.is-board-landscape #goatIndicator {
+  left: auto;
+  right: 0;
+  top: auto;
+  bottom: 0;
+  background-position: left bottom;
+  transform: translate(-20px, 20px) rotate(-90deg);
+}
+
+/* Инвентари: сами блоки уже уехали влево и вправо вместе с кадром, но каждый
+   квадратик предмета лежит на боку — разворачиваем каждый по отдельности.
+   Слот 55x55, поворот вокруг центра оставляет его в своей же ячейке. */
+html.is-board-landscape .inventory-slot {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+/* Кнопки редактора/тестера карт: они привязаны к координатам кадра, после
+   поворота остаются на своих местах относительно поля — только разворачиваем
+   подписи, чтобы их можно было прочитать. */
+html.is-board-landscape .map-editor-reset-btn {
+  transform: rotate(-90deg);
+}
+
+/* Центрованные оверлеи (табличка конца раунда, баннер раунда, окна редактора и
+   тестера) должны читаться ровно. Разворачиваем именно СЛОЙ-центровщик, а не сам
+   элемент: у таблички transform выставляется из JS (анимация появления), и правило
+   на элементе было бы им перебито. Слой центрирует содержимое флексом, поэтому
+   встречный поворот оставляет его в середине кадра и ставит ровно. */
+html.is-board-landscape .transfer-frame-layer,
+html.is-board-landscape .round-banner-layer,
+html.is-board-landscape .map-editor-save-dialog {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
