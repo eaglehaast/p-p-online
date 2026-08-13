@@ -3448,12 +3448,15 @@ html.is-board-landscape #uiFrame {
   transform: translate(-50%, -50%) scale(var(--ui-scale)) rotate(90deg);
 }
 
-/* Кнопка: видимый правый нижний угол — это (X=800, Y=460), то есть угол кадра
-   (u=460, v=0) — правый ВЕРХНИЙ. Плюс встречный поворот, чтобы значок стоял ровно. */
+/* Кнопка в горизонтали уезжает в разрыв между группами самолётов в счётчике —
+   в середину верхней грани. Это освобождает нижний правый угол, куда сдвигается
+   правый инвентарь. Счётчики занимают кадр по y 97..384 и 416..703, то есть разрыв
+   между ними — это v ≈ 384..416, а сама рейка лежит по x 3..51; отсюда координаты. */
 html.is-board-landscape .orientation-toggle {
-  right: 12px;
+  right: auto;
   bottom: auto;
-  top: 12px;
+  left: 10px;
+  top: 383px;
   transform: rotate(-90deg);
 }
 
@@ -3470,11 +3473,13 @@ html.is-board-landscape .turn-indicator {
   transform-origin: 50% 50%;
 }
 
+/* Козла дополнительно отражаем по горизонтали: в портрете он смотрит вправо, из
+   левого края кадра, а в правом верхнем углу должен смотреть внутрь поля. */
 html.is-board-landscape #mantisIndicator {
   left: 0;
   top: 0;
   background-position: left top;
-  transform: translate(20px, -20px) rotate(-90deg);
+  transform: translate(20px, -20px) rotate(-90deg) scaleX(-1);
 }
 
 html.is-board-landscape #goatIndicator {
@@ -3509,6 +3514,15 @@ html.is-board-landscape .map-editor-reset-btn {
 html.is-board-landscape .transfer-frame-layer,
 html.is-board-landscape .round-banner-layer,
 html.is-board-landscape .map-editor-save-dialog {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+/* DOM-эффекты поля (огонь сбитых самолётов, падающий груз, взрывы) живут в слоях
+   кадра и поэтому тоже уезжают на бок. Разворачиваем каждый эффект вокруг его
+   центра: спрайт встаёт ровно, а вместе с ним и «падение» груза, которое зашито
+   в кадры анимации, снова идёт сверху вниз по экрану. */
+html.is-board-landscape .fx-cargo {
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
 }

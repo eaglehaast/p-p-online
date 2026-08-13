@@ -5021,14 +5021,31 @@ function validateInventoryCssSizing(host){
   }
 }
 
+// В горизонтали ось X кадра становится экранной вертикалью, поэтому инвентари
+// разъезжаются именно по ней: левый (зелёный) уходит вверх, правый (синий) — вниз.
+// Иначе они упираются в морды, которые сидят в углах: воробей внизу слева, козёл
+// сверху справа.
+const INVENTORY_LANDSCAPE_SHIFT_PX = Object.freeze({ blue: 42, green: -48 });
+
 function applyInventoryContainerLayout(color, host){
   if(!(host instanceof HTMLElement)) return;
   const containerConfig = INVENTORY_UI_CONFIG.containers[color] ?? null;
   if(!containerConfig) return;
-  host.style.left = `${containerConfig.x}px`;
+  const shift = isBoardLandscapeActive()
+    ? (INVENTORY_LANDSCAPE_SHIFT_PX[color] ?? 0)
+    : 0;
+  host.style.left = `${containerConfig.x + shift}px`;
   host.style.top = `${containerConfig.y}px`;
   host.style.width = `${containerConfig.w}px`;
   host.style.height = `${containerConfig.h}px`;
+}
+
+// Пересобрать раскладку инвентарей после смены ориентации.
+function refreshInventoryContainerLayouts(){
+  for(const color of ["blue", "green"]){
+    const host = inventoryHosts?.[color];
+    if(host instanceof HTMLElement) applyInventoryContainerLayout(color, host);
+  }
 }
 
 function showInventoryDisabledHint(color, slotLayout){
@@ -7388,6 +7405,15 @@ const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
 let warnedMissingPlaneFlameHost = false;
 
+// Эффекты поля позиционируются инлайновым transform, поэтому встречный поворот
+// приходится дописывать сюда же: правило из стилей инлайн перебьёт. Поворот идёт
+// после сдвига и вокруг центра элемента, так что якорь эффекта не съезжает.
+function withLandscapeUprightTransform(transform){
+  const base = `${transform || ""}`.trim();
+  if(!isBoardLandscapeActive()) return base;
+  return base ? `${base} rotate(-90deg)` : "rotate(-90deg)";
+}
+
 function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeColor = '', planeState = '') {
   if (!element) return;
   element.classList.add('fx-flame');
@@ -7398,7 +7424,7 @@ function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeC
   }
   element.style.position = 'absolute';
   element.style.pointerEvents = 'none';
-  element.style.transform = 'translate(-50%, -100%)';
+  element.style.transform = withLandscapeUprightTransform('translate(-50%, -100%)');
   const stateClass = planeState === 'alive' ? 'fx-flame--alive' : 'fx-flame--crashed';
   element.classList.add(stateClass);
   element.dataset.state = planeState || stateClass.replace('fx-flame--', '');
@@ -10289,6 +10315,23 @@ function getCargoShadowState(cargo, now = performance.now()) {
   return { alpha, scale };
 }
 
+// В горизонтали холст повёрнут вместе с кадром, поэтому всё, что нарисовано в мировых
+// координатах (ящики груза, базы, флаги), ложится на бок. Рисуем такие спрайты со
+// встречным поворотом вокруг их собственного центра — на экране они стоят ровно, а
+// позиция в мире не меняется.
+function drawWorldSpriteUpright(ctx2d, sprite, x, y, width, height){
+  if(!ctx2d || !sprite) return;
+  if(!isBoardLandscapeActive()){
+    ctx2d.drawImage(sprite, x, y, width, height);
+    return;
+  }
+  ctx2d.save();
+  ctx2d.translate(x + width / 2, y + height / 2);
+  ctx2d.rotate(-Math.PI / 2);
+  ctx2d.drawImage(sprite, -width / 2, -height / 2, width, height);
+  ctx2d.restore();
+}
+
 function drawCargoShadow(ctx2d, cargo, now = performance.now()) {
   const shadow = getCargoShadowState(cargo, now);
   if (!shadow) {
@@ -10336,9 +10379,14 @@ function drawCargo(ctx2d){
       const highlightBoost = getCargoHighlightBoost(cargo, now);
       const brightness = 0.98 + highlightBoost;
 
+      // Осадка после падения должна идти по экранной вертикали: в горизонтали это ось X мира.
+      const landscape = isBoardLandscapeActive();
+      const drawX = cargo.x + (landscape ? yOffset : 0);
+      const drawY = cargo.y + (landscape ? 0 : yOffset);
+
       ctx2d.save();
       ctx2d.filter = `saturate(0.9) brightness(${brightness})`;
-      ctx2d.drawImage(cargoSprite, cargo.x, cargo.y + yOffset, width, height);
+      drawWorldSpriteUpright(ctx2d, cargoSprite, drawX, drawY, width, height);
       ctx2d.restore();
     }
   }
@@ -48684,7 +48732,7 @@ function drawBaseSprite(ctx2d, color){
   const layout = getBaseLayout(color);
   const sprite = baseSprites[color];
   if(layout && isSpriteReady(sprite)){
-    ctx2d.drawImage(sprite, layout.x, layout.y, layout.width, layout.height);
+    drawWorldSpriteUpright(ctx2d, sprite, layout.x, layout.y, layout.width, layout.height);
     return true;
   }
   return false;
@@ -48730,7 +48778,7 @@ function drawFlagSprite(ctx2d, flag, { anchor = null } = {}){
   const sprite = flagSprites[flag?.color];
   const layout = getFlagSpriteLayoutForPlacement(flag, anchor || getFlagAnchor(flag));
   if(layout && isSpriteReady(sprite)){
-    ctx2d.drawImage(sprite, layout.x, layout.y, layout.width, layout.height);
+    drawWorldSpriteUpright(ctx2d, sprite, layout.x, layout.y, layout.width, layout.height);
     return true;
   }
   return false;
@@ -49024,7 +49072,7 @@ function createExplosionImageEntry(explosionState, img) {
   Object.assign(container.style, {
     position: 'absolute',
     pointerEvents: 'none',
-    transform: 'translate(-50%, -50%)',
+    transform: withLandscapeUprightTransform('translate(-50%, -50%)'),
     width: `${EXPLOSION_DRAW_SIZE}px`,
     height: `${EXPLOSION_DRAW_SIZE}px`,
     left: `${Math.round(overlayX)}px`,
@@ -51093,6 +51141,7 @@ function setBoardLandscape(active){
   }
   // Масштаб кадра считается от габаритов, которые только что поменялись местами.
   if(typeof updateUiFrameScale === "function") updateUiFrameScale();
+  if(typeof refreshInventoryContainerLayouts === "function") refreshInventoryContainerLayouts();
   void syncLayoutAndField("board orientation toggle");
 }
 
