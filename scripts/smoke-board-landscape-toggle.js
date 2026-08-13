@@ -101,30 +101,81 @@ const buildContext = ({ landscape, scale = 1, frameLeft = 0, frameTop = 0 } = {}
     '3: масштаб и смещение кадра учитываются и в горизонтали');
 }
 
-// === 4. Разметка и стили: то, что нельзя проверить вычислением ===
+// === 4. Мировые спрайты (ящики, базы, флаги) рисуются ровно ===
+{
+  const calls = [];
+  const ctx = {
+    save: () => calls.push(['save']),
+    restore: () => calls.push(['restore']),
+    translate: (x, y) => calls.push(['translate', Math.round(x), Math.round(y)]),
+    rotate: (a) => calls.push(['rotate', Number(a.toFixed(4))]),
+    drawImage: (_s, x, y, w, h) => calls.push(['drawImage', Math.round(x), Math.round(y), w, h]),
+  };
+  const sprite = { ready: true };
+
+  const portrait = buildContext({ landscape: false });
+  portrait.drawImageCalls = calls;
+  vm.runInContext(extractFunctionSource(source, 'drawWorldSpriteUpright'), portrait);
+  portrait.drawWorldSpriteUpright(ctx, sprite, 100, 200, 20, 40);
+  assert(calls.length === 1 && calls[0][0] === 'drawImage',
+    '4: в портрете спрайт рисуется как раньше, без лишних преобразований');
+  assert(String(calls[0]) === String(['drawImage', 100, 200, 20, 40]),
+    '4b: и ровно в той же точке');
+
+  calls.length = 0;
+  const land = buildContext({ landscape: true });
+  vm.runInContext(extractFunctionSource(source, 'drawWorldSpriteUpright'), land);
+  land.drawWorldSpriteUpright(ctx, sprite, 100, 200, 20, 40);
+  assert(String(calls[0]) === String(['save']) && String(calls[calls.length - 1]) === String(['restore']),
+    '4c: поворот не должен утекать на остальную отрисовку');
+  assert(String(calls[1]) === String(['translate', 110, 220]),
+    '4d: поворот идёт вокруг ЦЕНТРА спрайта, иначе он уедет с места');
+  assert(calls[2][0] === 'rotate' && Math.abs(calls[2][1] + Math.PI / 2) < 1e-3,
+    '4e: встречный поворот ровно на -90°');
+  assert(String(calls[3]) === String(['drawImage', -10, -20, 20, 40]),
+    '4f: спрайт рисуется от центра — размер и пропорции не меняются');
+}
+
+// === 5. Разметка и стили: то, что нельзя проверить вычислением ===
 
 assert(/id="orientationToggleBtn"/.test(markup),
-  '4: на игровом экране должна быть кнопка разворота');
+  '5: на игровом экране должна быть кнопка разворота');
 assert(markup.indexOf('id="orientationToggleBtn"') > markup.indexOf('id="gsFrame"'),
-  '4b: кнопка живёт внутри игрового экрана — на меню её быть не должно');
+  '5b: кнопка живёт внутри игрового экрана — на меню её быть не должно');
 
 assert(/html\.is-board-landscape #uiFrame\s*\{[^}]*rotate\(90deg\)/.test(styles),
-  '5: сам кадр поворачивается на 90° — иначе поле не станет горизонтальным');
+  '6: сам кадр поворачивается на 90° — иначе поле не станет горизонтальным');
 assert(/html\.is-board-landscape \.inventory-slot\s*\{[^}]*rotate\(-90deg\)/.test(styles),
-  '5b: каждый квадратик инвентаря разворачивается отдельно');
+  '6b: каждый квадратик инвентаря разворачивается отдельно');
 assert(/html\.is-board-landscape \.orientation-toggle\s*\{[^}]*rotate\(-90deg\)/.test(styles),
-  '5c: кнопка остаётся в правом нижнем углу и стоит ровно');
+  '6c: кнопка стоит ровно');
+// Кнопка уезжает в разрыв между группами самолётов (кадр по y 384..416), освобождая
+// нижний правый угол под сдвинутый инвентарь.
+assert(/html\.is-board-landscape \.orientation-toggle\s*\{[\s\S]*?top:\s*383px/.test(styles),
+  '6d: в горизонтали кнопка уходит в разрыв счётчика самолётов');
 assert(/html\.is-board-landscape #goatIndicator\s*\{[\s\S]*?bottom:\s*0/.test(styles),
-  '5d: воробей прижат к углу кадра (460,800) — это левый нижний угол экрана');
+  '6e: воробей прижат к углу кадра (460,800) — это левый нижний угол экрана');
+assert(/html\.is-board-landscape #mantisIndicator\s*\{[\s\S]*?scaleX\(-1\)/.test(styles),
+  '6f: козёл отражён по горизонтали — в правом верхнем углу он смотрит внутрь поля');
 assert(/@media \(hover: hover\) and \(pointer: fine\)/.test(styles),
-  '5e: кнопка только для мыши — на тач-устройствах ориентацию задаёт система');
+  '6g: кнопка только для мыши — на тач-устройствах ориентацию задаёт система');
 
 // Масштаб кадра обязан считаться от переставленных габаритов, иначе в горизонтали
 // поле либо не влезет, либо останется крошечным.
 assert(/landscape \? FRAME_BASE_HEIGHT : FRAME_BASE_WIDTH/.test(source),
-  '6: --ui-scale должен вписывать повёрнутую габаритную коробку');
+  '7: --ui-scale должен вписывать повёрнутую габаритную коробку');
+// Инвентари разъезжаются по экранной вертикали, иначе упираются в морды в углах.
+assert(/INVENTORY_LANDSCAPE_SHIFT_PX = Object\.freeze\(\{ blue: 42, green: -48 \}\)/.test(source),
+  '7b: в горизонтали инвентари сдвигаются: левый вверх, правый вниз');
+assert(/refreshInventoryContainerLayouts/.test(source),
+  '7c: раскладка инвентарей пересобирается при смене ориентации');
+// Эффекты поля позиционируются инлайновым transform — поворот дописывается в коде.
+assert(/withLandscapeUprightTransform\('translate\(-50%, -100%\)'\)/.test(source),
+  '7d: огонь сбитого самолёта разворачивается ровно');
+assert(/drawWorldSpriteUpright\(ctx2d, sprite, layout\.x, layout\.y, layout\.width, layout\.height\)/.test(source),
+  '7e: базы и флаги рисуются ровно');
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
 assert(/if\(mode !== 'GAME' && typeof setBoardLandscape === "function"\)/.test(source),
-  '7: при уходе с игрового экрана разворот сбрасывается');
+  '8: при уходе с игрового экрана разворот сбрасывается');
 
-console.log('Smoke test passed: кадр поворачивается целиком, ввод возвращается в координаты дизайна (углы и центр сходятся), кнопка живёт только на игровом экране и только для мыши.');
+console.log('Smoke test passed: кадр поворачивается целиком, ввод возвращается в координаты дизайна, мировые спрайты рисуются ровно вокруг своего центра, инвентари разъезжаются от морд, а кнопка живёт только на игровом экране и только для мыши.');
