@@ -48769,15 +48769,29 @@ function drawAimOverlay(rangeTextInfo) {
 function drawBaseSprite(ctx2d, color){
   const layout = getBaseLayout(color);
   const sprite = baseSprites[color];
-  if(layout && isSpriteReady(sprite)){
-    // База НАМЕРЕННО не разворачивается в горизонтали: корзинка живёт в той же
-    // системе координат, что и самолёты, и едет вместе с полем. Развёрнутая она
-    // не помещается в свою клетку, а боком читается нормально. Флаги, наоборот,
-    // на боку выглядят плохо — они разворачиваются (см. drawFlagSprite).
+  if(!layout || !isSpriteReady(sprite)) return false;
+
+  // База НАМЕРЕННО не разворачивается в горизонтали: корзинка живёт в той же
+  // системе координат, что и самолёты, и едет вместе с полем. Развёрнутая она
+  // не помещается в свою клетку, а боком читается нормально. Флаги, наоборот,
+  // на боку выглядят плохо — они разворачиваются (см. drawFlagSprite).
+  //
+  // Но обе корзинки нарисованы «смотрящими» в одну сторону, и в горизонтали синяя
+  // оказывается у ПРАВОГО края — то есть отвёрнутой от поля. Отражаем её по
+  // экранной горизонтали. Экранная горизонталь — это ось Y мира (мир +y идёт на
+  // экране влево), поэтому зеркало по экрану — это scale(1, -1) в координатах холста.
+  const mirrorToField = color === "blue" && isBoardLandscapeActive();
+  if(!mirrorToField){
     ctx2d.drawImage(sprite, layout.x, layout.y, layout.width, layout.height);
     return true;
   }
-  return false;
+
+  ctx2d.save();
+  ctx2d.translate(layout.x + layout.width / 2, layout.y + layout.height / 2);
+  ctx2d.scale(1, -1);
+  ctx2d.drawImage(sprite, -layout.width / 2, -layout.height / 2, layout.width, layout.height);
+  ctx2d.restore();
+  return true;
 }
 
 function drawFlag(ctx2d, x, y, color){
