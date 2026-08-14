@@ -186,8 +186,34 @@ assert(/element\.style\.transform = withLandscapeUprightTransform\('translate\(-
 // садится в одном месте, а готовый ящик появляется в другом.
 assert(/originX = \(-CARGO_ANIM_OFFSET_X \+ crateSize\.width \/ 2\) \* scaleX/.test(source),
   '7g: анимация груза разворачивается вокруг точки приземления ящика');
-assert(/drawWorldSpriteUpright\(ctx2d, sprite, layout\.x, layout\.y, layout\.width, layout\.height\)/.test(source),
-  '7e: базы и флаги рисуются ровно');
+// Флаг разворачивается ровно (на боку он читается плохо), а БАЗА намеренно едет
+// вместе с полем — в той же системе координат, что самолёты: развёрнутая корзинка
+// не помещается в свою клетку, а боком читается нормально.
+const flagFn = source.slice(source.indexOf('function drawFlagSprite('));
+assert(/drawWorldSpriteUpright\(ctx2d, sprite, layout\.x, layout\.y, layout\.width, layout\.height\)/
+  .test(flagFn.slice(0, flagFn.indexOf('\n}'))),
+  '7e: флаг рисуется ровно');
+const baseFn = source.slice(source.indexOf('function drawBaseSprite('));
+const baseBody = baseFn.slice(0, baseFn.indexOf('\n}'));
+assert(/ctx2d\.drawImage\(sprite, layout\.x, layout\.y, layout\.width, layout\.height\)/.test(baseBody)
+  && !/drawWorldSpriteUpright/.test(baseBody),
+  '7f: база НЕ разворачивается — корзинка живёт в системе координат поля');
+
+// Тень лежит под ящиком, то есть по экранной вертикали: в горизонтали и смещение,
+// и сплюснутый эллипс разворачиваются, иначе тень уезжает вбок от ящика.
+const shadowFn = source.slice(source.indexOf('function drawCargoShadow('));
+const shadowBody = shadowFn.slice(0, shadowFn.indexOf('\n}'));
+assert(/width \* \(landscape \? 0\.9 : 0\.5\)/.test(shadowBody)
+  && /height \* \(landscape \? 0\.5 : 0\.9\)/.test(shadowBody),
+  '7g: смещение тени разворачивается вместе с кадром');
+assert(/landscape \? -Math\.PI \/ 2 : 0/.test(shadowBody),
+  '7h: сам эллипс тени тоже разворачивается, иначе он вытянут поперёк');
+
+// Подпись дальности разворачивается вокруг своего якоря у самолёта.
+const aimFn = source.slice(source.indexOf('function drawAimOverlay('));
+assert(/hudCtx\.translate\(rangeTextInfo\.x, rangeTextInfo\.y\);[\s\S]{0,120}hudCtx\.rotate\(-Math\.PI \/ 2\)/
+  .test(aimFn.slice(0, 2000)),
+  '7i: подпись дальности разворачивается вокруг якоря у самолёта');
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
 assert(/if\(mode !== 'GAME' && typeof setBoardLandscape === "function"\)/.test(source),
   '8: при уходе с игрового экрана разворот сбрасывается');
