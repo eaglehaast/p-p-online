@@ -10358,13 +10358,25 @@ function drawCargoShadow(ctx2d, cargo, now = performance.now()) {
   const { width, height } = getCargoSpriteDrawSize();
   const shadowWidth = Math.max(1, width * shadow.scale);
   const shadowHeight = Math.max(1, height * 0.2 * shadow.scale);
-  const centerX = cargo.x + width * 0.5;
-  const centerY = cargo.y + height * 0.9;
+  // Тень лежит ПОД ящиком, то есть по экранной вертикали. В горизонтали экранная
+  // вертикаль — это ось X мира, поэтому и смещение, и сам сплюснутый эллипс
+  // разворачиваются на -90°: иначе тень уезжает вбок от ящика.
+  const landscape = isBoardLandscapeActive();
+  const centerX = cargo.x + width * (landscape ? 0.9 : 0.5);
+  const centerY = cargo.y + height * (landscape ? 0.5 : 0.9);
 
   ctx2d.save();
   ctx2d.fillStyle = `rgba(${CARGO_SHADOW_COLOR}, ${Math.max(0, Math.min(1, shadow.alpha))})`;
   ctx2d.beginPath();
-  ctx2d.ellipse(centerX, centerY, shadowWidth * 0.5, shadowHeight * 0.5, 0, 0, Math.PI * 2);
+  ctx2d.ellipse(
+    centerX,
+    centerY,
+    shadowWidth * 0.5,
+    shadowHeight * 0.5,
+    landscape ? -Math.PI / 2 : 0,
+    0,
+    Math.PI * 2
+  );
   ctx2d.fill();
   ctx2d.restore();
 }
@@ -48690,6 +48702,15 @@ function drawAimOverlay(rangeTextInfo) {
     hudOffsetY
   );
 
+  // В горизонтали холст повёрнут вместе с кадром, поэтому подпись дальности читается
+  // снизу вверх. Разворачиваем весь блок (число, «cells» и значки баффов) вокруг его
+  // якоря у самолёта — тогда он стоит ровно и не съезжает с места.
+  if(isBoardLandscapeActive()){
+    hudCtx.translate(rangeTextInfo.x, rangeTextInfo.y);
+    hudCtx.rotate(-Math.PI / 2);
+    hudCtx.translate(-rangeTextInfo.x, -rangeTextInfo.y);
+  }
+
   hudCtx.globalAlpha = 1;
   hudCtx.font = "14px sans-serif";
   hudCtx.textAlign = "left";
@@ -48748,11 +48769,29 @@ function drawAimOverlay(rangeTextInfo) {
 function drawBaseSprite(ctx2d, color){
   const layout = getBaseLayout(color);
   const sprite = baseSprites[color];
-  if(layout && isSpriteReady(sprite)){
-    drawWorldSpriteUpright(ctx2d, sprite, layout.x, layout.y, layout.width, layout.height);
+  if(!layout || !isSpriteReady(sprite)) return false;
+
+  // База НАМЕРЕННО не разворачивается в горизонтали: корзинка живёт в той же
+  // системе координат, что и самолёты, и едет вместе с полем. Развёрнутая она
+  // не помещается в свою клетку, а боком читается нормально. Флаги, наоборот,
+  // на боку выглядят плохо — они разворачиваются (см. drawFlagSprite).
+  //
+  // Но обе корзинки нарисованы «смотрящими» в одну сторону, и в горизонтали синяя
+  // оказывается у ПРАВОГО края — то есть отвёрнутой от поля. Отражаем её по
+  // экранной горизонтали. Экранная горизонталь — это ось Y мира (мир +y идёт на
+  // экране влево), поэтому зеркало по экрану — это scale(1, -1) в координатах холста.
+  const mirrorToField = color === "blue" && isBoardLandscapeActive();
+  if(!mirrorToField){
+    ctx2d.drawImage(sprite, layout.x, layout.y, layout.width, layout.height);
     return true;
   }
-  return false;
+
+  ctx2d.save();
+  ctx2d.translate(layout.x + layout.width / 2, layout.y + layout.height / 2);
+  ctx2d.scale(1, -1);
+  ctx2d.drawImage(sprite, -layout.width / 2, -layout.height / 2, layout.width, layout.height);
+  ctx2d.restore();
+  return true;
 }
 
 function drawFlag(ctx2d, x, y, color){
