@@ -216,6 +216,21 @@ assert(/width \* \(landscape \? 0\.9 : 0\.5\)/.test(shadowBody)
 assert(/landscape \? -Math\.PI \/ 2 : 0/.test(shadowBody),
   '7h: сам эллипс тени тоже разворачивается, иначе он вытянут поперёк');
 
+// Динамит на стене и его взрыв — это один и тот же кадр анимации: заряд стоит на
+// НИЗУ кадра, вверх уходит место под вспышку. Значит и разворачивать кадр надо вокруг
+// его нижней середины, а якорь на кирпиче в горизонтали — это правый край кирпича
+// (мир +x идёт на экране вниз), иначе заряд висит рядом со стеной, а не на ней.
+const dynFn = source.slice(source.indexOf('function updateAndDrawDynamiteExplosions('));
+const dynBody = dynFn.slice(0, 4000);
+assert(/transformOrigin = landscape \? `\$\{frameW \/ 2\}px \$\{frameH\}px` : 'top left'/.test(dynBody),
+  '7l: кадр динамита разворачивается вокруг своей нижней середины');
+assert(/translate\(\$\{drawX\}px, \$\{drawY\}px\) rotate\(-90deg\)/.test(dynBody),
+  '7m: в горизонтали кадр динамита разворачивается');
+assert(/const anchorX = landscape && Number\.isFinite\(entry\.rightX\) \? entry\.rightX : entry\.x/.test(dynBody),
+  '7n: в горизонтали заряд приставляется к правому краю кирпича');
+assert((source.match(/rightX: targetBrick\.cx \+ targetBrick\.halfWidth/g) || []).length === 2,
+  '7o: правый край кирпича пишется в запись заряда в ОБЕИХ точках создания (игрок и ИИ)');
+
 // Подпись дальности разворачивается вокруг своего якоря у самолёта.
 const aimFn = source.slice(source.indexOf('function drawAimOverlay('));
 assert(/hudCtx\.translate\(rangeTextInfo\.x, rangeTextInfo\.y\);[\s\S]{0,120}hudCtx\.rotate\(-Math\.PI \/ 2\)/
