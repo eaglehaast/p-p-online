@@ -9587,6 +9587,23 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     height: `${height}px`
   });
 
+  // В горизонтали кадр анимации надо развернуть, но вокруг ТОЙ ЖЕ точки, вокруг которой
+  // канвас поворачивает уже приземлившийся ящик — вокруг его центра. Кадр анимации
+  // намного больше ящика (сверху парашют), и поворот вокруг центра кадра увёл бы точку
+  // приземления: анимация садилась бы в одном месте, а готовый ящик появлялся в другом.
+  // Ящик внутри кадра стоит со смещением (-CARGO_ANIM_OFFSET_X, -CARGO_ANIM_OFFSET_Y).
+  const cargoDomStyle = cargo.domEntry.element.style;
+  if(isBoardLandscapeActive()){
+    const crateSize = getCargoSpriteDrawSize();
+    const originX = (-CARGO_ANIM_OFFSET_X + crateSize.width / 2) * scaleX;
+    const originY = (-CARGO_ANIM_OFFSET_Y + crateSize.height / 2) * scaleY;
+    cargoDomStyle.transformOrigin = `${originX}px ${originY}px`;
+    cargoDomStyle.transform = 'rotate(-90deg)';
+  } else {
+    cargoDomStyle.transformOrigin = '';
+    cargoDomStyle.transform = '';
+  }
+
   const brightness = Math.max(0, 1 - clampCargoDimming(cargoAnimDimming));
 
   Object.assign(cargo.domEntry.img.style, {
@@ -49098,12 +49115,14 @@ function applyExplosionDomScale(domEntry, scaleFactor = 1) {
     return;
   }
 
+  // Этот transform переписывается на каждом обновлении, поэтому встречный поворот
+  // приходится дописывать и здесь — иначе взрыв так и остаётся лежать на боку.
   if (!Number.isFinite(scaleFactor) || Math.abs(scaleFactor - 1) < 0.0001) {
-    element.style.transform = 'translate(-50%, -50%)';
+    element.style.transform = withLandscapeUprightTransform('translate(-50%, -50%)');
     return;
   }
 
-  element.style.transform = `translate(-50%, -50%) scale(${scaleFactor})`;
+  element.style.transform = withLandscapeUprightTransform(`translate(-50%, -50%) scale(${scaleFactor})`);
 }
 
 function spawnExplosionForPlane(plane, x = null, y = null, options = {}) {
