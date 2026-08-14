@@ -148,17 +148,22 @@ assert(/html\.is-board-landscape #uiFrame\s*\{[^}]*rotate\(90deg\)/.test(styles)
 assert(/html\.is-board-landscape \.inventory-slot\s*\{[^}]*rotate\(-90deg\)/.test(styles),
   '6b: каждый квадратик инвентаря разворачивается отдельно');
 assert(/html\.is-board-landscape \.orientation-toggle\s*\{[^}]*rotate\(-90deg\)/.test(styles),
-  '6c: кнопка стоит ровно');
-// Кнопка уезжает в разрыв между группами самолётов (кадр по y 384..416), освобождая
-// нижний правый угол под сдвинутый инвентарь.
-assert(/html\.is-board-landscape \.orientation-toggle\s*\{[\s\S]*?top:\s*383px/.test(styles),
-  '6d: в горизонтали кнопка уходит в разрыв счётчика самолётов');
+  '6c: в горизонтали разворачивается только значок кнопки, чтобы стоять ровно');
+// У кнопки ОДНО место в обеих ориентациях — разрыв между группами самолётов в счётчике
+// (кадр по y 384..416 при x 3..51). Она просто едет вместе с кадром.
+assert(/\.orientation-toggle\s*\{[\s\S]*?left:\s*10px;[\s\S]*?top:\s*383px/.test(styles),
+  '6d: базовое место кнопки — разрыв счётчика самолётов');
+assert(!/html\.is-board-landscape \.orientation-toggle\s*\{[^}]*(left|top|right|bottom):/.test(styles),
+  '6e: в горизонтали кнопка НЕ переезжает — иначе у неё два разных места на двух экранах');
 assert(/html\.is-board-landscape #goatIndicator\s*\{[\s\S]*?bottom:\s*0/.test(styles),
-  '6e: воробей прижат к углу кадра (460,800) — это левый нижний угол экрана');
+  '6f: воробей прижат к углу кадра (460,800) — это левый нижний угол экрана');
 assert(/html\.is-board-landscape #mantisIndicator\s*\{[\s\S]*?scaleX\(-1\)/.test(styles),
-  '6f: козёл отражён по горизонтали — в правом верхнем углу он смотрит внутрь поля');
+  '6g: козёл отражён по горизонтали — в правом верхнем углу он смотрит внутрь поля');
+// Огонь прижат к самолёту своим низом, поэтому и поворачиваться должен вокруг низа.
+assert(/html\.is-board-landscape \.fx-flame\s*\{[^}]*transform-origin:\s*50% 100%/.test(styles),
+  '6h: огонь разворачивается вокруг своего основания, иначе отъезжает от самолёта');
 assert(/@media \(hover: hover\) and \(pointer: fine\)/.test(styles),
-  '6g: кнопка только для мыши — на тач-устройствах ориентацию задаёт система');
+  '6i: кнопка только для мыши — на тач-устройствах ориентацию задаёт система');
 
 // Масштаб кадра обязан считаться от переставленных габаритов, иначе в горизонтали
 // поле либо не влезет, либо останется крошечным.
@@ -172,6 +177,15 @@ assert(/refreshInventoryContainerLayouts/.test(source),
 // Эффекты поля позиционируются инлайновым transform — поворот дописывается в коде.
 assert(/withLandscapeUprightTransform\('translate\(-50%, -100%\)'\)/.test(source),
   '7d: огонь сбитого самолёта разворачивается ровно');
+// У взрыва transform переписывается на каждом обновлении — поворот обязан быть и там,
+// иначе взрыв так и остаётся лежать на боку.
+assert(/element\.style\.transform = withLandscapeUprightTransform\('translate\(-50%, -50%\)'\)/.test(source)
+  && /element\.style\.transform = withLandscapeUprightTransform\(`translate\(-50%, -50%\) scale/.test(source),
+  '7f: взрыв разворачивается и при обновлении масштаба, а не только при создании');
+// Падающий груз обязан крутиться вокруг точки приземления ящика, иначе анимация
+// садится в одном месте, а готовый ящик появляется в другом.
+assert(/originX = \(-CARGO_ANIM_OFFSET_X \+ crateSize\.width \/ 2\) \* scaleX/.test(source),
+  '7g: анимация груза разворачивается вокруг точки приземления ящика');
 assert(/drawWorldSpriteUpright\(ctx2d, sprite, layout\.x, layout\.y, layout\.width, layout\.height\)/.test(source),
   '7e: базы и флаги рисуются ровно');
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
