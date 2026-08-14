@@ -4459,7 +4459,10 @@ function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropC
       owner: activeItemState.color,
       x: targetBrick.cx,
       y: targetBrick.cy,
+      // Правый край кирпича в мире = его НИЖНИЙ край на экране в горизонтали
+      // (мир +x идёт на экране вниз). К нему приставляется заряд.
       bottomY: targetBrick.cy + targetBrick.halfHeight,
+      rightX: targetBrick.cx + targetBrick.halfWidth,
       spriteId: targetBrick.id,
       spriteIndex: targetBrick.spriteIndex,
       spriteRef: targetBrick.spriteRef,
@@ -4707,9 +4710,23 @@ function updateAndDrawDynamiteExplosions(ctx2d, now){
     }
 
     const { boardRect, overlayRect, host } = metrics;
-    const { overlayX, overlayY } = worldToOverlayLocal(entry.x, entry.bottomY, { boardRect, overlayRect });
+    // Заряд стоит на НИЖНЕЙ (по экрану) грани кирпича. В портрете это мировой низ,
+    // в горизонтали — мировой правый край, потому что мир +x идёт на экране вниз.
+    const landscape = isBoardLandscapeActive();
+    const anchorX = landscape && Number.isFinite(entry.rightX) ? entry.rightX : entry.x;
+    const anchorY = landscape && Number.isFinite(entry.rightX) ? entry.y : entry.bottomY;
+    const { overlayX, overlayY } = worldToOverlayLocal(anchorX, anchorY, { boardRect, overlayRect });
     const drawX = overlayX - frameW / 2;
     const drawY = overlayY - frameH;
+
+    // Кадры этой анимации — и сам заряд на стене, и последующий взрыв: динамит стоит
+    // на НИЗУ кадра, а вверх уходит пустое место под вспышку. Поэтому в горизонтали
+    // разворачиваем кадр вокруг его нижней середины — той самой точки, которой он
+    // приставлен к кирпичу. Поворот вокруг верхнего левого угла увёл бы заряд со стены.
+    const transform = landscape
+      ? `translate(${drawX}px, ${drawY}px) rotate(-90deg)`
+      : `translate(${drawX}px, ${drawY}px)`;
+    const transformOrigin = landscape ? `${frameW / 2}px ${frameH}px` : 'top left';
 
     if(!(entry.domEntry instanceof HTMLImageElement)){
       const image = document.createElement('img');
@@ -4720,8 +4737,8 @@ function updateAndDrawDynamiteExplosions(ctx2d, now){
         top: '0px',
         width: `${frameW}px`,
         height: `${frameH}px`,
-        transform: `translate(${drawX}px, ${drawY}px)`,
-        transformOrigin: 'top left',
+        transform,
+        transformOrigin,
         pointerEvents: 'none',
         imageRendering: 'auto'
       });
@@ -4732,7 +4749,9 @@ function updateAndDrawDynamiteExplosions(ctx2d, now){
     entry.domEntry.src = frameImg.src;
     entry.domEntry.style.width = `${frameW}px`;
     entry.domEntry.style.height = `${frameH}px`;
-    entry.domEntry.style.transform = `translate(${drawX}px, ${drawY}px)`;
+    // Кадры бывают разного размера, поэтому якорь пересчитывается вместе с ними.
+    entry.domEntry.style.transformOrigin = transformOrigin;
+    entry.domEntry.style.transform = transform;
   };
 
   if(!Array.isArray(dynamiteState) || dynamiteState.length === 0){
@@ -27637,7 +27656,9 @@ function placeBlueDynamiteAt(boardX, boardY){
     owner: "blue",
     x: targetBrick.cx,
     y: targetBrick.cy,
+    // См. комментарий выше: в горизонтали заряд стоит на правом краю кирпича.
     bottomY: targetBrick.cy + targetBrick.halfHeight,
+    rightX: targetBrick.cx + targetBrick.halfWidth,
     spriteId: targetBrick.id,
     spriteIndex: targetBrick.spriteIndex,
     spriteRef: targetBrick.spriteRef,
