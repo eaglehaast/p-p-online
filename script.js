@@ -47710,6 +47710,16 @@ function gameDraw(){
     const textAreaHeight = endTextCanvas.height;
     endTextCtx.save();
     endTextCtx.setTransform(1, 0, 0, 1, 0, 0);
+    // В горизонтали холст уезжает на бок вместе с кадром, и надписи конца матча
+    // («Игра окончена. Ничья.», «No one survived.») читались бы сверху вниз.
+    // Разворачиваем весь блок вокруг центра холста: встречный поворот гасит поворот
+    // кадра, текст снова идёт слева направо и остаётся там же относительно поля —
+    // он и так центрован по холсту, а смещение на 80px вверх сохраняется как есть.
+    if(isBoardLandscapeActive()){
+      endTextCtx.translate(textAreaWidth / 2, textAreaHeight / 2);
+      endTextCtx.rotate(-Math.PI / 2);
+      endTextCtx.translate(-textAreaWidth / 2, -textAreaHeight / 2);
+    }
     endTextCtx.font = "48px 'Patrick Hand', cursive";
     endTextCtx.lineWidth = 4;
     endTextCtx.strokeStyle = "#B22222";
