@@ -137,12 +137,15 @@ function placeEndGamePanelAtBoardCenter(){
   const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
   const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
   const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
-  if(boardWidth <= 0 || boardHeight <= 0) return false;
+  // В горизонтали углы прямоугольника меняются местами при переводе в координаты
+  // кадра, поэтому height приходит отрицательным. Размер поля — это модуль, а
+  // центр считается по знаковой середине и остаётся верным в обеих ориентациях.
+  if(Math.abs(boardWidth) <= 0 || Math.abs(boardHeight) <= 0) return false;
 
   const panelWidth = endGameDiv.offsetWidth || 0;
   const panelHeight = endGameDiv.offsetHeight || 0;
-  const targetLeft = Math.round(boardRect.left + (boardWidth - panelWidth) / 2);
-  const targetTop = Math.round(boardRect.top + (boardHeight - panelHeight) / 2);
+  const targetLeft = Math.round(boardRect.left + boardWidth / 2 - panelWidth / 2);
+  const targetTop = Math.round(boardRect.top + boardHeight / 2 - panelHeight / 2);
   endGameDiv.style.left = `${targetLeft}px`;
   endGameDiv.style.top = `${targetTop}px`;
   return true;
@@ -51221,6 +51224,12 @@ function setBoardLandscape(active){
   // Масштаб кадра считается от габаритов, которые только что поменялись местами.
   if(typeof updateUiFrameScale === "function") updateUiFrameScale();
   if(typeof refreshInventoryContainerLayouts === "function") refreshInventoryContainerLayouts();
+  // Табличку «Play again» держит inline left/top, посчитанный под прежнюю
+  // ориентацию. В матче её каждый кадр переставляет gameDraw, но в превью и на
+  // паузе цикла пересчитать некому — делаем это сразу.
+  if(endGameDiv instanceof HTMLElement && endGameDiv.classList.contains("is-visible")){
+    placeEndGamePanelAtBoardCenter();
+  }
   void syncLayoutAndField("board orientation toggle");
 }
 
