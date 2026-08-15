@@ -236,6 +236,33 @@ const aimFn = source.slice(source.indexOf('function drawAimOverlay('));
 assert(/hudCtx\.translate\(rangeTextInfo\.x, rangeTextInfo\.y\);[\s\S]{0,120}hudCtx\.rotate\(-Math\.PI \/ 2\)/
   .test(aimFn.slice(0, 2000)),
   '7i: подпись дальности разворачивается вокруг якоря у самолёта');
+// Табличка «Play again». Её transform целиком занят анимацией появления с
+// animation-fill-mode: both, поэтому встречный поворот обычным правилом не задать —
+// кадры его перебьют. Для горизонтали заведён отдельный набор кадров.
+assert(/html\.is-board-landscape #endGameButtons\.is-visible\s*\{[^}]*animation-name:\s*endgame-panel-drop-landscape/
+  .test(styles),
+  '9: в горизонтали у таблички свой набор кадров, иначе поворот перебьёт анимация');
+const landscapeDropKeyframes = styles.slice(styles.indexOf('@keyframes endgame-panel-drop-landscape'));
+const landscapeDropBody = landscapeDropKeyframes.slice(0, landscapeDropKeyframes.indexOf('\n}\n'));
+assert((landscapeDropBody.match(/rotate\(-90deg\)/g) || []).length === 5,
+  '9b: поворот стоит в КАЖДОМ кадре — иначе табличка ложится на бок по ходу анимации');
+assert(!/translateY/.test(landscapeDropBody) && /translateX\(-220px\)/.test(landscapeDropBody),
+  '9c: «прилёт сверху» в горизонтали идёт по оси X кадра — это и есть верх экрана');
+assert(/html\.is-board-landscape #endGameButtons\s*\{[^}]*transform-origin:\s*50% 50%/.test(styles),
+  '9d: табличка крутится вокруг центра — JS ставит её по центру поля именно центром');
+// В горизонтали углы прямоугольника поля меняются местами, и height приходит
+// отрицательным: старая проверка «height <= 0» просто отменяла позиционирование.
+const placeFn = source.slice(source.indexOf('function placeEndGamePanelAtBoardCenter('));
+const placeBody = placeFn.slice(0, placeFn.indexOf('\n}'));
+assert(/Math\.abs\(boardWidth\) <= 0 \|\| Math\.abs\(boardHeight\) <= 0/.test(placeBody),
+  '9e: размер поля берётся по модулю, иначе в горизонтали табличка вовсе не встаёт на место');
+assert(/boardRect\.left \+ boardWidth \/ 2 - panelWidth \/ 2/.test(placeBody)
+  && /boardRect\.top \+ boardHeight \/ 2 - panelHeight \/ 2/.test(placeBody),
+  '9f: центр считается по знаковой середине — она верна в обеих ориентациях');
+assert(/endGameDiv\.classList\.contains\("is-visible"\)[\s\S]{0,80}placeEndGamePanelAtBoardCenter\(\)/
+  .test(source.slice(source.indexOf('function setBoardLandscape('))),
+  '9g: при смене ориентации открытая табличка переставляется сразу');
+
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
 assert(/if\(mode !== 'GAME' && typeof setBoardLandscape === "function"\)/.test(source),
   '8: при уходе с игрового экрана разворот сбрасывается');

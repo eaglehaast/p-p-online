@@ -3526,3 +3526,44 @@ html.is-board-landscape .map-editor-save-dialog {
 html.is-board-landscape .fx-flame {
   transform-origin: 50% 100%;
 }
+
+/* Табличка «Play again». Её transform целиком принадлежит анимации появления
+   (endgame-panel-drop с animation-fill-mode: both держит кадр и после конца),
+   поэтому встречный поворот обычным правилом не задать — кадры его перебьют.
+   Даём горизонтали свой набор кадров: тот же «прилёт сверху с доскоком», но по
+   оси X кадра (после поворота это и есть верх экрана) и с rotate(-90deg) в
+   каждом кадре. Порядок важен: translate стоит ЛЕВЕЕ rotate, то есть считается
+   в осях кадра, а не в осях уже развёрнутой таблички.
+   Крутим вокруг центра: left/top ставит JS ровно по центру поля, и поворот
+   вокруг центра оставляет табличку там же. */
+html.is-board-landscape #endGameButtons {
+  transform-origin: 50% 50%;
+  transform: translateX(-220px) rotate(-90deg) scale(0.98);
+}
+
+html.is-board-landscape #endGameButtons.is-visible {
+  animation-name: endgame-panel-drop-landscape;
+}
+
+@keyframes endgame-panel-drop-landscape {
+  0% {
+    transform: translateX(-220px) rotate(-90deg) scale(0.98);
+    opacity: 0;
+  }
+  64% {
+    transform: translateX(0.67px) rotate(-90deg) scale(1);
+    opacity: 1;
+  }
+  78% {
+    transform: translateX(-1.83px) rotate(-90deg) scale(1);
+    opacity: 1;
+  }
+  90% {
+    transform: translateX(0.33px) rotate(-90deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0) rotate(-90deg) scale(1);
+    opacity: 1;
+  }
+}
