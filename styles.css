@@ -3567,3 +3567,31 @@ html.is-board-landscape #endGameButtons.is-visible {
     opacity: 1;
   }
 }
+
+/* Подсказка инвентаря. Место ей в горизонтали считает JS
+   (getInventoryTooltipLandscapeRect) — сбоку от выбранного предмета, со стороны
+   поля. Здесь остаётся только развернуть саму плашку вокруг её центра, иначе текст
+   лежал бы на боку вместе с кадром. Оформление и шрифт не трогаем.
+   Порядок в списке важен: rotate стоит ПЕРВЫМ, поэтому нюдж-въезд translateX
+   считается в уже развёрнутых осях и идёт по экранной горизонтали — ровно так же,
+   как в портрете. Если поставить translateX первым, подсказка будет въезжать
+   снизу вверх. */
+html.is-board-landscape .inventory-tooltip {
+  transform: rotate(-90deg) translateX(0);
+}
+
+html.is-board-landscape .inventory-tooltip.is-right {
+  transform: rotate(-90deg) translateX(-3px);
+}
+
+html.is-board-landscape .inventory-tooltip.is-right.is-visible {
+  transform: rotate(-90deg) translateX(0);
+}
+
+html.is-board-landscape .inventory-tooltip.is-left {
+  transform: rotate(-90deg) translateX(3px);
+}
+
+html.is-board-landscape .inventory-tooltip.is-left.is-visible {
+  transform: rotate(-90deg) translateX(0);
+}

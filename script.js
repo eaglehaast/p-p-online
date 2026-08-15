@@ -1951,6 +1951,49 @@ const INVENTORY_TOOLTIP_FIXED_RECT = Object.freeze({
   }),
 });
 
+// Горизонталь. Полосы инвентаря становятся столбцами по краям экрана (зелёный слева,
+// синий справа), и таблица xBySlotIndex, рассчитанная на портрет, кладёт подсказку
+// ПОВЕРХ слотов и вдоль столбца. По ТЗ она должна стоять сбоку от выбранного предмета
+// и со стороны поля: у левого игрока справа, у правого слева.
+//
+// Оси после поворота кадра на +90°: экранный низ — это ось X кадра, экранное «левее» —
+// это БОЛЬШЕ по оси Y кадра (экранный X = 800 - y кадра). Отсюда:
+//   * по X кадра подсказку центруем на слоте — на экране она встаёт вровень с предметом;
+//   * по Y кадра отступаем от полосы наружу: зелёному вверх по этой оси (вправо на
+//     экране), синему вниз (влево на экране).
+const INVENTORY_TOOLTIP_LANDSCAPE_GAP_PX = 4;
+const INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX = 4;
+
+function getInventoryTooltipLandscapeRect(color, slotIndex, width, height){
+  if(!isBoardLandscapeActive()) return null;
+  const container = INVENTORY_UI_CONFIG.containers[color];
+  const slotType = INVENTORY_UI_CONFIG.slotOrder[slotIndex];
+  const slotFrame = INVENTORY_UI_CONFIG.slots[slotType]?.frame;
+  if(!container || !slotFrame) return null;
+
+  // Плашка развёрнута на -90° вокруг своего центра (см. styles.css), поэтому по осям
+  // КАДРА её габариты меняются местами: вдоль X кадра она занимает height, вдоль Y —
+  // width. Считаем именно по развёрнутому следу, иначе подсказка накрывает слоты.
+  const shift = INVENTORY_LANDSCAPE_SHIFT_PX[color] ?? 0;
+  const slotCenterX = container.x + shift + slotFrame.x + slotFrame.w / 2;
+  const halfAcross = height / 2;
+  const minCenterX = INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX + halfAcross;
+  const maxCenterX = FRAME_BASE_WIDTH - INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX - halfAcross;
+  const centerX = Math.min(Math.max(slotCenterX, minCenterX), Math.max(maxCenterX, minCenterX));
+
+  // Внешний край развёрнутого следа отступает от полосы инвентаря на зазор:
+  // зелёному — в меньшую сторону по Y кадра (вправо на экране), синему — в большую
+  // (влево на экране). Обратно к CSS-координатам приводим через центр плашки.
+  const gap = INVENTORY_TOOLTIP_LANDSCAPE_GAP_PX;
+  const centerY = color === "green"
+    ? container.y - gap - width / 2
+    : container.y + container.h + gap + width / 2;
+  return {
+    left: Math.round(centerX - width / 2),
+    top: Math.round(centerY - height / 2),
+  };
+}
+
 const inventoryTooltipState = {
   element: null,
   layer: null,
@@ -2371,10 +2414,13 @@ function refreshInventoryTooltip(){
   const slotColor = target.color;
   const fixedRectConfig = INVENTORY_TOOLTIP_FIXED_RECT[slotColor];
   const slotX = Number(fixedRectConfig?.xBySlotIndex?.[slotIndex]);
-  const tooltipLeft = Number.isFinite(slotX) ? slotX : 0;
-  const tooltipTop = Number.isFinite(fixedRectConfig?.y) ? fixedRectConfig.y : 0;
   const tooltipWidth = Number.isFinite(fixedRectConfig?.width) ? fixedRectConfig.width : 166;
   const tooltipHeight = Number.isFinite(fixedRectConfig?.height) ? fixedRectConfig.height : 48;
+  const landscapeRect = getInventoryTooltipLandscapeRect(slotColor, slotIndex, tooltipWidth, tooltipHeight);
+  const tooltipLeft = landscapeRect ? landscapeRect.left : (Number.isFinite(slotX) ? slotX : 0);
+  const tooltipTop = landscapeRect
+    ? landscapeRect.top
+    : (Number.isFinite(fixedRectConfig?.y) ? fixedRectConfig.y : 0);
 
   inventoryTooltipState.activeSlotIndex = slotIndex;
   inventoryTooltipState.activeSlotColor = slotColor;
@@ -51234,6 +51280,8 @@ function setBoardLandscape(active){
   // Масштаб кадра считается от габаритов, которые только что поменялись местами.
   if(typeof updateUiFrameScale === "function") updateUiFrameScale();
   if(typeof refreshInventoryContainerLayouts === "function") refreshInventoryContainerLayouts();
+  // Открытая подсказка инвентаря посчитана под прежнюю ориентацию — пересобираем.
+  if(typeof refreshInventoryTooltip === "function") refreshInventoryTooltip();
   // Табличку «Play again» держит inline left/top, посчитанный под прежнюю
   // ориентацию. В матче её каждый кадр переставляет gameDraw, но в превью и на
   // паузе цикла пересчитать некому — делаем это сразу.
