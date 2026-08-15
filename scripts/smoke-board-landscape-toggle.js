@@ -280,6 +280,101 @@ assert(endTextBody.indexOf('endTextCtx.setTransform(1, 0, 0, 1, 0, 0)')
   < endTextBody.indexOf('endTextCtx.rotate(-Math.PI / 2)'),
   '10d: сначала сбрасываем матрицу холста, потом накладываем разворот');
 
+// === 11. Подсказка инвентаря в горизонтали стоит СБОКУ от предмета ===
+//
+// В портрете полосы инвентаря горизонтальны и подсказка встаёт рядом по таблице
+// xBySlotIndex. В горизонтали полосы становятся столбцами по краям экрана, и та же
+// таблица положила бы подсказку поверх слотов и вдоль столбца. Плашка ещё и
+// развёрнута на -90° вокруг центра, поэтому по осям КАДРА её габариты меняются
+// местами — место считаем по развёрнутому следу.
+{
+  const tipCtx = {
+    Math, Number,
+    FRAME_BASE_WIDTH: 460,
+    INVENTORY_TOOLTIP_LANDSCAPE_GAP_PX: 4,
+    INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX: 4,
+    INVENTORY_LANDSCAPE_SHIFT_PX: { blue: 42, green: -48 },
+    INVENTORY_UI_CONFIG: {
+      slotOrder: ['crosshair', 'fuel', 'wings', 'mine', 'dynamite', 'invisibility'],
+      containers: {
+        blue: { x: 68, y: 19, w: 342, h: 55 },
+        green: { x: 68, y: 733, w: 342, h: 55 },
+      },
+      slots: {
+        crosshair: { frame: { x: 0, y: 0, w: 55, h: 55 } },
+        fuel: { frame: { x: 57, y: 0, w: 55, h: 55 } },
+        wings: { frame: { x: 114, y: 0, w: 55, h: 55 } },
+        mine: { frame: { x: 171, y: 0, w: 55, h: 55 } },
+        dynamite: { frame: { x: 228, y: 0, w: 55, h: 55 } },
+        invisibility: { frame: { x: 285, y: 0, w: 55, h: 55 } },
+      },
+    },
+    landscapeFlag: true,
+  };
+  vm.createContext(tipCtx);
+  vm.runInContext('globalThis.isBoardLandscapeActive = () => globalThis.landscapeFlag;', tipCtx);
+  vm.runInContext(extractFunctionSource(source, 'getInventoryTooltipLandscapeRect'), tipCtx);
+
+  const W = 166;
+  const H = 48;
+  const GAP = 4;
+  const call = (color, slotIndex) => tipCtx.getInventoryTooltipLandscapeRect(color, slotIndex, W, H);
+
+  tipCtx.landscapeFlag = false;
+  assert(call('green', 3) === null,
+    '11: в портрете раскладка не подменяется — там работает прежняя таблица xBySlotIndex');
+  tipCtx.landscapeFlag = true;
+
+  for(const color of ['green', 'blue']){
+    const container = tipCtx.INVENTORY_UI_CONFIG.containers[color];
+    const shift = tipCtx.INVENTORY_LANDSCAPE_SHIFT_PX[color];
+    for(let slotIndex = 0; slotIndex < 6; slotIndex += 1){
+      const rect = call(color, slotIndex);
+      assert(rect, `11b: раскладка обязана считаться для всех слотов (${color} ${slotIndex})`);
+
+      // След после поворота: вдоль X кадра — height, вдоль Y кадра — width.
+      const centerX = rect.left + W / 2;
+      const centerY = rect.top + H / 2;
+      const slotCenterX = container.x + shift + tipCtx.INVENTORY_UI_CONFIG.slots[
+        tipCtx.INVENTORY_UI_CONFIG.slotOrder[slotIndex]
+      ].frame.x + 55 / 2;
+      assert(Math.abs(centerX - slotCenterX) <= 0.5,
+        `11c: подсказка стоит вровень со своим предметом (${color} ${slotIndex}): ${centerX} против ${slotCenterX}`);
+
+      // Со стороны поля: зелёный столбец слева на экране — подсказка правее, то есть
+      // МЕНЬШЕ по Y кадра; синий столбец справа — подсказка левее, то есть больше.
+      const nearEdge = color === 'green' ? centerY + W / 2 : centerY - W / 2;
+      const containerEdge = color === 'green' ? container.y : container.y + container.h;
+      assert(Math.abs(Math.abs(containerEdge - nearEdge) - GAP) <= 0.5,
+        `11d: между подсказкой и полосой инвентаря ровно зазор (${color} ${slotIndex})`);
+      const overlaps = color === 'green'
+        ? nearEdge > container.y
+        : nearEdge < container.y + container.h;
+      assert(!overlaps,
+        `11e: подсказка не наезжает на слоты — она сбоку, а не поверх (${color} ${slotIndex})`);
+
+      // Развёрнутый след обязан целиком помещаться в кадр.
+      assert(centerX - H / 2 >= 0 && centerX + H / 2 <= 460,
+        `11f: след подсказки не вылезает за кадр по экранной вертикали (${color} ${slotIndex})`);
+      assert(centerY - W / 2 >= 0 && centerY + W / 2 <= 800,
+        `11g: след подсказки не вылезает за кадр по экранной горизонтали (${color} ${slotIndex})`);
+    }
+  }
+}
+
+// Сам разворот плашки живёт в CSS. Порядок в списке важен: rotate ПЕРВЫМ, иначе
+// нюдж-въезд translateX пойдёт по экранной вертикали вместо горизонтали.
+assert(/html\.is-board-landscape \.inventory-tooltip\s*\{[^}]*transform:\s*rotate\(-90deg\)/.test(styles),
+  '11h: в горизонтали плашка подсказки разворачивается, иначе текст лежит на боку');
+for(const side of ['is-right', 'is-left']){
+  const rule = new RegExp(`html\\.is-board-landscape \\.inventory-tooltip\\.${side}\\s*\\{[^}]*transform:\\s*rotate\\(-90deg\\) translateX\\(`);
+  assert(rule.test(styles),
+    `11i: у состояния ${side} rotate стоит перед translateX — нюдж идёт по экранной горизонтали`);
+}
+assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTooltip\(\);/
+  .test(source.slice(source.indexOf('function setBoardLandscape('))),
+  '11j: при смене ориентации открытая подсказка пересчитывается');
+
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
 assert(/if\(mode !== 'GAME' && typeof setBoardLandscape === "function"\)/.test(source),
   '8: при уходе с игрового экрана разворот сбрасывается');
