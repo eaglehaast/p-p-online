@@ -263,6 +263,23 @@ assert(/endGameDiv\.classList\.contains\("is-visible"\)[\s\S]{0,80}placeEndGameP
   .test(source.slice(source.indexOf('function setBoardLandscape('))),
   '9g: при смене ориентации открытая табличка переставляется сразу');
 
+// Надписи конца матча («Игра окончена. Ничья.», «No one survived.») рисуются прямо
+// на холсте HUD в его пиксельных координатах, поэтому в горизонтали читались бы
+// сверху вниз. Разворот ставится один раз на весь блок — вокруг центра холста, до
+// первой отрисовки: тогда и подложка «нет выживших», и обе строки едут вместе.
+const endTextStart = source.indexOf('const shouldShowNoSurvivorsText');
+const endTextBody = source.slice(endTextStart, source.indexOf('endTextCtx.restore();', endTextStart));
+assert(/if\(isBoardLandscapeActive\(\)\)\{[\s\S]{0,240}endTextCtx\.rotate\(-Math\.PI \/ 2\)/.test(endTextBody),
+  '10: в горизонтали блок надписей конца матча разворачивается');
+assert(/endTextCtx\.translate\(textAreaWidth \/ 2, textAreaHeight \/ 2\)/.test(endTextBody)
+  && /endTextCtx\.translate\(-textAreaWidth \/ 2, -textAreaHeight \/ 2\)/.test(endTextBody),
+  '10b: разворот идёт вокруг центра холста — надписи центрованы именно по нему');
+assert(endTextBody.indexOf('endTextCtx.rotate(-Math.PI / 2)') < endTextBody.indexOf('fillText'),
+  '10c: разворот ставится ДО отрисовки, иначе часть блока останется лежать на боку');
+assert(endTextBody.indexOf('endTextCtx.setTransform(1, 0, 0, 1, 0, 0)')
+  < endTextBody.indexOf('endTextCtx.rotate(-Math.PI / 2)'),
+  '10d: сначала сбрасываем матрицу холста, потом накладываем разворот');
+
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
 assert(/if\(mode !== 'GAME' && typeof setBoardLandscape === "function"\)/.test(source),
   '8: при уходе с игрового экрана разворот сбрасывается');
