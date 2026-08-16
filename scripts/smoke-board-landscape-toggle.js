@@ -375,6 +375,79 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
   .test(source.slice(source.indexOf('function setBoardLandscape('))),
   '11j: при смене ориентации открытая подсказка пересчитывается');
 
+// === 12. Копыто «ИИ думает» стоит у головы козла, а не в прежних координатах ===
+//
+// В портрете козёл сидит в левом верхнем углу кадра и копыто заглядывает из левой
+// грани на уровне бороды. В горизонтали козёл уезжает в правый верхний угол экрана,
+// а копыто оставалось на прежнем месте — вылезало сверху, боком и в стороне от него.
+{
+  const ruleBody = (selector) => {
+    const start = styles.indexOf(selector);
+    assert(start !== -1, `12: в стилях нет правила ${selector}`);
+    return styles.slice(styles.indexOf('{', start) + 1, styles.indexOf('}', start));
+  };
+  const px = (body, prop) => {
+    const match = new RegExp(`${prop}:\\s*(-?\\d+(?:\\.\\d+)?)px`).exec(body);
+    assert(match, `12: в правиле не задан ${prop}`);
+    return Number.parseFloat(match[1]);
+  };
+
+  const base = ruleBody('#aiThinkHoof {');
+  const hoofW = px(base, 'width');
+  const hoofH = px(base, 'height');
+  const land = ruleBody('html.is-board-landscape #aiThinkHoof {');
+  const left = px(land, 'left');
+  const top = px(land, 'top');
+
+  // Копыто развёрнуто на -90° вокруг центра, поэтому по осям КАДРА его габариты
+  // меняются местами: вдоль X кадра — height, вдоль Y кадра — width.
+  const centerU = left + hoofW / 2;
+  const centerV = top + hoofH / 2;
+  const halfAlongU = hoofH / 2;
+  const halfAlongV = hoofW / 2;
+
+  // Козёл в горизонтали: 64x104 в углу кадра, повёрнут вокруг центра и сдвинут.
+  // После поворота он занимает по X кадра 104, по Y кадра 64, со сдвигом (20,-20).
+  const goatLand = ruleBody('html.is-board-landscape #mantisIndicator {');
+  assert(/rotate\(-90deg\)/.test(goatLand) && /scaleX\(-1\)/.test(goatLand),
+    '12b: козёл в горизонтали развёрнут и отражён — копыто должно повторять это');
+  const goatFromU = 0;
+  const goatToU = 104;
+
+  // Копыто обязано быть НА УРОВНЕ головы по экранной вертикали (ось X кадра)…
+  assert(centerU > goatFromU && centerU < goatToU,
+    `12c: копыто должно стоять напротив головы козла, а не в стороне: центр ${centerU} вне ${goatFromU}..${goatToU}`);
+  // …и именно у бороды, то есть в нижней части головы, как в портрете.
+  const alongHead = (centerU - goatFromU) / (goatToU - goatFromU);
+  assert(alongHead > 0.6 && alongHead < 0.95,
+    `12d: копыто гладит бороду, то есть стоит в нижней части головы, получено ${alongHead.toFixed(2)}`);
+  // Заглядывает из-за той же грани, где сидит козёл: часть копыта за краем кадра.
+  assert(centerV - halfAlongV < 0 && centerV + halfAlongV > 0,
+    '12e: копыто должно выглядывать из-за грани кадра, а не висеть целиком внутри');
+  // И не должно уезжать целиком за экран.
+  assert(centerV + halfAlongV > 8, '12f: копыто должно быть видно, а не спрятаться за краем');
+  assert(centerU - halfAlongU > -halfAlongU * 2, '12g: копыто не должно уезжать за верх экрана');
+
+  // Порядок трансформов: rotate и scaleX ПЕРВЫМИ, иначе въезд пойдёт по экранной
+  // вертикали вместо горизонтали.
+  const transformRe = /transform:\s*rotate\(-90deg\) scaleX\(-1\) translateX\(/;
+  assert(transformRe.test(land), '12h: у копытa разворот и отражение стоят перед сдвигом');
+  for(const state of ['is-fidgeting']){
+    assert(transformRe.test(ruleBody(`html.is-board-landscape #aiThinkHoof.${state} {`)),
+      `12i: состояние ${state} сохраняет разворот копыта`);
+  }
+  for(const [state, name] of [['is-entering', 'aiHoofSlideInLandscape'], ['is-leaving', 'aiHoofSlideOutLandscape']]){
+    assert(new RegExp(`animation-name:\\s*${name}`).test(ruleBody(`html.is-board-landscape #aiThinkHoof.${state} {`)),
+      `12j: состояние ${state} обязано брать свои кадры (${name}) — иначе анимация перебьёт разворот`);
+    const frames = styles.slice(styles.indexOf(`@keyframes ${name}`));
+    const body = frames.slice(0, frames.indexOf('\n}'));
+    const steps = body.match(/transform:\s*[^;]+;/g) || [];
+    assert(steps.length >= 4, `12k: в ${name} должны быть все шаги исходной анимации, найдено ${steps.length}`);
+    assert(steps.every((step) => /rotate\(-90deg\) scaleX\(-1\) translateX\(/.test(step)),
+      `12l: КАЖДЫЙ кадр ${name} держит разворот и отражение, иначе копыто ложится на бок по ходу анимации`);
+  }
+}
+
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
 assert(/if\(mode !== 'GAME' && typeof setBoardLandscape === "function"\)/.test(source),
   '8: при уходе с игрового экрана разворот сбрасывается');
