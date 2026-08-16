@@ -427,10 +427,13 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
   // Заглядывает из-за той же грани, где сидит козёл: часть копыта за краем кадра.
   assert(centerV - halfAlongV < 0 && centerV + halfAlongV > 0,
     '12e: копыто должно выглядывать из-за грани кадра, а не висеть целиком внутри');
-  // Выход за грань — тоже портретный: в портрете за край уходит 15px.
+  // Выход за грань в горизонтали НАМЕРЕННО меньше портретного: копыто должно
+  // заходить под морду глубже. Но это по-прежнему «выглядывание», а не полностью
+  // видимая плашка — иначе теряется сам приём.
   const portraitPeek = -px(base, 'left');
-  assert(Math.abs((-(centerV - halfAlongV)) - portraitPeek) <= 0.5,
-    `12f: за грань уходит столько же, сколько в портрете: ${-(centerV - halfAlongV)} против ${portraitPeek}`);
+  const landscapePeek = -(centerV - halfAlongV);
+  assert(landscapePeek > 0 && landscapePeek < portraitPeek,
+    `12f: копыто заходит глубже портретного, но всё ещё выглядывает из-за грани: ${landscapePeek} против ${portraitPeek}`);
   // Ниже подбородка начинается полоса инвентаря — копыто должно лечь ПОВЕРХ неё.
   const inventoryLayer = ruleBody('#inventoryLayer {');
   const inventoryZ = Number.parseInt(/z-index:\s*(\d+)/.exec(inventoryLayer)?.[1] ?? '0', 10);
