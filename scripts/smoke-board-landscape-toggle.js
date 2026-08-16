@@ -428,24 +428,40 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
   assert(centerV + halfAlongV > 8, '12f: копыто должно быть видно, а не спрятаться за краем');
   assert(centerU - halfAlongU > -halfAlongU * 2, '12g: копыто не должно уезжать за верх экрана');
 
-  // Порядок трансформов: rotate и scaleX ПЕРВЫМИ, иначе въезд пойдёт по экранной
-  // вертикали вместо горизонтали.
-  const transformRe = /transform:\s*rotate\(-90deg\) scaleX\(-1\) translateX\(/;
-  assert(transformRe.test(land), '12h: у копытa разворот и отражение стоят перед сдвигом');
-  for(const state of ['is-fidgeting']){
-    assert(transformRe.test(ruleBody(`html.is-board-landscape #aiThinkHoof.${state} {`)),
-      `12i: состояние ${state} сохраняет разворот копыта`);
+  // Разворот и отражение задаются ПЕРЕМЕННЫМИ, а не отдельным набором кадров.
+  // Это не косметика: маршрутизатор фаз в script.js переключается по ИМЕНИ анимации,
+  // поэтому переименование кадров под горизонталь оставляло жест навсегда замершим
+  // на въезде — до топтания и ухода дело не доходило.
+  assert(/--hoof-rot:\s*-90deg/.test(land) && /--hoof-flip:\s*-1/.test(land),
+    '12h: горизонталь задаёт разворот и отражение копыта переменными');
+  assert(!/animation-name/.test(land) && !/aiHoofSlideInLandscape|aiHoofSlideOutLandscape/.test(styles),
+    '12i: у горизонтали НЕ должно быть своих имён анимаций — маршрутизатор фаз ходит по именам');
+
+  // Имена, на которые смотрит маршрутизатор, обязаны существовать и совпадать.
+  const router = source.slice(source.indexOf('node.addEventListener("animationend"'));
+  const routed = router.slice(0, router.indexOf('});'));
+  for(const name of ['aiHoofSlideIn', 'aiHoofFidgetOpen', 'aiHoofSlideOut']){
+    assert(new RegExp(`case "${name}":`).test(routed),
+      `12j: маршрутизатор фаз ждёт анимацию ${name}`);
+    assert(new RegExp(`@keyframes ${name}\\b`).test(styles),
+      `12k: кадры ${name} обязаны существовать под тем же именем, иначе фаза не переключится`);
   }
-  for(const [state, name] of [['is-entering', 'aiHoofSlideInLandscape'], ['is-leaving', 'aiHoofSlideOutLandscape']]){
-    assert(new RegExp(`animation-name:\\s*${name}`).test(ruleBody(`html.is-board-landscape #aiThinkHoof.${state} {`)),
-      `12j: состояние ${state} обязано брать свои кадры (${name}) — иначе анимация перебьёт разворот`);
-    const frames = styles.slice(styles.indexOf(`@keyframes ${name}`));
+
+  // Переменные подставлены в КАЖДЫЙ кадр обеих анимаций и стоят перед сдвигом:
+  // иначе копыто ложится на бок по ходу анимации или выезжает не по той оси.
+  for(const name of ['aiHoofSlideIn', 'aiHoofSlideOut']){
+    const frames = styles.slice(styles.indexOf(`@keyframes ${name} {`));
     const body = frames.slice(0, frames.indexOf('\n}'));
     const steps = body.match(/transform:\s*[^;]+;/g) || [];
-    assert(steps.length >= 4, `12k: в ${name} должны быть все шаги исходной анимации, найдено ${steps.length}`);
-    assert(steps.every((step) => /rotate\(-90deg\) scaleX\(-1\) translateX\(/.test(step)),
-      `12l: КАЖДЫЙ кадр ${name} держит разворот и отражение, иначе копыто ложится на бок по ходу анимации`);
+    assert(steps.length >= 4, `12l: в ${name} должны остаться все шаги, найдено ${steps.length}`);
+    assert(steps.every((step) => /rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) translateX\(/.test(step)),
+      `12m: каждый кадр ${name} держит разворот и отражение и ставит их ПЕРЕД сдвигом`);
   }
+  const restRule = ruleBody('#aiThinkHoof.is-fidgeting {');
+  assert(/rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) translateX\(0\)/.test(restRule),
+    '12n: в топтании копыто тоже держит разворот');
+  assert(/--hoof-rot:\s*0deg/.test(base) && /--hoof-flip:\s*1/.test(base),
+    '12o: в портрете переменные нейтральны — рисунок там не меняется');
 }
 
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.

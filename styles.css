@@ -2276,6 +2276,12 @@ body, button {
    (AI_THINK_HOOF_THRESHOLD_MS) to change how long the AI must deliberate before
    the hoof bothers to appear. */
 #aiThinkHoof {
+  /* Разворот и отражение вынесены в переменные, а не в отдельный набор кадров:
+     маршрутизатор фаз в script.js переключается по ИМЕНИ анимации, поэтому имена
+     обязаны быть одни и те же в обеих ориентациях. Горизонталь переопределяет
+     только эти две переменные (см. блок html.is-board-landscape в конце файла). */
+  --hoof-rot: 0deg;
+  --hoof-flip: 1;
   position: absolute;
   left: -15px;
   top: 85px;
@@ -2284,7 +2290,7 @@ body, button {
   z-index: 36; /* just above the goat indicator (35) */
   pointer-events: none;
   visibility: hidden;
-  transform: translateX(-44px); /* parked fully off-screen to the left */
+  transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-44px); /* parked fully off-screen */
   will-change: transform;
 }
 
@@ -2313,11 +2319,11 @@ body, button {
 }
 
 @keyframes aiHoofSlideIn {
-  0%   { transform: translateX(-44px); }
-  25%  { transform: translateX(-30px); }
-  50%  { transform: translateX(-18px); }
-  75%  { transform: translateX(-8px); }
-  100% { transform: translateX(0); }
+  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-44px); }
+  25%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-30px); }
+  50%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-18px); }
+  75%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-8px); }
+  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(0); }
 }
 
 /* Fidgeting: parked at rest, alternating closed/open frames = lateral squeeze
@@ -2325,7 +2331,7 @@ body, button {
    it composites and survives the AI's heavy sync chunks. */
 #aiThinkHoof.is-fidgeting {
   visibility: visible;
-  transform: translateX(0);
+  transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(0);
 }
 
 /* Both frames run in counter-phase so exactly one is ever visible — otherwise
@@ -2357,10 +2363,10 @@ body, button {
 }
 
 @keyframes aiHoofSlideOut {
-  0%   { transform: translateX(0); }
-  33%  { transform: translateX(-12px); }
-  66%  { transform: translateX(-28px); }
-  100% { transform: translateX(-44px); }
+  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(0); }
+  33%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-12px); }
+  66%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-28px); }
+  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-44px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3598,46 +3604,22 @@ html.is-board-landscape .inventory-tooltip.is-left.is-visible {
 
 /* Копыто «ИИ думает». В портрете козёл сидит в левом верхнем углу кадра, и копыто
    заглядывает из левой грани на уровне бороды. В горизонтали козёл уезжает в правый
-   верхний угол экрана и отражается по горизонтали, а копыто оставалось на прежнем
-   месте: вылезало сверху, боком и в стороне от головы.
-   Ставим его к голове по той же схеме — заглядывает из той же грани, где сидит козёл
-   (теперь это правая грань экрана), на уровне бороды, и отражено так же, как он сам.
+   верхний угол экрана и отражается по горизонтали, поэтому копыто переезжает к нему:
+   заглядывает из той же грани, где сидит козёл (теперь это правая грань экрана), на
+   уровне бороды, и отражено так же, как он сам.
    left/top заданы в осях КАДРА: ось X кадра после поворота это экранная вертикаль,
    поэтому «на сколько опуститься вдоль головы» задаётся через left, а «выглянуть за
    грань» — отрицательным top.
-   Порядок в списке трансформов важен: rotate и scaleX стоят ПЕРВЫМИ, поэтому
-   translateX кадров анимации считается в осях уже развёрнутого и отражённого копыта
-   и идёт по экранной горизонтали — ровно как в портрете. Поставь translateX первым,
-   и копыто будет выезжать сверху вниз. */
+   Разворот и отражение задаются ТОЛЬКО переменными, а не отдельным набором кадров:
+   маршрутизатор фаз в script.js переключается по имени анимации (case
+   "aiHoofSlideIn" и т.д.), и переименование кадров под горизонталь оставляло жест
+   навсегда замершим на въезде — до топтания и ухода дело не доходило.
+   Переменные подставлены в кадры так, что translateX стоит ПОСЛЕ разворота и
+   отражения, то есть считается в осях уже развёрнутого копыта и идёт по экранной
+   горизонтали — как в портрете. */
 html.is-board-landscape #aiThinkHoof {
+  --hoof-rot: -90deg;
+  --hoof-flip: -1;
   left: 60px;
   top: -16px;
-  transform: rotate(-90deg) scaleX(-1) translateX(-44px);
-}
-
-html.is-board-landscape #aiThinkHoof.is-entering {
-  animation-name: aiHoofSlideInLandscape;
-}
-
-html.is-board-landscape #aiThinkHoof.is-fidgeting {
-  transform: rotate(-90deg) scaleX(-1) translateX(0);
-}
-
-html.is-board-landscape #aiThinkHoof.is-leaving {
-  animation-name: aiHoofSlideOutLandscape;
-}
-
-@keyframes aiHoofSlideInLandscape {
-  0%   { transform: rotate(-90deg) scaleX(-1) translateX(-44px); }
-  25%  { transform: rotate(-90deg) scaleX(-1) translateX(-30px); }
-  50%  { transform: rotate(-90deg) scaleX(-1) translateX(-18px); }
-  75%  { transform: rotate(-90deg) scaleX(-1) translateX(-8px); }
-  100% { transform: rotate(-90deg) scaleX(-1) translateX(0); }
-}
-
-@keyframes aiHoofSlideOutLandscape {
-  0%   { transform: rotate(-90deg) scaleX(-1) translateX(0); }
-  33%  { transform: rotate(-90deg) scaleX(-1) translateX(-12px); }
-  66%  { transform: rotate(-90deg) scaleX(-1) translateX(-28px); }
-  100% { transform: rotate(-90deg) scaleX(-1) translateX(-44px); }
 }
