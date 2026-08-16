@@ -181,7 +181,17 @@ if(typeof window !== "undefined"){
   };
 }
 
+// Признак десктопа тот же, что включает саму кнопку поворота (см. styles.css):
+// точный указатель с наведением. На тач-устройствах ориентацию задаёт система,
+// поэтому там ничего не навязываем.
+function prefersDesktopLandscapeBoard(){
+  return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
 function setScreenMode(mode) {
+  const wasGame = document.body.classList.contains('screen--game');
   document.body.classList.toggle('screen--menu', mode === 'MENU');
   document.body.classList.toggle('screen--game', mode === 'GAME');
   document.body.classList.toggle('screen--settings', mode === 'SETTINGS');
@@ -189,6 +199,11 @@ function setScreenMode(mode) {
   // портрет, иначе повёрнутым окажется и меню.
   if(mode !== 'GAME' && typeof setBoardLandscape === "function"){
     setBoardLandscape(false);
+  } else if(mode === 'GAME' && !wasGame && typeof setBoardLandscape === "function"){
+    // На десктопе игра открывается сразу горизонтальной — так поле занимает экран
+    // целиком. Ставим это только при ВХОДЕ на игровой экран: внутри матча кнопка
+    // остаётся за игроком, и его выбор портрета не должен сбрасываться.
+    setBoardLandscape(prefersDesktopLandscapeBoard());
   }
   syncMapEditorResetButtonVisibility();
   syncFieldCssVars();

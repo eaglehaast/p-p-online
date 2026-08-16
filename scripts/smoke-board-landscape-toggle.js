@@ -477,6 +477,84 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     '12o: в портрете переменные нейтральны — рисунок там не меняется');
 }
 
+// === 13. Значок кнопки: квадрат с дугой поворота, а не телефон ===
+//
+// Первый вариант рисовал узкий прямоугольник 11x17 со стрелкой СЛЕВА — читался как
+// телефон. Системный значок поворота это скруглённый КВАДРАТ и дуга, которая обходит
+// его снаружи: заходит сверху, огибает правый верхний угол и спускается к правому низу.
+{
+  const icon = markup.slice(markup.indexOf('class="orientation-toggle__icon"'));
+  const body = icon.slice(0, icon.indexOf('</svg>'));
+  const num = (re, what) => {
+    const m = re.exec(body);
+    assert(m, `13: в значке не найдено ${what}`);
+    return Number.parseFloat(m[1]);
+  };
+  const rectX = num(/<rect[^>]*\sx="(-?[\d.]+)"/, 'x у квадрата');
+  const rectW = num(/<rect[^>]*\swidth="([\d.]+)"/, 'ширина квадрата');
+  const rectH = num(/<rect[^>]*\sheight="([\d.]+)"/, 'высота квадрата');
+  assert(Math.abs(rectW - rectH) <= 0.5,
+    `13: рамка значка должна быть квадратной, а не телефоном: ${rectW}x${rectH}`);
+  assert(rectW >= 10, `13b: квадрат не должен быть крошечным, получено ${rectW}`);
+
+  const rectY = num(/<rect[^>]*\sy="(-?[\d.]+)"/, 'y у квадрата');
+  const rectRight = rectX + rectW;
+  const rectMiddleY = rectY + rectH / 2;
+
+  // Стрелка обязана быть СНАРУЖИ квадрата справа, а не сбоку слева, как раньше,
+  // и голова стоит в правом НИЗУ: дуга заходит сверху и загибается до низа.
+  const headPath = /orientation-toggle__arrow-head"[^>]*\sd="M([^"]+)"/.exec(body);
+  assert(headPath, '13c: у значка должна быть голова стрелки');
+  const headPoints = (headPath[1].match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  assert(headPoints.length >= 6, '13d: голова стрелки — треугольник из трёх точек');
+  const headXs = headPoints.filter((_, i) => i % 2 === 0);
+  const headYs = headPoints.filter((_, i) => i % 2 === 1);
+  assert(Math.max(...headXs) > rectRight,
+    `13e: голова стрелки выходит правее квадрата (${Math.max(...headXs)} против ${rectRight})`);
+  assert(Math.max(...headYs) > rectMiddleY,
+    `13f: голова стрелки внизу справа, а не сверху (${Math.max(...headYs)} против ${rectMiddleY})`);
+
+  // Дуга: приходит СВЕРХУ, обходит правый край снаружи и спускается вниз.
+  // Форма «M x0 y0 A rx ry rot laf sf x1 y1» — конец задан абсолютно.
+  const arcPath = /orientation-toggle__arrow"[^>]*\sd="M([^"]+)"/.exec(body);
+  assert(arcPath && /A/.test(arcPath[1]),
+    '13g: дуга рисуется дугой окружности, а не ломаной');
+  const arcNums = (arcPath[1].match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  assert(arcNums.length >= 9, '13h: дуга задаётся началом и абсолютным концом');
+  const [arcStartX, arcStartY] = arcNums;
+  const arcEndX = arcNums[7];
+  const arcEndY = arcNums[8];
+  assert(arcStartY < rectY,
+    `13i: дуга заходит сверху, выше верхней грани квадрата (${arcStartY} против ${rectY})`);
+  assert(arcStartX < rectX + rectW / 2,
+    '13j: начало дуги — над левой половиной квадрата, иначе она не «идёт с верхней стороны»');
+  assert(arcEndX > rectRight,
+    `13k: дуга уходит правее квадрата, обходя его снаружи (${arcEndX} против ${rectRight})`);
+  assert(arcEndY > rectMiddleY,
+    `13l: дуга загибается до правого низа, а не обрывается у верхнего угла (${arcEndY} против ${rectMiddleY})`);
+}
+
+// === 14. На десктопе игра открывается сразу горизонтальной ===
+//
+// Признак десктопа обязан совпадать с тем, что включает саму кнопку: иначе поле
+// развернётся там, где повернуть его обратно нечем.
+{
+  const query = '(hover: hover) and (pointer: fine)';
+  assert(styles.includes(`@media ${query}`),
+    '14: кнопка поворота включается по этому медиазапросу');
+  const fn = source.slice(source.indexOf('function prefersDesktopLandscapeBoard('));
+  assert(fn.slice(0, fn.indexOf('\n}')).includes(query),
+    '14b: признак десктопа для стартовой ориентации — тот же медиазапрос, что и у кнопки');
+  const screenFn = source.slice(source.indexOf('function setScreenMode('));
+  const screenBody = screenFn.slice(0, screenFn.indexOf('\n}'));
+  assert(/const wasGame = document\.body\.classList\.contains\('screen--game'\);/.test(screenBody),
+    '14c: вход на игровой экран отличается от повторных вызовов внутри матча');
+  assert(/mode === 'GAME' && !wasGame[\s\S]{0,420}setBoardLandscape\(prefersDesktopLandscapeBoard\(\)\)/.test(screenBody),
+    '14d: горизонталь ставится только при ВХОДЕ в игру, иначе выбор игрока сбрасывался бы посреди матча');
+  assert(/mode !== 'GAME'[\s\S]{0,120}setBoardLandscape\(false\)/.test(screenBody),
+    '14e: уходя с игрового экрана, по-прежнему возвращаемся в портрет');
+}
+
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
 assert(/if\(mode !== 'GAME' && typeof setBoardLandscape === "function"\)/.test(source),
   '8: при уходе с игрового экрана разворот сбрасывается');

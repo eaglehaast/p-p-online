@@ -199,10 +199,16 @@
               aria-pressed="false"
               title="Повернуть поле"
             >
+              <!-- Скруглённый квадрат и дуга со стрелкой, огибающая его верхний правый
+                   угол по часовой стрелке — как системный значок поворота на маке.
+                   Прежний вариант читался как телефон: узкий прямоугольник 11x17 и
+                   стрелка сбоку от него. Дуга обходит квадрат снаружи с зазором: заходит
+                   сверху, огибает правый верхний угол и спускается к правому низу,
+                   где стоит голова стрелки. -->
               <svg class="orientation-toggle__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <rect x="6.5" y="3.5" width="11" height="17" rx="2.5" />
-                <path class="orientation-toggle__arrow" d="M3.6 8.6a9 9 0 0 1 2.2-3.4" />
-                <path class="orientation-toggle__arrow-head" d="M2.2 11.6 3.4 7.9l3.7 1.2z" />
+                <rect x="4.7" y="6.8" width="11.5" height="11.5" rx="3.2" />
+                <path class="orientation-toggle__arrow" d="M4.9 4.7A9.6 9.6 0 0 1 19 16.8" />
+                <path class="orientation-toggle__arrow-head" d="M17.1 20.3 20.8 18.4 16.8 16.1z" />
               </svg>
             </button>
 
