@@ -414,19 +414,29 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
   const goatFromU = 0;
   const goatToU = 104;
 
-  // Копыто обязано быть НА УРОВНЕ головы по экранной вертикали (ось X кадра)…
-  assert(centerU > goatFromU && centerU < goatToU,
-    `12c: копыто должно стоять напротив головы козла, а не в стороне: центр ${centerU} вне ${goatFromU}..${goatToU}`);
-  // …и именно у бороды, то есть в нижней части головы, как в портрете.
-  const alongHead = (centerU - goatFromU) / (goatToU - goatFromU);
-  assert(alongHead > 0.6 && alongHead < 0.95,
-    `12d: копыто гладит бороду, то есть стоит в нижней части головы, получено ${alongHead.toFixed(2)}`);
+  // Смещение вдоль головы в горизонтали обязано СОВПАДАТЬ с портретным. В портрете
+  // копыто прижато к левой грани и стоит центром на 109.5px по оси Y кадра — то есть
+  // чуть ниже подбородка (голова занимает 0..104), а не в середине морды. Считаем это
+  // число из самих стилей, а не зашиваем: правило одно на обе ориентации.
+  const portraitAlongHead = px(base, 'top') + hoofH / 2;
+  assert(Math.abs(centerU - portraitAlongHead) <= 0.5,
+    `12c: копыто должно стоять вдоль головы там же, где в портрете: ${centerU} против ${portraitAlongHead}`);
+  // И это именно «у бороды»: чуть ниже головы, а не в её середине и не далеко внизу.
+  assert(centerU > goatToU && centerU < goatToU + hoofH / 2,
+    `12d: центр копыта чуть ниже подбородка (голова кончается на ${goatToU}), получено ${centerU}`);
   // Заглядывает из-за той же грани, где сидит козёл: часть копыта за краем кадра.
   assert(centerV - halfAlongV < 0 && centerV + halfAlongV > 0,
     '12e: копыто должно выглядывать из-за грани кадра, а не висеть целиком внутри');
-  // И не должно уезжать целиком за экран.
-  assert(centerV + halfAlongV > 8, '12f: копыто должно быть видно, а не спрятаться за краем');
-  assert(centerU - halfAlongU > -halfAlongU * 2, '12g: копыто не должно уезжать за верх экрана');
+  // Выход за грань — тоже портретный: в портрете за край уходит 15px.
+  const portraitPeek = -px(base, 'left');
+  assert(Math.abs((-(centerV - halfAlongV)) - portraitPeek) <= 0.5,
+    `12f: за грань уходит столько же, сколько в портрете: ${-(centerV - halfAlongV)} против ${portraitPeek}`);
+  // Ниже подбородка начинается полоса инвентаря — копыто должно лечь ПОВЕРХ неё.
+  const inventoryLayer = ruleBody('#inventoryLayer {');
+  const inventoryZ = Number.parseInt(/z-index:\s*(\d+)/.exec(inventoryLayer)?.[1] ?? '0', 10);
+  const hoofZ = Number.parseInt(/z-index:\s*(\d+)/.exec(land)?.[1] ?? '0', 10);
+  assert(hoofZ > inventoryZ,
+    `12g: в горизонтали копыто перекрывает инвентарь (${hoofZ} против ${inventoryZ}), иначе оно спрячется под ним`);
 
   // Разворот и отражение задаются ПЕРЕМЕННЫМИ, а не отдельным набором кадров.
   // Это не косметика: маршрутизатор фаз в script.js переключается по ИМЕНИ анимации,
