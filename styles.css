@@ -3595,3 +3595,49 @@ html.is-board-landscape .inventory-tooltip.is-left {
 html.is-board-landscape .inventory-tooltip.is-left.is-visible {
   transform: rotate(-90deg) translateX(0);
 }
+
+/* Копыто «ИИ думает». В портрете козёл сидит в левом верхнем углу кадра, и копыто
+   заглядывает из левой грани на уровне бороды. В горизонтали козёл уезжает в правый
+   верхний угол экрана и отражается по горизонтали, а копыто оставалось на прежнем
+   месте: вылезало сверху, боком и в стороне от головы.
+   Ставим его к голове по той же схеме — заглядывает из той же грани, где сидит козёл
+   (теперь это правая грань экрана), на уровне бороды, и отражено так же, как он сам.
+   left/top заданы в осях КАДРА: ось X кадра после поворота это экранная вертикаль,
+   поэтому «на сколько опуститься вдоль головы» задаётся через left, а «выглянуть за
+   грань» — отрицательным top.
+   Порядок в списке трансформов важен: rotate и scaleX стоят ПЕРВЫМИ, поэтому
+   translateX кадров анимации считается в осях уже развёрнутого и отражённого копыта
+   и идёт по экранной горизонтали — ровно как в портрете. Поставь translateX первым,
+   и копыто будет выезжать сверху вниз. */
+html.is-board-landscape #aiThinkHoof {
+  left: 60px;
+  top: -16px;
+  transform: rotate(-90deg) scaleX(-1) translateX(-44px);
+}
+
+html.is-board-landscape #aiThinkHoof.is-entering {
+  animation-name: aiHoofSlideInLandscape;
+}
+
+html.is-board-landscape #aiThinkHoof.is-fidgeting {
+  transform: rotate(-90deg) scaleX(-1) translateX(0);
+}
+
+html.is-board-landscape #aiThinkHoof.is-leaving {
+  animation-name: aiHoofSlideOutLandscape;
+}
+
+@keyframes aiHoofSlideInLandscape {
+  0%   { transform: rotate(-90deg) scaleX(-1) translateX(-44px); }
+  25%  { transform: rotate(-90deg) scaleX(-1) translateX(-30px); }
+  50%  { transform: rotate(-90deg) scaleX(-1) translateX(-18px); }
+  75%  { transform: rotate(-90deg) scaleX(-1) translateX(-8px); }
+  100% { transform: rotate(-90deg) scaleX(-1) translateX(0); }
+}
+
+@keyframes aiHoofSlideOutLandscape {
+  0%   { transform: rotate(-90deg) scaleX(-1) translateX(0); }
+  33%  { transform: rotate(-90deg) scaleX(-1) translateX(-12px); }
+  66%  { transform: rotate(-90deg) scaleX(-1) translateX(-28px); }
+  100% { transform: rotate(-90deg) scaleX(-1) translateX(-44px); }
+}
