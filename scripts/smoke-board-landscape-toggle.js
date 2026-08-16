@@ -147,14 +147,8 @@ assert(/html\.is-board-landscape #uiFrame\s*\{[^}]*rotate\(90deg\)/.test(styles)
   '6: сам кадр поворачивается на 90° — иначе поле не станет горизонтальным');
 assert(/html\.is-board-landscape \.inventory-slot\s*\{[^}]*rotate\(-90deg\)/.test(styles),
   '6b: каждый квадратик инвентаря разворачивается отдельно');
-assert(/html\.is-board-landscape \.orientation-toggle\s*\{[^}]*rotate\(-90deg\)/.test(styles),
-  '6c: в горизонтали разворачивается только значок кнопки, чтобы стоять ровно');
-// У кнопки ОДНО место в обеих ориентациях — разрыв между группами самолётов в счётчике
-// (кадр по y 384..416 при x 3..51). Она просто едет вместе с кадром.
-assert(/\.orientation-toggle\s*\{[\s\S]*?left:\s*10px;[\s\S]*?top:\s*383px/.test(styles),
-  '6d: базовое место кнопки — разрыв счётчика самолётов');
-assert(!/html\.is-board-landscape \.orientation-toggle\s*\{[^}]*(left|top|right|bottom):/.test(styles),
-  '6e: в горизонтали кнопка НЕ переезжает — иначе у неё два разных места на двух экранах');
+// Место и разворот кнопки разбирает раздел 13.
+
 assert(/html\.is-board-landscape #goatIndicator\s*\{[\s\S]*?bottom:\s*0/.test(styles),
   '6f: воробей прижат к углу кадра (460,800) — это левый нижний угол экрана');
 assert(/html\.is-board-landscape #mantisIndicator\s*\{[\s\S]*?scaleX\(-1\)/.test(styles),
@@ -477,61 +471,75 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     '12o: в портрете переменные нейтральны — рисунок там не меняется');
 }
 
-// === 13. Значок кнопки: квадрат с дугой поворота, а не телефон ===
+// === 13. Кнопка поворота: спрайт из ассетов в разрыве счётчика баллов ===
 //
-// Первый вариант рисовал узкий прямоугольник 11x17 со стрелкой СЛЕВА — читался как
-// телефон. Системный значок поворота это скруглённый КВАДРАТ и дуга, которая обходит
-// его снаружи: заходит сверху, огибает правый верхний угол и спускается к правому низу.
+// Раньше значок был инлайновым SVG на собственной тёмной плашке. Теперь это готовый
+// спрайт, в котором подложка уже нарисована, и стоит он в разрыве между синей и
+// зелёной колонками счётчика баллов — в координатах КАДРА, поэтому место одно на обе
+// ориентации: счётчики едут вместе с кадром, и кнопка едет с ними.
 {
-  const icon = markup.slice(markup.indexOf('class="orientation-toggle__icon"'));
-  const body = icon.slice(0, icon.indexOf('</svg>'));
-  const num = (re, what) => {
-    const m = re.exec(body);
-    assert(m, `13: в значке не найдено ${what}`);
+  assert(/<img class="orientation-toggle__icon"[\s\S]{0,220}src="ui_gamescreen\/gamescreen_outside\/button_rotate\.png"/.test(markup),
+    '13: кнопка рисуется готовым спрайтом из ассетов');
+  assert(!/orientation-toggle__arrow/.test(markup) && !/orientation-toggle__arrow/.test(styles),
+    '13b: от прежнего инлайнового значка не должно остаться ни разметки, ни стилей');
+
+  // Габариты счётчика берём из самого кода, а не зашиваем в тест.
+  const scoreSrc = source.slice(source.indexOf('const MATCH_SCORE_CONTAINERS = {'));
+  const scoreBody = scoreSrc.slice(0, scoreSrc.indexOf('};'));
+  const boxOf = (color) => {
+    const m = new RegExp(`${color}:\\s*\\{\\s*x:\\s*(-?[\\d.]+),\\s*y:\\s*(-?[\\d.]+),\\s*width:\\s*([\\d.]+),\\s*height:\\s*([\\d.]+)`).exec(scoreBody);
+    assert(m, `13: не разобран счётчик баллов (${color})`);
+    return { x: +m[1], y: +m[2], w: +m[3], h: +m[4] };
+  };
+  const blue = boxOf('blue');
+  const green = boxOf('green');
+  // Разрыв между колонками: от низа верхней до верха нижней.
+  const gapTop = Math.min(blue.y + blue.h, green.y + green.h);
+  const gapBottom = Math.max(blue.y, green.y);
+  const gapLeft = Math.min(blue.x, green.x);
+  const gapRight = Math.max(blue.x + blue.w, green.x + green.w);
+  assert(gapBottom > gapTop, '13c: между колонками счётчика должен быть разрыв');
+
+  const ruleBody = (selector) => {
+    const at = styles.indexOf(selector);
+    assert(at !== -1, `13: в стилях нет правила ${selector}`);
+    return styles.slice(styles.indexOf('{', at) + 1, styles.indexOf('}', at));
+  };
+  const px = (body, prop) => {
+    const m = new RegExp(`(?:^|[;{\\s])${prop}:\\s*(-?\\d+(?:\\.\\d+)?)px`).exec(body);
+    assert(m, `13: в правиле не задан ${prop}`);
     return Number.parseFloat(m[1]);
   };
-  const rectX = num(/<rect[^>]*\sx="(-?[\d.]+)"/, 'x у квадрата');
-  const rectW = num(/<rect[^>]*\swidth="([\d.]+)"/, 'ширина квадрата');
-  const rectH = num(/<rect[^>]*\sheight="([\d.]+)"/, 'высота квадрата');
-  assert(Math.abs(rectW - rectH) <= 0.5,
-    `13: рамка значка должна быть квадратной, а не телефоном: ${rectW}x${rectH}`);
-  assert(rectW >= 10, `13b: квадрат не должен быть крошечным, получено ${rectW}`);
 
-  const rectY = num(/<rect[^>]*\sy="(-?[\d.]+)"/, 'y у квадрата');
-  const rectRight = rectX + rectW;
-  const rectMiddleY = rectY + rectH / 2;
+  const base = ruleBody('.orientation-toggle {');
+  assert(/background:\s*none/.test(base),
+    '13d: своей подложки у кнопки нет — она уже нарисована в спрайте, иначе их будет две');
+  const size = px(base, 'width');
+  assert(Math.abs(size - px(base, 'height')) <= 0.5, '13e: кнопка квадратная');
 
-  // Стрелка обязана быть СНАРУЖИ квадрата справа, а не сбоку слева, как раньше,
-  // и голова стоит в правом НИЗУ: дуга заходит сверху и загибается до низа.
-  const headPath = /orientation-toggle__arrow-head"[^>]*\sd="M([^"]+)"/.exec(body);
-  assert(headPath, '13c: у значка должна быть голова стрелки');
-  const headPoints = (headPath[1].match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
-  assert(headPoints.length >= 6, '13d: голова стрелки — треугольник из трёх точек');
-  const headXs = headPoints.filter((_, i) => i % 2 === 0);
-  const headYs = headPoints.filter((_, i) => i % 2 === 1);
-  assert(Math.max(...headXs) > rectRight,
-    `13e: голова стрелки выходит правее квадрата (${Math.max(...headXs)} против ${rectRight})`);
-  assert(Math.max(...headYs) > rectMiddleY,
-    `13f: голова стрелки внизу справа, а не сверху (${Math.max(...headYs)} против ${rectMiddleY})`);
+  // Кружок ставится по ЦЕНТРУ разрыва — и по вертикали, и по горизонтали.
+  const centerX = px(base, 'left') + size / 2;
+  const centerY = px(base, 'top') + size / 2;
+  assert(Math.abs(centerX - (gapLeft + gapRight) / 2) <= 0.5,
+    `13f: кнопка по центру колонки счётчика (${centerX} против ${(gapLeft + gapRight) / 2})`);
+  assert(Math.abs(centerY - (gapTop + gapBottom) / 2) <= 0.5,
+    `13g: кнопка по центру разрыва между колонками (${centerY} против ${(gapTop + gapBottom) / 2})`);
 
-  // Дуга: приходит СВЕРХУ, обходит правый край снаружи и спускается вниз.
-  // Форма «M x0 y0 A rx ry rot laf sf x1 y1» — конец задан абсолютно.
-  const arcPath = /orientation-toggle__arrow"[^>]*\sd="M([^"]+)"/.exec(body);
-  assert(arcPath && /A/.test(arcPath[1]),
-    '13g: дуга рисуется дугой окружности, а не ломаной');
-  const arcNums = (arcPath[1].match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
-  assert(arcNums.length >= 9, '13h: дуга задаётся началом и абсолютным концом');
-  const [arcStartX, arcStartY] = arcNums;
-  const arcEndX = arcNums[7];
-  const arcEndY = arcNums[8];
-  assert(arcStartY < rectY,
-    `13i: дуга заходит сверху, выше верхней грани квадрата (${arcStartY} против ${rectY})`);
-  assert(arcStartX < rectX + rectW / 2,
-    '13j: начало дуги — над левой половиной квадрата, иначе она не «идёт с верхней стороны»');
-  assert(arcEndX > rectRight,
-    `13k: дуга уходит правее квадрата, обходя его снаружи (${arcEndX} против ${rectRight})`);
-  assert(arcEndY > rectMiddleY,
-    `13l: дуга загибается до правого низа, а не обрывается у верхнего угла (${arcEndY} против ${rectMiddleY})`);
+  // Место общее: горизонталь не имеет права переставлять кнопку.
+  const land = ruleBody('html.is-board-landscape .orientation-toggle {');
+  assert(!/(^|[;{\s])(left|top|right|bottom):/.test(land),
+    '13h: в горизонтали кнопка НЕ переезжает — разрыв счётчика едет вместе с кадром');
+
+  // Спрайт нарисован для перехода портрет -> горизонталь. Обратный — он же с
+  // отражением и поворотом. Кадр в горизонтали уже даёт +90°, поэтому свой
+  // rotate(90deg) в сумме разворачивает рисунок на 180° относительно портрета.
+  // Суммарный поворот должен быть 270°: 90 даёт сам кадр, значит на элементе 180.
+  const FRAME_ROTATION_DEG = 90;
+  const TOTAL_ROTATION_DEG = 270;
+  const landRot = /transform:\s*rotate\((-?\d+)deg\)\s*scaleX\(-1\)/.exec(land);
+  assert(landRot, '13i: в горизонтали спрайт отражается и доворачивается — порядок важен');
+  assert(Number(landRot[1]) + FRAME_ROTATION_DEG === TOTAL_ROTATION_DEG,
+    `13j: суммарный поворот ${TOTAL_ROTATION_DEG}°, на элементе ${TOTAL_ROTATION_DEG - FRAME_ROTATION_DEG}°, найдено ${landRot[1]}°`);
 }
 
 // === 14. На десктопе игра открывается сразу горизонтальной ===
