@@ -164,8 +164,14 @@ assert(/@media \(hover: hover\) and \(pointer: fine\)/.test(styles),
 assert(/landscape \? FRAME_BASE_HEIGHT : FRAME_BASE_WIDTH/.test(source),
   '7: --ui-scale должен вписывать повёрнутую габаритную коробку');
 // Инвентари разъезжаются по экранной вертикали, иначе упираются в морды в углах.
-assert(/INVENTORY_LANDSCAPE_SHIFT_PX = Object\.freeze\(\{ blue: 42, green: -48 \}\)/.test(source),
-  '7b: в горизонтали инвентари сдвигаются: левый вверх, правый вниз');
+// Конкретные числа сдвига проверяет раздел 10b — там они выведены из границ поля.
+// Здесь важно только направление: полосы обязаны разъезжаться в РАЗНЫЕ стороны,
+// иначе они сойдутся на одной морде.
+{
+  const shifts = readLandscapeShifts();
+  assert(shifts.blue > 0 && shifts.green < 0,
+    `7b: в горизонтали инвентари разъезжаются: правый вниз, левый вверх (${shifts.blue}, ${shifts.green})`);
+}
 assert(/refreshInventoryContainerLayouts/.test(source),
   '7c: раскладка инвентарей пересобирается при смене ориентации');
 // Эффекты поля позиционируются инлайновым transform — поворот дописывается в коде.
@@ -274,6 +280,46 @@ assert(endTextBody.indexOf('endTextCtx.setTransform(1, 0, 0, 1, 0, 0)')
   < endTextBody.indexOf('endTextCtx.rotate(-Math.PI / 2)'),
   '10d: сначала сбрасываем матрицу холста, потом накладываем разворот');
 
+// Сдвиги и масштаб полос инвентаря читаем из самого кода: тест не должен хранить их
+// копию, иначе он перестанет ловить расхождение.
+function readLandscapeShifts(){
+  const m = /INVENTORY_LANDSCAPE_SHIFT_PX = Object\.freeze\(\{ blue: (-?\d+), green: (-?\d+) \}\)/.exec(source);
+  assert(m, 'сдвиги полос инвентаря в горизонтали должны быть именованной константой');
+  return { blue: Number(m[1]), green: Number(m[2]) };
+}
+function readLandscapeScale(){
+  const m = /const INVENTORY_LANDSCAPE_SCALE = (\d+) \/ (\d+);/.exec(source);
+  assert(m, 'масштаб полос инвентаря в горизонтали должен быть именованной константой');
+  return Number(m[1]) / Number(m[2]);
+}
+
+// === 10b. Полосы инвентаря в горизонтали привязаны к полю, а не висят где придётся ===
+//
+// Морды сидят в противоположных углах (козёл сверху справа, воробей снизу слева),
+// поэтому полосы разъезжаются по оси X кадра. Но разъезжаться они обязаны не «как
+// вышло»: каждая упирается в грань ПОЛЯ со своей стороны, иначе со стороны воробья
+// полоса повисает в воздухе и симметрия теряется.
+{
+  const FRAME_W = 460;
+  const WORLD_W = 360;
+  const fieldStart = (FRAME_W - WORLD_W) / 2;     // 50 — первые кирпичи
+  const fieldEnd = fieldStart + WORLD_W;          // 410 — последние кирпичи
+  const CONTAINER = { x: 68, w: 342 };
+  const shifts = readLandscapeShifts();
+  const scale = readLandscapeScale();
+  const width = CONTAINER.w * scale;
+
+  const blueStart = CONTAINER.x + shifts.blue;
+  const greenStart = CONTAINER.x + shifts.green;
+  assert(Math.abs((blueStart + width) - fieldEnd) <= 0.5,
+    `10b: синяя полоса кончается на последних кирпичах (${(blueStart + width).toFixed(1)} против ${fieldEnd})`);
+  assert(Math.abs(greenStart - fieldStart) <= 0.5,
+    `10c: зелёная полоса начинается на первых кирпичах (${greenStart} против ${fieldStart})`);
+  // И обе одной длины — ужатие общее, разъезд только по месту начала.
+  assert(width > 0 && width < CONTAINER.w,
+    '10d: полосы в горизонтали ужаты, но не выродились');
+}
+
 // === 11. Подсказка инвентаря в горизонтали стоит СБОКУ от предмета ===
 //
 // В портрете полосы инвентаря горизонтальны и подсказка встаёт рядом по таблице
@@ -287,7 +333,8 @@ assert(endTextBody.indexOf('endTextCtx.setTransform(1, 0, 0, 1, 0, 0)')
     FRAME_BASE_WIDTH: 460,
     INVENTORY_TOOLTIP_LANDSCAPE_GAP_PX: 4,
     INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX: 4,
-    INVENTORY_LANDSCAPE_SHIFT_PX: { blue: 42, green: -48 },
+    INVENTORY_LANDSCAPE_SHIFT_PX: readLandscapeShifts(),
+    INVENTORY_LANDSCAPE_SCALE: readLandscapeScale(),
     INVENTORY_UI_CONFIG: {
       slotOrder: ['crosshair', 'fuel', 'wings', 'mine', 'dynamite', 'invisibility'],
       containers: {
@@ -329,21 +376,23 @@ assert(endTextBody.indexOf('endTextCtx.setTransform(1, 0, 0, 1, 0, 0)')
       // След после поворота: вдоль X кадра — height, вдоль Y кадра — width.
       const centerX = rect.left + W / 2;
       const centerY = rect.top + H / 2;
-      const slotCenterX = container.x + shift + tipCtx.INVENTORY_UI_CONFIG.slots[
+      const slotCenterX = container.x + shift + (tipCtx.INVENTORY_UI_CONFIG.slots[
         tipCtx.INVENTORY_UI_CONFIG.slotOrder[slotIndex]
-      ].frame.x + 55 / 2;
+      ].frame.x + 55 / 2) * tipCtx.INVENTORY_LANDSCAPE_SCALE;
       assert(Math.abs(centerX - slotCenterX) <= 0.5,
         `11c: подсказка стоит вровень со своим предметом (${color} ${slotIndex}): ${centerX} против ${slotCenterX}`);
 
       // Со стороны поля: зелёный столбец слева на экране — подсказка правее, то есть
       // МЕНЬШЕ по Y кадра; синий столбец справа — подсказка левее, то есть больше.
       const nearEdge = color === 'green' ? centerY + W / 2 : centerY - W / 2;
-      const containerEdge = color === 'green' ? container.y : container.y + container.h;
+      const containerEdge = color === 'green'
+        ? container.y
+        : container.y + container.h * tipCtx.INVENTORY_LANDSCAPE_SCALE;
       assert(Math.abs(Math.abs(containerEdge - nearEdge) - GAP) <= 0.5,
         `11d: между подсказкой и полосой инвентаря ровно зазор (${color} ${slotIndex})`);
       const overlaps = color === 'green'
         ? nearEdge > container.y
-        : nearEdge < container.y + container.h;
+        : nearEdge < container.y + container.h * tipCtx.INVENTORY_LANDSCAPE_SCALE;
       assert(!overlaps,
         `11e: подсказка не наезжает на слоты — она сбоку, а не поверх (${color} ${slotIndex})`);
 
@@ -471,34 +520,22 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     '12o: в портрете переменные нейтральны — рисунок там не меняется');
 }
 
-// === 13. Кнопка поворота: спрайт из ассетов в разрыве счётчика баллов ===
+// === 13. Кнопка поворота в правом нижнем углу экрана, ради чего ужат инвентарь ===
 //
-// Раньше значок был инлайновым SVG на собственной тёмной плашке. Теперь это готовый
-// спрайт, в котором подложка уже нарисована, и стоит он в разрыве между синей и
-// зелёной колонками счётчика баллов — в координатах КАДРА, поэтому место одно на обе
-// ориентации: счётчики едут вместе с кадром, и кнопка едет с ними.
+// В портрете полоса инвентаря кончается на x=410 при ширине кадра 460 — за ней есть
+// свободный хвост, и кнопка встаёт в угол. В горизонтали полоса дотягивалась почти до
+// края кадра, и угла не оставалось. Поэтому в горизонтали полосы ужаты вокруг своего
+// начала ровно до портретной пропорции — это и есть смысл правки, а не косметика.
 {
-  assert(/<img class="orientation-toggle__icon"[\s\S]{0,220}src="ui_gamescreen\/gamescreen_outside\/button_rotate\.png"/.test(markup),
-    '13: кнопка рисуется готовым спрайтом из ассетов');
-  assert(!/orientation-toggle__arrow/.test(markup) && !/orientation-toggle__arrow/.test(styles),
-    '13b: от прежнего инлайнового значка не должно остаться ни разметки, ни стилей');
+  const FRAME_W = 460;
+  const FRAME_H = 800;
+  const INVENTORY = { x: 68, w: 342, greenY: 733, blueY: 19, h: 55 };
 
-  // Габариты счётчика берём из самого кода, а не зашиваем в тест.
-  const scoreSrc = source.slice(source.indexOf('const MATCH_SCORE_CONTAINERS = {'));
-  const scoreBody = scoreSrc.slice(0, scoreSrc.indexOf('};'));
-  const boxOf = (color) => {
-    const m = new RegExp(`${color}:\\s*\\{\\s*x:\\s*(-?[\\d.]+),\\s*y:\\s*(-?[\\d.]+),\\s*width:\\s*([\\d.]+),\\s*height:\\s*([\\d.]+)`).exec(scoreBody);
-    assert(m, `13: не разобран счётчик баллов (${color})`);
-    return { x: +m[1], y: +m[2], w: +m[3], h: +m[4] };
-  };
-  const blue = boxOf('blue');
-  const green = boxOf('green');
-  // Разрыв между колонками: от низа верхней до верха нижней.
-  const gapTop = Math.min(blue.y + blue.h, green.y + green.h);
-  const gapBottom = Math.max(blue.y, green.y);
-  const gapLeft = Math.min(blue.x, green.x);
-  const gapRight = Math.max(blue.x + blue.w, green.x + green.w);
-  assert(gapBottom > gapTop, '13c: между колонками счётчика должен быть разрыв');
+  const scaleMatch = /const INVENTORY_LANDSCAPE_SCALE = (\d+) \/ (\d+);/.exec(source);
+  assert(scaleMatch, '13: масштаб полос инвентаря в горизонтали должен быть именованной константой');
+  const scale = Number(scaleMatch[1]) / Number(scaleMatch[2]);
+  assert(scale > 0.7 && scale < 1,
+    `13b: полосы ужимаются, но «чуть-чуть» — получено ${scale.toFixed(3)}`);
 
   const ruleBody = (selector) => {
     const at = styles.indexOf(selector);
@@ -511,35 +548,64 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     return Number.parseFloat(m[1]);
   };
 
+  // Стили обязаны ужимать полосу тем же множителем и вокруг НАЧАЛА полосы:
+  // иначе привязка к мордам в начале съедет, а конец не освободится.
+  const invRule = ruleBody('html.is-board-landscape #gs_inventory_blue,');
+  const cssScale = /transform:\s*scale\(([\d.]+)\)/.exec(invRule);
+  assert(cssScale, '13c: в горизонтали полосы инвентаря ужимаются');
+  assert(Math.abs(Number(cssScale[1]) - scale) <= 0.002,
+    `13d: множитель в стилях и в коде должен совпадать (${cssScale[1]} против ${scale.toFixed(4)})`);
+  assert(/transform-origin:\s*left top/.test(invRule),
+    '13e: полоса ужимается вокруг своего начала, иначе съедет привязка к мордам');
+
   const base = ruleBody('.orientation-toggle {');
-  assert(/background:\s*none/.test(base),
-    '13d: своей подложки у кнопки нет — она уже нарисована в спрайте, иначе их будет две');
   const size = px(base, 'width');
-  assert(Math.abs(size - px(base, 'height')) <= 0.5, '13e: кнопка квадратная');
-
-  // Кружок ставится по ЦЕНТРУ разрыва — и по вертикали, и по горизонтали.
-  const centerX = px(base, 'left') + size / 2;
-  const centerY = px(base, 'top') + size / 2;
-  assert(Math.abs(centerX - (gapLeft + gapRight) / 2) <= 0.5,
-    `13f: кнопка по центру колонки счётчика (${centerX} против ${(gapLeft + gapRight) / 2})`);
-  assert(Math.abs(centerY - (gapTop + gapBottom) / 2) <= 0.5,
-    `13g: кнопка по центру разрыва между колонками (${centerY} против ${(gapTop + gapBottom) / 2})`);
-
-  // Место общее: горизонталь не имеет права переставлять кнопку.
+  assert(Math.abs(size - px(base, 'height')) <= 0.5, '13f: кнопка квадратная');
+  const left = px(base, 'left');
+  const top = px(base, 'top');
   const land = ruleBody('html.is-board-landscape .orientation-toggle {');
-  assert(!/(^|[;{\s])(left|top|right|bottom):/.test(land),
-    '13h: в горизонтали кнопка НЕ переезжает — разрыв счётчика едет вместе с кадром');
+  const landTop = px(land, 'top');
 
-  // Спрайт нарисован для перехода портрет -> горизонталь. Обратный — он же с
-  // отражением и поворотом. Кадр в горизонтали уже даёт +90°, поэтому свой
-  // rotate(90deg) в сумме разворачивает рисунок на 180° относительно портрета.
-  // Суммарный поворот должен быть 270°: 90 даёт сам кадр, значит на элементе 180.
+  assert(/<img class="orientation-toggle__icon"[\s\S]{0,220}src="ui_gamescreen\/gamescreen_outside\/button_rotate\.png"/.test(markup),
+    '13g: кнопка рисуется готовым спрайтом из ассетов');
+  assert(/background:\s*none/.test(base),
+    '13h: своей подложки у кнопки нет — она уже нарисована в спрайте');
+
+  // Портрет: угол кадра, за концом полосы инвентаря.
+  assert(left >= INVENTORY.x + INVENTORY.w && left + size <= FRAME_W,
+    `13i: в портрете кнопка за концом полосы и внутри кадра (${left}..${left + size})`);
+  assert(top + size <= FRAME_H && top >= INVENTORY.greenY,
+    `13j: в портрете кнопка в самом низу кадра (${top}..${top + size})`);
+
+  // Горизонталь: тот же угол экрана. Экранный низ это +x кадра (значит по x место
+  // общее с портретом), экранное «правее» — МЕНЬШЕ по y, поэтому по y кнопка уходит
+  // к началу кадра. И главное: она обязана помещаться в хвост, освобождённый ужатием.
+  assert(!/(^|[;{\s])left:/.test(land),
+    '13k: по оси X место общее — горизонталь переопределяет только top');
+  // Расходятся кнопка и полоса по оси X кадра (это экранная вертикаль): полоса едет
+  // по ней от своего начала, а кнопка стоит за её концом. По оси Y кнопка наоборот
+  // ложится в ту же полосу — она же в углу, на её линии.
+  const shiftMatch = /INVENTORY_LANDSCAPE_SHIFT_PX = Object\.freeze\(\{ blue: (-?\d+)/.exec(source);
+  assert(shiftMatch, '13l: не найден сдвиг полос в горизонтали');
+  const blueStart = INVENTORY.x + Number(shiftMatch[1]);
+  const scaledEnd = blueStart + INVENTORY.w * scale;
+  const unscaledEnd = blueStart + INVENTORY.w;
+  assert(left >= scaledEnd && left + size <= FRAME_W,
+    `13m: в горизонтали кнопка стоит за концом ужатой полосы (${left} против ${scaledEnd.toFixed(1)}) и внутри кадра`);
+  // Ради этого ужатие и делалось: без него полоса дотягивается до места кнопки.
+  assert(unscaledEnd > left,
+    `13n: без ужатия полоса накрыла бы кнопку (${unscaledEnd} против ${left}) — иначе правка бессмысленна`);
+  assert(landTop >= 0 && landTop + size <= INVENTORY.blueY + INVENTORY.h,
+    `13o: по второй оси кнопка лежит на линии полосы, в самом углу (${landTop}..${landTop + size})`);
+
+  // Спрайт нарисован для перехода портрет -> горизонталь; суммарный поворот обратного
+  // 270°, из них 90° даёт сам поворот кадра.
   const FRAME_ROTATION_DEG = 90;
   const TOTAL_ROTATION_DEG = 270;
   const landRot = /transform:\s*rotate\((-?\d+)deg\)\s*scaleX\(-1\)/.exec(land);
-  assert(landRot, '13i: в горизонтали спрайт отражается и доворачивается — порядок важен');
+  assert(landRot, '13n: в горизонтали спрайт отражается и доворачивается — порядок важен');
   assert(Number(landRot[1]) + FRAME_ROTATION_DEG === TOTAL_ROTATION_DEG,
-    `13j: суммарный поворот ${TOTAL_ROTATION_DEG}°, на элементе ${TOTAL_ROTATION_DEG - FRAME_ROTATION_DEG}°, найдено ${landRot[1]}°`);
+    `13q: суммарный поворот ${TOTAL_ROTATION_DEG}°, найдено ${Number(landRot[1]) + FRAME_ROTATION_DEG}°`);
 }
 
 // === 14. На десктопе игра открывается сразу горизонтальной ===

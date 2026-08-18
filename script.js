@@ -1995,7 +1995,10 @@ function getInventoryTooltipLandscapeRect(color, slotIndex, width, height){
   // КАДРА её габариты меняются местами: вдоль X кадра она занимает height, вдоль Y —
   // width. Считаем именно по развёрнутому следу, иначе подсказка накрывает слоты.
   const shift = INVENTORY_LANDSCAPE_SHIFT_PX[color] ?? 0;
-  const slotCenterX = container.x + shift + slotFrame.x + slotFrame.w / 2;
+  // Полоса ужата вокруг своего начала (transform-origin: left top), поэтому смещение
+  // слота внутри неё тоже ужимается, а само начало остаётся на месте.
+  const slotCenterX = container.x + shift
+    + (slotFrame.x + slotFrame.w / 2) * INVENTORY_LANDSCAPE_SCALE;
   const halfAcross = height / 2;
   const minCenterX = INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX + halfAcross;
   const maxCenterX = FRAME_BASE_WIDTH - INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX - halfAcross;
@@ -2005,9 +2008,11 @@ function getInventoryTooltipLandscapeRect(color, slotIndex, width, height){
   // зелёному — в меньшую сторону по Y кадра (вправо на экране), синему — в большую
   // (влево на экране). Обратно к CSS-координатам приводим через центр плашки.
   const gap = INVENTORY_TOOLTIP_LANDSCAPE_GAP_PX;
+  // У синей полосы отступ считается от ДАЛЬНЕГО края, а он тоже ужат масштабом —
+  // иначе зазор до подсказки вырастает на съеденные пиксели.
   const centerY = color === "green"
     ? container.y - gap - width / 2
-    : container.y + container.h + gap + width / 2;
+    : container.y + container.h * INVENTORY_LANDSCAPE_SCALE + gap + width / 2;
   return {
     left: Math.round(centerX - width / 2),
     top: Math.round(centerY - height / 2),
@@ -5113,7 +5118,23 @@ function validateInventoryCssSizing(host){
 // разъезжаются именно по ней: левый (зелёный) уходит вверх, правый (синий) — вниз.
 // Иначе они упираются в морды, которые сидят в углах: воробей внизу слева, козёл
 // сверху справа.
-const INVENTORY_LANDSCAPE_SHIFT_PX = Object.freeze({ blue: 42, green: -48 });
+//
+// Сдвиги подобраны так, чтобы обе полосы были привязаны к ПОЛЮ, а не висели где
+// придётся: поле занимает x 50..410 кадра, и каждая полоса упирается в его грань со
+// своей стороны. Синяя идёт от морды козла вниз и кончается ровно на 410 — у
+// последних кирпичей. Зелёная начинается на 50 — у первых кирпичей — и идёт вниз,
+// не доходя до воробья. При ширине полосы 300 (см. INVENTORY_LANDSCAPE_SCALE) обе
+// отступают от своей морды одинаково, на 6px.
+const INVENTORY_LANDSCAPE_SHIFT_PX = Object.freeze({ blue: 42, green: -18 });
+
+// В горизонтали полосы инвентаря на экране крупнее, чем в портрете: масштаб кадра там
+// 1.6 против 1.075, и синяя полоса дотягивается до самого угла — кнопке поворота места
+// не остаётся. Ужимаем полосы так, чтобы за концом полосы оставался тот же хвост, что
+// и в портрете (там контейнер кончается на x=410 при ширине кадра 460, то есть 50px).
+// Синяя полоса в горизонтали начинается с x=110, значит её ширина должна стать 300 из
+// 342. Это же число подставляется в раскладку подсказок: они считают центр слота по
+// координатам из конфига, и без масштаба уехали бы от слотов.
+const INVENTORY_LANDSCAPE_SCALE = 300 / 342;
 
 function applyInventoryContainerLayout(color, host){
   if(!(host instanceof HTMLElement)) return;
