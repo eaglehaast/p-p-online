@@ -520,22 +520,28 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     '12o: в портрете переменные нейтральны — рисунок там не меняется');
 }
 
-// === 13. Кнопка поворота в правом нижнем углу экрана, ради чего ужат инвентарь ===
+// === 13. Кнопка поворота: спрайт из ассетов на пересечении средних линий ===
 //
-// В портрете полоса инвентаря кончается на x=410 при ширине кадра 460 — за ней есть
-// свободный хвост, и кнопка встаёт в угол. В горизонтали полоса дотягивалась почти до
-// края кадра, и угла не оставалось. Поэтому в горизонтали полосы ужаты вокруг своего
-// начала ровно до портретной пропорции — это и есть смысл правки, а не косметика.
+// Кнопка обязана жить в дизайн-сетке, а не стоять «примерно в углу»: её центр — это
+// пересечение средней линии колонки счётчика баллов и средней линии полосы инвентаря.
+// В горизонтали полоса ужата, поэтому её средняя линия считается по ужатой ширине.
 {
   const FRAME_W = 460;
-  const FRAME_H = 800;
   const INVENTORY = { x: 68, w: 342, greenY: 733, blueY: 19, h: 55 };
+  const scale = readLandscapeScale();
+  const shifts = readLandscapeShifts();
 
-  const scaleMatch = /const INVENTORY_LANDSCAPE_SCALE = (\d+) \/ (\d+);/.exec(source);
-  assert(scaleMatch, '13: масштаб полос инвентаря в горизонтали должен быть именованной константой');
-  const scale = Number(scaleMatch[1]) / Number(scaleMatch[2]);
-  assert(scale > 0.7 && scale < 1,
-    `13b: полосы ужимаются, но «чуть-чуть» — получено ${scale.toFixed(3)}`);
+  // Колонку счётчика берём из кода, а не зашиваем.
+  const scoreSrc = source.slice(source.indexOf('const MATCH_SCORE_CONTAINERS = {'));
+  const scoreBody = scoreSrc.slice(0, scoreSrc.indexOf('};'));
+  const scoreM = /blue:\s*\{\s*x:\s*(-?[\d.]+),\s*y:\s*(-?[\d.]+),\s*width:\s*([\d.]+)/.exec(scoreBody);
+  assert(scoreM, '13: не разобрана колонка счётчика баллов');
+  const scoreCenterX = Number(scoreM[1]) + Number(scoreM[3]) / 2;
+
+  assert(/<img class="orientation-toggle__icon"[\s\S]{0,220}src="ui_gamescreen\/gamescreen_outside\/rotate_button\.png"/.test(markup),
+    '13: кнопка рисуется спрайтом с обводкой и подложкой из ассетов');
+  assert(!/orientation-toggle__arrow/.test(markup) && !/orientation-toggle__arrow/.test(styles),
+    '13b: от прежнего инлайнового значка не должно остаться ни разметки, ни стилей');
 
   const ruleBody = (selector) => {
     const at = styles.indexOf(selector);
@@ -548,8 +554,7 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     return Number.parseFloat(m[1]);
   };
 
-  // Стили обязаны ужимать полосу тем же множителем и вокруг НАЧАЛА полосы:
-  // иначе привязка к мордам в начале съедет, а конец не освободится.
+  // Стили обязаны ужимать полосу тем же множителем и вокруг НАЧАЛА полосы.
   const invRule = ruleBody('html.is-board-landscape #gs_inventory_blue,');
   const cssScale = /transform:\s*scale\(([\d.]+)\)/.exec(invRule);
   assert(cssScale, '13c: в горизонтали полосы инвентаря ужимаются');
@@ -559,53 +564,46 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     '13e: полоса ужимается вокруг своего начала, иначе съедет привязка к мордам');
 
   const base = ruleBody('.orientation-toggle {');
-  const size = px(base, 'width');
-  assert(Math.abs(size - px(base, 'height')) <= 0.5, '13f: кнопка квадратная');
-  const left = px(base, 'left');
-  const top = px(base, 'top');
-  const land = ruleBody('html.is-board-landscape .orientation-toggle {');
-  const landTop = px(land, 'top');
-
-  assert(/<img class="orientation-toggle__icon"[\s\S]{0,220}src="ui_gamescreen\/gamescreen_outside\/button_rotate\.png"/.test(markup),
-    '13g: кнопка рисуется готовым спрайтом из ассетов');
   assert(/background:\s*none/.test(base),
-    '13h: своей подложки у кнопки нет — она уже нарисована в спрайте');
+    '13f: своей подложки у кнопки нет — она уже нарисована в спрайте');
+  const size = px(base, 'width');
+  assert(Math.abs(size - px(base, 'height')) <= 0.5, '13g: кнопка квадратная');
+  const centerX = px(base, 'left') + size / 2;
+  const centerY = px(base, 'top') + size / 2;
 
-  // Портрет: угол кадра, за концом полосы инвентаря.
-  assert(left >= INVENTORY.x + INVENTORY.w && left + size <= FRAME_W,
-    `13i: в портрете кнопка за концом полосы и внутри кадра (${left}..${left + size})`);
-  assert(top + size <= FRAME_H && top >= INVENTORY.greenY,
-    `13j: в портрете кнопка в самом низу кадра (${top}..${top + size})`);
+  // Портрет: середина колонки счётчика на середину нижней полосы инвентаря.
+  assert(Math.abs(centerX - scoreCenterX) <= 0.5,
+    `13h: центр кнопки на средней линии счётчика баллов (${centerX} против ${scoreCenterX})`);
+  const portraitInventoryMid = INVENTORY.greenY + INVENTORY.h / 2;
+  assert(Math.abs(centerY - portraitInventoryMid) <= 0.5,
+    `13i: центр кнопки на средней линии полосы инвентаря (${centerY} против ${portraitInventoryMid})`);
 
-  // Горизонталь: тот же угол экрана. Экранный низ это +x кадра (значит по x место
-  // общее с портретом), экранное «правее» — МЕНЬШЕ по y, поэтому по y кнопка уходит
-  // к началу кадра. И главное: она обязана помещаться в хвост, освобождённый ужатием.
+  // Горизонталь: та же колонка счётчика (по x место общее), но полоса верхняя и ужата.
+  const land = ruleBody('html.is-board-landscape .orientation-toggle {');
   assert(!/(^|[;{\s])left:/.test(land),
-    '13k: по оси X место общее — горизонталь переопределяет только top');
-  // Расходятся кнопка и полоса по оси X кадра (это экранная вертикаль): полоса едет
-  // по ней от своего начала, а кнопка стоит за её концом. По оси Y кнопка наоборот
-  // ложится в ту же полосу — она же в углу, на её линии.
-  const shiftMatch = /INVENTORY_LANDSCAPE_SHIFT_PX = Object\.freeze\(\{ blue: (-?\d+)/.exec(source);
-  assert(shiftMatch, '13l: не найден сдвиг полос в горизонтали');
-  const blueStart = INVENTORY.x + Number(shiftMatch[1]);
-  const scaledEnd = blueStart + INVENTORY.w * scale;
-  const unscaledEnd = blueStart + INVENTORY.w;
-  assert(left >= scaledEnd && left + size <= FRAME_W,
-    `13m: в горизонтали кнопка стоит за концом ужатой полосы (${left} против ${scaledEnd.toFixed(1)}) и внутри кадра`);
-  // Ради этого ужатие и делалось: без него полоса дотягивается до места кнопки.
-  assert(unscaledEnd > left,
-    `13n: без ужатия полоса накрыла бы кнопку (${unscaledEnd} против ${left}) — иначе правка бессмысленна`);
-  assert(landTop >= 0 && landTop + size <= INVENTORY.blueY + INVENTORY.h,
-    `13o: по второй оси кнопка лежит на линии полосы, в самом углу (${landTop}..${landTop + size})`);
+    '13j: по оси X место общее — горизонталь переопределяет только top');
+  const landCenterY = px(land, 'top') + size / 2;
+  const landInventoryMid = INVENTORY.blueY + INVENTORY.h * scale / 2;
+  assert(Math.abs(landCenterY - landInventoryMid) <= 0.5,
+    `13k: в горизонтали центр на средней линии УЖАТОЙ полосы (${landCenterY} против ${landInventoryMid.toFixed(2)})`);
+
+  // Ужатие всё ещё обязано освобождать место: полоса идёт по оси X кадра и без него
+  // дотянулась бы до кнопки.
+  const blueStart = INVENTORY.x + shifts.blue;
+  assert(px(base, 'left') >= blueStart + INVENTORY.w * scale,
+    '13l: кнопка стоит за концом ужатой полосы');
+  assert(blueStart + INVENTORY.w > px(base, 'left'),
+    '13m: без ужатия полоса накрыла бы кнопку — иначе правка бессмысленна');
+  assert(px(base, 'left') + size <= FRAME_W, '13n: кнопка не вылезает за кадр');
 
   // Спрайт нарисован для перехода портрет -> горизонталь; суммарный поворот обратного
   // 270°, из них 90° даёт сам поворот кадра.
   const FRAME_ROTATION_DEG = 90;
   const TOTAL_ROTATION_DEG = 270;
   const landRot = /transform:\s*rotate\((-?\d+)deg\)\s*scaleX\(-1\)/.exec(land);
-  assert(landRot, '13n: в горизонтали спрайт отражается и доворачивается — порядок важен');
+  assert(landRot, '13o: в горизонтали спрайт отражается и доворачивается — порядок важен');
   assert(Number(landRot[1]) + FRAME_ROTATION_DEG === TOTAL_ROTATION_DEG,
-    `13q: суммарный поворот ${TOTAL_ROTATION_DEG}°, найдено ${Number(landRot[1]) + FRAME_ROTATION_DEG}°`);
+    `13p: суммарный поворот ${TOTAL_ROTATION_DEG}°, найдено ${Number(landRot[1]) + FRAME_ROTATION_DEG}°`);
 }
 
 // === 14. На десктопе игра открывается сразу горизонтальной ===
