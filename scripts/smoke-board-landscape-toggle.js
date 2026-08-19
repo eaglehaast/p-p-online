@@ -606,6 +606,77 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     `13p: суммарный поворот ${TOTAL_ROTATION_DEG}°, найдено ${Number(landRot[1]) + FRAME_ROTATION_DEG}°`);
 }
 
+// === 13b. Подсказка кнопки поворота: по-английски и в стиле подсказок инвентаря ===
+{
+  const ruleBody = (selector) => {
+    const at = styles.indexOf(selector);
+    assert(at !== -1, `13b: в стилях нет правила ${selector}`);
+    return styles.slice(styles.indexOf('{', at) + 1, styles.indexOf('}', at));
+  };
+  const px = (body, prop) => {
+    const m = new RegExp(`(?:^|[;{\\s])${prop}:\\s*(-?\\d+(?:\\.\\d+)?)px`).exec(body);
+    assert(m, `13b: в правиле не задан ${prop}`);
+    return Number.parseFloat(m[1]);
+  };
+
+  // Родной браузерный тултип убран: иначе поверх оформленной плашки вылезал бы ещё и он.
+  const btnTag = markup.slice(markup.indexOf('id="orientationToggleBtn"'));
+  const btnAttrs = btnTag.slice(0, btnTag.indexOf('>'));
+  assert(!/\stitle=/.test(btnAttrs),
+    '13b: у кнопки не должно остаться родного title — его заменила оформленная подсказка');
+  assert(/aria-label="Rotate board"/.test(btnAttrs),
+    '13c: подпись кнопки по-английски');
+  assert(!/[А-Яа-яЁё]/.test(btnAttrs),
+    '13d: в атрибутах кнопки не осталось русского текста');
+
+  // Оформление берётся у подсказок инвентаря — тем же классом, а не копией токенов.
+  const tipTag = markup.slice(markup.indexOf('id="orientationToggleTip"'));
+  const tipEl = tipTag.slice(0, tipTag.indexOf('</span>'));
+  assert(/class="inventory-tooltip orientation-toggle-tip"/.test(tipTag.slice(0, 200)),
+    '13e: подсказка носит класс подсказок инвентаря, иначе оформление придётся дублировать');
+  assert(/>Rotate board\s*$/.test(tipEl), '13f: текст подсказки по-английски');
+
+  // Подсказка обязана быть СОСЕДОМ кнопки: внутри неё она уехала бы вместе со
+  // спрайтом, который в горизонтали развёрнут.
+  const between = markup.slice(markup.indexOf('</button>', markup.indexOf('id="orientationToggleBtn"')),
+                               markup.indexOf('id="orientationToggleTip"'));
+  assert(!/<(div|button|section)\b/.test(between),
+    '13g: подсказка стоит сразу за кнопкой — на этом держится селектор показа');
+  assert(/#orientationToggleBtn:hover \+ \.orientation-toggle-tip/.test(styles)
+    && /#orientationToggleBtn:focus-visible \+ \.orientation-toggle-tip/.test(styles),
+    '13h: показ по наведению и с клавиатуры');
+
+  const tip = ruleBody('.orientation-toggle-tip {');
+  const tipW = px(tip, 'width');
+  const tipH = px(tip, 'height');
+  const tipLeft = px(tip, 'left');
+  const tipTop = px(tip, 'top');
+  const btn = ruleBody('.orientation-toggle {');
+  const btnSize = px(btn, 'width');
+  const btnLeft = px(btn, 'left');
+  const btnTop = px(btn, 'top');
+
+  // Портрет: слева от кнопки, по её средней линии.
+  assert(tipLeft + tipW <= btnLeft,
+    `13i: в портрете подсказка слева от кнопки (${tipLeft + tipW} против ${btnLeft})`);
+  assert(Math.abs((tipTop + tipH / 2) - (btnTop + btnSize / 2)) <= 0.5,
+    '13j: в портрете подсказка на средней линии кнопки');
+
+  // Горизонталь: то же «слева на экране», но это БОЛЬШЕ по оси y кадра, и плашка
+  // развёрнута встречно, поэтому её след по y равен ширине.
+  const tipLand = ruleBody('html.is-board-landscape .orientation-toggle-tip {');
+  const btnLand = ruleBody('html.is-board-landscape .orientation-toggle {');
+  assert(/transform:\s*rotate\(-90deg\)/.test(tipLand),
+    '13k: в горизонтали подсказка разворачивается встречно, иначе ляжет на бок');
+  const tipLandCenterY = px(tipLand, 'top') + tipH / 2;
+  const tipLandNearEdge = tipLandCenterY - tipW / 2;
+  const btnLandBottom = px(btnLand, 'top') + btnSize;
+  assert(tipLandNearEdge >= btnLandBottom,
+    `13l: в горизонтали подсказка не наезжает на кнопку (${tipLandNearEdge.toFixed(2)} против ${btnLandBottom.toFixed(2)})`);
+  assert(Math.abs((px(tipLand, 'left') + tipW / 2) - (btnLeft + btnSize / 2)) <= 0.5,
+    '13m: в горизонтали подсказка центрована на кнопке');
+}
+
 // === 14. На десктопе игра открывается сразу горизонтальной ===
 //
 // Признак десктопа обязан совпадать с тем, что включает саму кнопку: иначе поле
