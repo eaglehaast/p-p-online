@@ -3434,6 +3434,37 @@ button, .control-box { transition: all 0.3s ease; }
   opacity: 0.6;
 }
 
+/* Подсказка кнопки поворота. Класс .inventory-tooltip даёт ей ровно то же
+   оформление, что у подсказок инвентаря — бумажная плашка, шрифт, рамка, тень.
+   Здесь только место и показ по наведению.
+   Размер задан явно (112x30), потому что от него считается место в горизонтали;
+   текст центруется флексом, поэтому свой padding плашке не нужен. */
+.orientation-toggle-tip {
+  width: 112px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  z-index: 350;
+  /* Слева от кнопки: правый край в 413 — это её левая грань минус зазор 6.
+     По вертикали — на средней линии кнопки (760.5). */
+  left: 301px;
+  top: 745.5px;
+}
+
+/* Показ по наведению и с клавиатуры. Соседний селектор работает потому, что
+   подсказка лежит сразу за кнопкой в разметке. */
+#orientationToggleBtn:hover + .orientation-toggle-tip,
+#orientationToggleBtn:focus-visible + .orientation-toggle-tip {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 90ms ease-out,
+    visibility 0s;
+}
+
 /* Только для мыши: на тач-устройствах ориентацию задаёт сама система. */
 @media (hover: hover) and (pointer: fine) {
   .orientation-toggle {
@@ -3481,6 +3512,17 @@ html.is-board-landscape .orientation-toggle {
      множителем: её центр 19 + 55*0.8772/2 = 43.12, отсюда top = 43.12 - 32/2. */
   top: 27.12px;
   transform: rotate(180deg) scaleX(-1);
+}
+
+/* Подсказка в горизонтали: «слева от кнопки» на экране — это БОЛЬШЕ по оси y
+   кадра, а сама плашка разворачивается встречно, как все центрованные оверлеи.
+   После поворота вокруг центра её след по оси y равен ширине (112), поэтому
+   ближний край считается от центра: 65.12 (нижняя грань кнопки плюс зазор) + 112/2,
+   отсюда top. По оси x подсказка центруется на кнопке: 435 - 112/2. */
+html.is-board-landscape .orientation-toggle-tip {
+  left: 379px;
+  top: 106.12px;
+  transform: rotate(-90deg);
 }
 
 /* Полосы инвентаря в горизонтали ужимаются вокруг своего НАЧАЛА: конец полосы

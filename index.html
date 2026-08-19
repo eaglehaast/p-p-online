@@ -195,9 +195,8 @@
               id="orientationToggleBtn"
               class="orientation-toggle"
               type="button"
-              aria-label="Повернуть поле"
+              aria-label="Rotate board"
               aria-pressed="false"
-              title="Повернуть поле"
             >
               <!-- Готовая кнопка из ассетов: подложка и значок уже нарисованы в
                    спрайте. Это переход ПОРТРЕТ -> ГОРИЗОНТАЛЬ; обратный — тот же
@@ -207,6 +206,12 @@
                    src="ui_gamescreen/gamescreen_outside/rotate_button.png"
                    alt="" aria-hidden="true" draggable="false" />
             </button>
+            <!-- Подсказка кнопки поворота. Тот же класс, что у подсказок инвентаря:
+                 оформление берётся оттуда целиком, дублировать токены не нужно.
+                 Стоит СОСЕДОМ кнопки, а не внутри: кнопка в горизонтали развёрнута
+                 спрайтом, и вложенная подсказка уехала бы вместе с ним. -->
+            <span id="orientationToggleTip" class="inventory-tooltip orientation-toggle-tip"
+                  aria-hidden="true">Rotate board</span>
 
             <div
               id="mapTesterDialog"
