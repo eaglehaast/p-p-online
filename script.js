@@ -17403,7 +17403,18 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, boostedSim.predictedPath, enemySweepTol)) boostedEnemy += 1; }
           const boostedFlag = countFlagsOnPath(boostedSim.predictedPath);
           const boostedCount = boostedCargo + boostedEnemy + boostedFlag;
-          if(boostedCount > best.count){
+          // Куда сядет удлинённый маршрут — чтобы излишковая заправка не выкидывала
+          // самолёт под ответный удар ради тех же самых целей.
+          const boostedEnd = boostedSim.impactPoint
+            || boostedSim.predictedPath[boostedSim.predictedPath.length - 1];
+          const boostedLandingRisk = (Number.isFinite(boostedEnd?.x) && Number.isFinite(boostedEnd?.y)
+            && typeof getImmediateResponseThreatMeta === "function"
+            && typeof getFallbackCandidateResponseRisk === "function")
+            ? getFallbackCandidateResponseRisk(getImmediateResponseThreatMeta({ ...aiExecutionContext, plane }, boostedEnd.x, boostedEnd.y, null))
+            : 0;
+          // Строго больше целей — заправляемся всегда. Столько же целей — только как
+          // трата излишка (решает уже выбор баффов, тут лишь считаем и проверяем посадку).
+          if(boostedCount >= best.count){
             aiFuelRicochetExtend = {
               baseCount: best.count,
               boostedCount,
@@ -17412,6 +17423,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               boostedFlag,
               boostedBounceCount: boostedSim.bounceCount,
               boostedTravel: Number.isFinite(boostedSim.travelDistance) ? boostedSim.travelDistance : null,
+              baseLandingRisk: Number.isFinite(landingRisk) ? landingRisk : 0,
+              boostedLandingRisk: Number.isFinite(boostedLandingRisk) ? boostedLandingRisk : 0,
             };
           }
         }
@@ -32013,6 +32026,16 @@ const AI_FUEL_MIN_REACH_RATIO = 1.0;
 // within fuel range) on the launch line — they are unreachable without it.
 const AI_FUEL_EXTEND_MIN_EXTRA_TARGETS = 1;
 
+// Surplus policy (как у прицела, крыльев и динамита: излишек — трать смелее).
+// Поле целиком помещается в базовую дальность, поэтому «дотянуться дальше» почти
+// никогда не срабатывает, и топливо копится мёртвым грузом. Со вторым баком в
+// запасе разрешаем сметающий маршрут, который на удвоенной дальности СОХРАНЯЕТ
+// свои цели (пересимулирован) и не садится опаснее базового: полёт вдвое длиннее —
+// значит топливо купило реальную дистанцию, а не потрачено впустую.
+const AI_FUEL_SURPLUS_MIN_STOCK = 2;
+// Насколько посадка удлинённого маршрута может быть опаснее базовой (доля риска).
+const AI_FUEL_SURPLUS_MAX_LANDING_RISK_DELTA = 0.05;
+
 function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
   if(!plane) return [];
 
@@ -32162,6 +32185,19 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
   const ricochetSweepExtends = fuelAvailable
     && selectedPlan?.aiFuelRicochetExtend
     && Number(selectedPlan.aiFuelRicochetExtend.boostedCount) > Number(selectedPlan.aiFuelRicochetExtend.baseCount);
+
+  // Трата излишка: удлинённый маршрут сохраняет ТЕ ЖЕ цели (пересимулирован) и садится
+  // не опаснее базового. Полёт при этом вдвое длиннее — по определению из смоука это не
+  // впустую. Копить второй и последующие баки смысла нет (контракт: инвентарь тратим).
+  const fuelStock = Number(availableCounts?.[INVENTORY_ITEM_TYPES.FUEL] ?? 0);
+  const sweepExtendMeta = selectedPlan?.aiFuelRicochetExtend || null;
+  const ricochetSweepSurplusFlight = fuelAvailable
+    && !ricochetSweepExtends
+    && !!sweepExtendMeta
+    && fuelStock >= AI_FUEL_SURPLUS_MIN_STOCK
+    && Number(sweepExtendMeta.boostedCount) >= Number(sweepExtendMeta.baseCount)
+    && Number(sweepExtendMeta.boostedLandingRisk ?? 0)
+      <= Number(sweepExtendMeta.baseLandingRisk ?? 0) + AI_FUEL_SURPLUS_MAX_LANDING_RISK_DELTA;
   // B2: a fuel flag capture was chosen (the plan simulated a boosted launch that grabs
   // the flag and heads to base). Spend the fuel; forceFuelMoveToMaxRange flies exactly
   // that simulated route (fuelReplanned is set in the scheduler for this reason).
@@ -32192,6 +32228,8 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "extend_range_more_targets" });
   } else if(fuelReachesDistantTarget && usefulIntent){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_reach_distant_target" });
+  } else if(ricochetSweepSurplusFlight){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "fuel_surplus_longer_sweep" });
   }
 
   // Combo synergy: when fuel is being applied, the launch stretches this move to the
