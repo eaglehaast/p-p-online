@@ -10459,6 +10459,23 @@ function drawWorldSpriteUpright(ctx2d, sprite, x, y, width, height){
   ctx2d.restore();
 }
 
+// hudCanvas тоже повёрнут вместе с кадром, поэтому иконки счётчиков ложатся на бок:
+// яйцо лежит на боку, а запечённая в спрайты тень уезжает влево-ВВЕРХ — свет как будто
+// падает снизу справа, хотя во всей остальной графике он идёт сверху справа. Разворачиваем
+// иконку вокруг её собственного центра: на экране яйцо снова стоит широким концом вниз,
+// а тень ложится влево-вниз, как в портрете. Клетка счётчика квадратная, поэтому размер
+// иконки менять не нужно — после поворота она занимает ровно ту же площадь.
+function withUprightHudIcon(ctx2d, centerX, centerY, draw){
+  if(!ctx2d || typeof draw !== "function") return;
+  ctx2d.save();
+  ctx2d.translate(centerX, centerY);
+  if(isBoardLandscapeActive()){
+    ctx2d.rotate(-Math.PI / 2);
+  }
+  draw(ctx2d);
+  ctx2d.restore();
+}
+
 function drawCargoShadow(ctx2d, cargo, now = performance.now()) {
   const shadow = getCargoShadowState(cargo, now);
   if (!shadow) {
@@ -48619,6 +48636,10 @@ function hasCrashDelayElapsed(p){
 function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
   ctx2d.save();
   ctx2d.translate(x, y);
+  if (isBoardLandscapeActive()) {
+    // См. withUprightHudIcon: иначе значок самолёта лежит на боку и его тень уезжает вверх.
+    ctx2d.rotate(-Math.PI / 2);
+  }
 
   const style = getHudPlaneStyle(color);
   const styleScale = Number.isFinite(style?.scale) && style.scale > 0 ? style.scale : 1;
@@ -49794,7 +49815,9 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
 
       ctx.save();
       ctx.globalAlpha = MATCH_SCORE_GHOST_ALPHA;
-      ctx.drawImage(ghostIcon, srcX, srcY, srcW, srcH, screenX, screenY, dstW, dstH);
+      withUprightHudIcon(ctx, screenX + dstW / 2, screenY + dstH / 2, (c) => {
+        c.drawImage(ghostIcon, srcX, srcY, srcW, srcH, -dstW / 2, -dstH / 2, dstW, dstH);
+      });
       ctx.restore();
     }
 
@@ -49809,7 +49832,9 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
       const screenX = Math.round(slot.centerX - dstW / 2) + MATCHSCORE_OFFSET_X;
       const screenY = Math.round(slot.centerY - dstH / 2);
 
-      ctx.drawImage(icon, srcX, srcY, srcW, srcH, screenX, screenY, dstW, dstH);
+      withUprightHudIcon(ctx, screenX + dstW / 2, screenY + dstH / 2, (c) => {
+        c.drawImage(icon, srcX, srcY, srcW, srcH, -dstW / 2, -dstH / 2, dstW, dstH);
+      });
     }
   }
 }
@@ -50087,7 +50112,10 @@ function drawHudPlaneTimerOverlay(ctx2d, cx, cy, size, image){
   const previousFilter = ctx2d.filter;
   ctx2d.filter = "none";
   ctx2d.globalAlpha = getHudPlaneTimerOverlayOpacity(image);
-  ctx2d.drawImage(image, cx - size / 2, cy - size / 2, size, size);
+  // Песочные часы с цифрой — в горизонтали их тоже нужно ставить прямо, иначе цифра лежит на боку.
+  withUprightHudIcon(ctx2d, cx, cy, (c) => {
+    c.drawImage(image, -size / 2, -size / 2, size, size);
+  });
   ctx2d.filter = previousFilter;
   ctx2d.restore();
 }
