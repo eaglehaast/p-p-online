@@ -48633,13 +48633,147 @@ function hasCrashDelayElapsed(p){
   return performance.now() - start >= crashFxDelayMs;
 }
 
+// Тень у иконок счётчика самолётов запечена в сам спрайт: это силуэт самолёта,
+// залитый чёрным и сдвинутый вниз-влево на COUNTER_PLANE_SHADOW_OFFSET (в пикселях
+// исходника). В горизонтали кадр повёрнут, и вместе с ним уезжает тень — влево-ВВЕРХ,
+// то есть свет как будто падает снизу справа.
+//
+// Развернуть спрайт целиком, как иконки счёта, здесь нельзя: тогда развернётся и сам
+// самолёт, а он должен смотреть туда же, куда самолёты на поле, — то есть поворачиваться
+// вместе с кадром. Никакой поворот не двигает тень отдельно от самолёта, поэтому один
+// раз отделяем один слой от другого и в горизонтали рисуем тень сами: тот же силуэт,
+// но сдвинутый в ту сторону, которая после поворота кадра читается как «влево-вниз».
+const COUNTER_PLANE_SHADOW_OFFSET = Object.freeze({ x: -5, y: 10 });
+const COUNTER_PLANE_SHADOW_ALPHA = 215 / 255;
+// Тень чисто чёрная, самолёт цветной — порог отделяет одно от другого.
+const COUNTER_PLANE_SHADOW_MAX_CHANNEL = 40;
+// Силуэт раздуваем, иначе сглаженная кромка тени остаётся висеть вокруг самолёта
+// отдельными тёмными точками.
+const COUNTER_PLANE_SILHOUETTE_DILATION = 2;
+const COUNTER_PLANE_SHADOW_BLUR_PX = 1;
+const COUNTER_PLANE_SHADOW_PADDING = 4;
+const counterPlaneLayerCache = new Map();
+
+function buildCounterPlaneLayers(img){
+  const w = img?.naturalWidth | 0;
+  const h = img?.naturalHeight | 0;
+  if (!(w > 0 && h > 0)) return null;
+  if (typeof document === "undefined" || typeof document.createElement !== "function") return null;
+
+  const source = document.createElement("canvas");
+  source.width = w;
+  source.height = h;
+  const sourceCtx = source.getContext("2d", { willReadFrequently: true });
+  if (!sourceCtx) return null;
+  sourceCtx.drawImage(img, 0, 0);
+
+  let data = null;
+  try {
+    data = sourceCtx.getImageData(0, 0, w, h).data;
+  } catch (err) {
+    // Холст «испачкан» — так бывает, если страницу открыли файлом с диска. Тогда
+    // молча остаёмся на исходном спрайте: тень не там, где хотелось, но иконка цела.
+    return null;
+  }
+
+  const opaque = new Uint8Array(w * h);
+  const colored = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i += 1) {
+    const o = i * 4;
+    if (data[o + 3] < 8) continue;
+    opaque[i] = 1;
+    if (Math.max(data[o], data[o + 1], data[o + 2]) > COUNTER_PLANE_SHADOW_MAX_CHANNEL) {
+      colored[i] = 1;
+    }
+  }
+
+  let silhouette = colored;
+  for (let step = 0; step < COUNTER_PLANE_SILHOUETTE_DILATION; step += 1) {
+    const grown = silhouette.slice();
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        if (!silhouette[y * w + x]) continue;
+        for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy += 1) {
+          for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx += 1) {
+            grown[yy * w + xx] = 1;
+          }
+        }
+      }
+    }
+    silhouette = grown;
+  }
+
+  const planeCanvas = document.createElement("canvas");
+  planeCanvas.width = w;
+  planeCanvas.height = h;
+  const planeLayerCtx = planeCanvas.getContext("2d");
+  if (!planeLayerCtx) return null;
+
+  const planeData = sourceCtx.createImageData(w, h);
+  let planePixels = 0;
+  let minX = w; let maxX = -1; let minY = h; let maxY = -1;
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = y * w + x;
+      if (!opaque[i]) continue;
+      const sx = x - COUNTER_PLANE_SHADOW_OFFSET.x;
+      const sy = y - COUNTER_PLANE_SHADOW_OFFSET.y;
+      const litBySilhouette = sx >= 0 && sx < w && sy >= 0 && sy < h && silhouette[sy * w + sx];
+      // Чёрный пиксель, стоящий ровно под сдвинутым силуэтом, — это запечённая тень.
+      if (litBySilhouette && !colored[i]) continue;
+      const o = i * 4;
+      planeData.data[o] = data[o];
+      planeData.data[o + 1] = data[o + 1];
+      planeData.data[o + 2] = data[o + 2];
+      planeData.data[o + 3] = data[o + 3];
+      planePixels += 1;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (planePixels === 0) return null;
+  planeLayerCtx.putImageData(planeData, 0, 0);
+
+  // Тень — тот же силуэт, залитый чёрным: отдельным холстом, чтобы двигать её
+  // независимо от самолёта. Холст с запасом по краям, иначе размытие срежется.
+  const pad = COUNTER_PLANE_SHADOW_PADDING;
+  const shadowCanvas = document.createElement("canvas");
+  shadowCanvas.width = w + pad * 2;
+  shadowCanvas.height = h + pad * 2;
+  const shadowLayerCtx = shadowCanvas.getContext("2d");
+  if (!shadowLayerCtx) return null;
+  // Запечённая тень размыта по краю — повторяем это, иначе она читается вырезанной.
+  shadowLayerCtx.filter = `blur(${COUNTER_PLANE_SHADOW_BLUR_PX}px)`;
+  shadowLayerCtx.drawImage(planeCanvas, pad, pad);
+  shadowLayerCtx.filter = "none";
+  shadowLayerCtx.globalCompositeOperation = "source-in";
+  shadowLayerCtx.fillStyle = `rgba(0, 0, 0, ${COUNTER_PLANE_SHADOW_ALPHA})`;
+  shadowLayerCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+
+  return {
+    plane: planeCanvas,
+    shadow: shadowCanvas,
+    width: w,
+    height: h,
+    pad,
+    // Центр самого самолёта, без тени: по нему выравниваем пару в клетке счётчика.
+    centerX: (minX + maxX + 1) / 2,
+    centerY: (minY + maxY + 1) / 2,
+  };
+}
+
+function getCounterPlaneLayers(color, img){
+  if (counterPlaneLayerCache.has(color)) return counterPlaneLayerCache.get(color);
+  const layers = buildCounterPlaneLayers(img);
+  counterPlaneLayerCache.set(color, layers);
+  return layers;
+}
+
 function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
   ctx2d.save();
   ctx2d.translate(x, y);
-  if (isBoardLandscapeActive()) {
-    // См. withUprightHudIcon: иначе значок самолёта лежит на боку и его тень уезжает вверх.
-    ctx2d.rotate(-Math.PI / 2);
-  }
 
   const style = getHudPlaneStyle(color);
   const styleScale = Number.isFinite(style?.scale) && style.scale > 0 ? style.scale : 1;
@@ -48665,7 +48799,36 @@ function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
     img.naturalHeight > 0
   );
 
-  if (spriteReady) {
+  const landscapeLayers = spriteReady && isBoardLandscapeActive()
+    ? getCounterPlaneLayers(color, img)
+    : null;
+
+  if (landscapeLayers) {
+    const scaleAcross = size / landscapeLayers.width;
+    const scaleDown = size / landscapeLayers.height;
+
+    // Сдвиг тени в экранных единицах, повёрнутый на -90°: (x, y) -> (y, -x). Сам самолёт
+    // по-прежнему повёрнут вместе с кадром — разъезжается только тень.
+    const shadowX = COUNTER_PLANE_SHADOW_OFFSET.y * scaleDown;
+    const shadowY = -COUNTER_PLANE_SHADOW_OFFSET.x * scaleAcross;
+
+    // Исходный спрайт обрезан по паре «самолёт + тень», поэтому в портрете самолёт стоит
+    // на полсдвига выше и правее центра клетки. Повторяем это и здесь, только уже для
+    // повёрнутого сдвига: иначе тень вылезает из полосы счётчика на стену поля.
+    const planeX = -landscapeLayers.centerX * scaleAcross - shadowX / 2;
+    const planeY = -landscapeLayers.centerY * scaleDown - shadowY / 2;
+    const padX = landscapeLayers.pad * scaleAcross;
+    const padY = landscapeLayers.pad * scaleDown;
+
+    ctx2d.drawImage(
+      landscapeLayers.shadow,
+      planeX + shadowX - padX,
+      planeY + shadowY - padY,
+      size + padX * 2,
+      size + padY * 2
+    );
+    ctx2d.drawImage(landscapeLayers.plane, planeX, planeY, size, size);
+  } else if (spriteReady) {
     ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
   } else {
     // Fallback to simple outline if the counter icon isn't ready yet
@@ -50166,6 +50329,9 @@ function getHudCanvasSignature(now){
     currentPlacer,
     DEBUG_LAYOUT ? 1 : 0,
     isArcadeScoreUiActive() ? 1 : 0,
+    // Иконки счётчиков рисуются по-разному в двух ориентациях, а размер холста при
+    // повороте не меняется — без этого табло осталось бы старым до страховочного срока.
+    isBoardLandscapeActive() ? 1 : 0,
     blueScore,
     greenScore,
   ];
