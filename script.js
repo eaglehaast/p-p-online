@@ -48633,142 +48633,66 @@ function hasCrashDelayElapsed(p){
   return performance.now() - start >= crashFxDelayMs;
 }
 
-// Тень у иконок счётчика самолётов запечена в сам спрайт: это силуэт самолёта,
-// залитый чёрным и сдвинутый вниз-влево на COUNTER_PLANE_SHADOW_OFFSET (в пикселях
-// исходника). В горизонтали кадр повёрнут, и вместе с ним уезжает тень — влево-ВВЕРХ,
-// то есть свет как будто падает снизу справа.
+// Полевые спрайты самолётов нарисованы БЕЗ тени, в отличие от иконок счётчика, где
+// тень запечена в картинку и потому едет вместе с кадром. В горизонтали собираем значок
+// из полевого спрайта: сам самолёт поворачивается вместе с кадром, как ему и положено,
+// а тень рисуем отдельно и кладём туда, куда она падает в портрете — влево-вниз ЭКРАНА.
 //
-// Развернуть спрайт целиком, как иконки счёта, здесь нельзя: тогда развернётся и сам
-// самолёт, а он должен смотреть туда же, куда самолёты на поле, — то есть поворачиваться
-// вместе с кадром. Никакой поворот не двигает тень отдельно от самолёта, поэтому один
-// раз отделяем один слой от другого и в горизонтали рисуем тень сами: тот же силуэт,
-// но сдвинутый в ту сторону, которая после поворота кадра читается как «влево-вниз».
-const COUNTER_PLANE_SHADOW_OFFSET = Object.freeze({ x: -5, y: 10 });
+// Силуэт для тени строится через source-in, то есть без чтения пикселей: «испачканный»
+// холст (страницу открыли файлом с диска) здесь ничему не мешает.
+const COUNTER_PLANE_FIELD_SPRITE_ROTATION = Object.freeze({
+  // Носом туда же, куда смотрят самолёты этой стороны на поле: синие летят влево
+  // по экрану, зелёные — вправо. Полевой спрайт нарисован носом вверх.
+  blue: Math.PI,
+  green: 0,
+});
+// Полевой спрайт занимает свой холст целиком, а у иконки счётчика самолёт был меньше
+// холста (33 из 39x44). Поджимаем, чтобы значок читался того же размера, что и раньше.
+const COUNTER_PLANE_FIELD_SPRITE_SCALE = 0.8;
+// Доли от самого самолёта, снятые с портретной иконки: там тень запечена со сдвигом на
+// 5 влево и 10 вниз при размере самолёта в 33 пикселя.
+const COUNTER_PLANE_SHADOW_SCREEN_OFFSET = Object.freeze({ x: -5 / 33, y: 10 / 33 });
 const COUNTER_PLANE_SHADOW_ALPHA = 215 / 255;
-// Тень чисто чёрная, самолёт цветной — порог отделяет одно от другого.
-const COUNTER_PLANE_SHADOW_MAX_CHANNEL = 40;
-// Силуэт раздуваем, иначе сглаженная кромка тени остаётся висеть вокруг самолёта
-// отдельными тёмными точками.
-const COUNTER_PLANE_SILHOUETTE_DILATION = 2;
 const COUNTER_PLANE_SHADOW_BLUR_PX = 1;
 const COUNTER_PLANE_SHADOW_PADDING = 4;
-const counterPlaneLayerCache = new Map();
+const counterPlaneShadowCache = new Map();
 
-function buildCounterPlaneLayers(img){
+function getCounterPlaneFieldSprite(color){
+  const img = color === "blue" ? bluePlaneImg : color === "green" ? greenPlaneImg : null;
+  return isSpriteReady(img) ? img : null;
+}
+
+function buildCounterPlaneShadow(img){
   const w = img?.naturalWidth | 0;
   const h = img?.naturalHeight | 0;
   if (!(w > 0 && h > 0)) return null;
   if (typeof document === "undefined" || typeof document.createElement !== "function") return null;
 
-  const source = document.createElement("canvas");
-  source.width = w;
-  source.height = h;
-  const sourceCtx = source.getContext("2d", { willReadFrequently: true });
-  if (!sourceCtx) return null;
-  sourceCtx.drawImage(img, 0, 0);
-
-  let data = null;
-  try {
-    data = sourceCtx.getImageData(0, 0, w, h).data;
-  } catch (err) {
-    // Холст «испачкан» — так бывает, если страницу открыли файлом с диска. Тогда
-    // молча остаёмся на исходном спрайте: тень не там, где хотелось, но иконка цела.
-    return null;
-  }
-
-  const opaque = new Uint8Array(w * h);
-  const colored = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i += 1) {
-    const o = i * 4;
-    if (data[o + 3] < 8) continue;
-    opaque[i] = 1;
-    if (Math.max(data[o], data[o + 1], data[o + 2]) > COUNTER_PLANE_SHADOW_MAX_CHANNEL) {
-      colored[i] = 1;
-    }
-  }
-
-  let silhouette = colored;
-  for (let step = 0; step < COUNTER_PLANE_SILHOUETTE_DILATION; step += 1) {
-    const grown = silhouette.slice();
-    for (let y = 0; y < h; y += 1) {
-      for (let x = 0; x < w; x += 1) {
-        if (!silhouette[y * w + x]) continue;
-        for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy += 1) {
-          for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx += 1) {
-            grown[yy * w + xx] = 1;
-          }
-        }
-      }
-    }
-    silhouette = grown;
-  }
-
-  const planeCanvas = document.createElement("canvas");
-  planeCanvas.width = w;
-  planeCanvas.height = h;
-  const planeLayerCtx = planeCanvas.getContext("2d");
-  if (!planeLayerCtx) return null;
-
-  const planeData = sourceCtx.createImageData(w, h);
-  let planePixels = 0;
-  let minX = w; let maxX = -1; let minY = h; let maxY = -1;
-  for (let y = 0; y < h; y += 1) {
-    for (let x = 0; x < w; x += 1) {
-      const i = y * w + x;
-      if (!opaque[i]) continue;
-      const sx = x - COUNTER_PLANE_SHADOW_OFFSET.x;
-      const sy = y - COUNTER_PLANE_SHADOW_OFFSET.y;
-      const litBySilhouette = sx >= 0 && sx < w && sy >= 0 && sy < h && silhouette[sy * w + sx];
-      // Чёрный пиксель, стоящий ровно под сдвинутым силуэтом, — это запечённая тень.
-      if (litBySilhouette && !colored[i]) continue;
-      const o = i * 4;
-      planeData.data[o] = data[o];
-      planeData.data[o + 1] = data[o + 1];
-      planeData.data[o + 2] = data[o + 2];
-      planeData.data[o + 3] = data[o + 3];
-      planePixels += 1;
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-    }
-  }
-  if (planePixels === 0) return null;
-  planeLayerCtx.putImageData(planeData, 0, 0);
-
-  // Тень — тот же силуэт, залитый чёрным: отдельным холстом, чтобы двигать её
-  // независимо от самолёта. Холст с запасом по краям, иначе размытие срежется.
   const pad = COUNTER_PLANE_SHADOW_PADDING;
-  const shadowCanvas = document.createElement("canvas");
-  shadowCanvas.width = w + pad * 2;
-  shadowCanvas.height = h + pad * 2;
-  const shadowLayerCtx = shadowCanvas.getContext("2d");
-  if (!shadowLayerCtx) return null;
-  // Запечённая тень размыта по краю — повторяем это, иначе она читается вырезанной.
-  shadowLayerCtx.filter = `blur(${COUNTER_PLANE_SHADOW_BLUR_PX}px)`;
-  shadowLayerCtx.drawImage(planeCanvas, pad, pad);
-  shadowLayerCtx.filter = "none";
-  shadowLayerCtx.globalCompositeOperation = "source-in";
-  shadowLayerCtx.fillStyle = `rgba(0, 0, 0, ${COUNTER_PLANE_SHADOW_ALPHA})`;
-  shadowLayerCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = w + pad * 2;
+  canvas.height = h + pad * 2;
+  const shadowCtx = canvas.getContext("2d");
+  if (!shadowCtx) return null;
 
-  return {
-    plane: planeCanvas,
-    shadow: shadowCanvas,
-    width: w,
-    height: h,
-    pad,
-    // Центр самого самолёта, без тени: по нему выравниваем пару в клетке счётчика.
-    centerX: (minX + maxX + 1) / 2,
-    centerY: (minY + maxY + 1) / 2,
-  };
+  // Запечённая тень размыта по краю — повторяем это, иначе силуэт читается вырезанным.
+  // Запас по краям холста нужен, чтобы размытие не срезалось.
+  shadowCtx.filter = `blur(${COUNTER_PLANE_SHADOW_BLUR_PX}px)`;
+  shadowCtx.drawImage(img, pad, pad);
+  shadowCtx.filter = "none";
+  shadowCtx.globalCompositeOperation = "source-in";
+  shadowCtx.fillStyle = `rgba(0, 0, 0, ${COUNTER_PLANE_SHADOW_ALPHA})`;
+  shadowCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+  return { canvas, width: w, height: h, pad };
 }
 
-function getCounterPlaneLayers(color, img){
-  if (counterPlaneLayerCache.has(color)) return counterPlaneLayerCache.get(color);
-  const layers = buildCounterPlaneLayers(img);
-  counterPlaneLayerCache.set(color, layers);
-  return layers;
+function getCounterPlaneShadow(color, img){
+  const cached = counterPlaneShadowCache.get(color);
+  if (cached && cached.source === img) return cached.shadow;
+  const shadow = buildCounterPlaneShadow(img);
+  counterPlaneShadowCache.set(color, { source: img, shadow });
+  return shadow;
 }
 
 function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
@@ -48799,35 +48723,47 @@ function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
     img.naturalHeight > 0
   );
 
-  const landscapeLayers = spriteReady && isBoardLandscapeActive()
-    ? getCounterPlaneLayers(color, img)
-    : null;
+  // В горизонтали значок собирается из полевого спрайта — он без запечённой тени.
+  const fieldSprite = isBoardLandscapeActive() ? getCounterPlaneFieldSprite(color) : null;
 
-  if (landscapeLayers) {
-    const scaleAcross = size / landscapeLayers.width;
-    const scaleDown = size / landscapeLayers.height;
+  if (fieldSprite) {
+    const rotation = COUNTER_PLANE_FIELD_SPRITE_ROTATION[color] ?? 0;
+    const shadow = getCounterPlaneShadow(color, fieldSprite);
 
-    // Сдвиг тени в экранных единицах, повёрнутый на -90°: (x, y) -> (y, -x). Сам самолёт
-    // по-прежнему повёрнут вместе с кадром — разъезжается только тень.
-    const shadowX = COUNTER_PLANE_SHADOW_OFFSET.y * scaleDown;
-    const shadowY = -COUNTER_PLANE_SHADOW_OFFSET.x * scaleAcross;
+    const drawSize = size * COUNTER_PLANE_FIELD_SPRITE_SCALE;
 
-    // Исходный спрайт обрезан по паре «самолёт + тень», поэтому в портрете самолёт стоит
-    // на полсдвига выше и правее центра клетки. Повторяем это и здесь, только уже для
-    // повёрнутого сдвига: иначе тень вылезает из полосы счётчика на стену поля.
-    const planeX = -landscapeLayers.centerX * scaleAcross - shadowX / 2;
-    const planeY = -landscapeLayers.centerY * scaleDown - shadowY / 2;
-    const padX = landscapeLayers.pad * scaleAcross;
-    const padY = landscapeLayers.pad * scaleDown;
+    // Тень падает влево-вниз ЭКРАНА, а кадр повёрнут на +90°, поэтому экранное (-x, +y) —
+    // это кадровое (+y, +x). Сдвиг живёт СНАРУЖИ поворота спрайта: самолёт разворачивается
+    // вместе с кадром, а тень остаётся на своём месте относительно экрана.
+    const shadowFrameX = COUNTER_PLANE_SHADOW_SCREEN_OFFSET.y * drawSize;
+    const shadowFrameY = -COUNTER_PLANE_SHADOW_SCREEN_OFFSET.x * drawSize;
+    // Пару «самолёт + тень» центруем в клетке, разводя половинки сдвига в разные стороны —
+    // ровно так же обрезан портретный спрайт. Иначе тень вылезает на стену поля.
+    const pairX = -shadowFrameX / 2;
+    const pairY = -shadowFrameY / 2;
 
-    ctx2d.drawImage(
-      landscapeLayers.shadow,
-      planeX + shadowX - padX,
-      planeY + shadowY - padY,
-      size + padX * 2,
-      size + padY * 2
-    );
-    ctx2d.drawImage(landscapeLayers.plane, planeX, planeY, size, size);
+    if (shadow) {
+      const padX = shadow.pad * (drawSize / shadow.width);
+      const padY = shadow.pad * (drawSize / shadow.height);
+
+      ctx2d.save();
+      ctx2d.translate(pairX + shadowFrameX, pairY + shadowFrameY);
+      ctx2d.rotate(rotation);
+      ctx2d.drawImage(
+        shadow.canvas,
+        -drawSize / 2 - padX,
+        -drawSize / 2 - padY,
+        drawSize + padX * 2,
+        drawSize + padY * 2
+      );
+      ctx2d.restore();
+    }
+
+    ctx2d.save();
+    ctx2d.translate(pairX, pairY);
+    ctx2d.rotate(rotation);
+    ctx2d.drawImage(fieldSprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+    ctx2d.restore();
   } else if (spriteReady) {
     ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
   } else {
