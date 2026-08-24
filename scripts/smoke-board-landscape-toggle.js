@@ -701,6 +701,106 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     '14e: уходя с игрового экрана, по-прежнему возвращаемся в портрет');
 }
 
+// === 15. Иконки счётчиков на hudCanvas стоят прямо, и тень падает как в портрете ===
+//
+// hudCanvas поворачивается вместе с кадром, а тень у яйца, кукурузы и самолётика
+// запечена в сам спрайт. Без встречного поворота яйцо лежит на боку, а тень уезжает
+// влево-ВВЕРХ — свет как будто идёт снизу справа, хотя везде он падает сверху справа.
+{
+  const uprightSource = extractFunctionSource(source, 'withUprightHudIcon');
+
+  // Мини-холст, который считает результирующую матрицу: [a c e; b d f].
+  const makeCtx = () => {
+    let m = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    const calls = [];
+    const mul = (n) => {
+      m = [
+        m[0] * n[0] + m[2] * n[1],
+        m[1] * n[0] + m[3] * n[1],
+        m[0] * n[2] + m[2] * n[3],
+        m[1] * n[2] + m[3] * n[3],
+        m[0] * n[4] + m[2] * n[5] + m[4],
+        m[1] * n[4] + m[3] * n[5] + m[5],
+      ];
+    };
+    return {
+      calls,
+      save(){ stack.push(m.slice()); },
+      restore(){ m = stack.pop() || m; },
+      translate(x, y){ mul([1, 0, 0, 1, x, y]); },
+      rotate(a){ mul([Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]); },
+      drawImage(){ calls.push(m.slice()); },
+      depth: () => stack.length,
+    };
+  };
+  const apply = (m, x, y) => ({ x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] });
+  const near = (a, b) => Math.abs(a - b) <= 1e-9;
+
+  const run = (landscape) => {
+    const ctx = makeCtx();
+    const sandbox = { Math, isBoardLandscapeActive: () => landscape };
+    vm.createContext(sandbox);
+    vm.runInContext(`${uprightSource}\nwithUprightHudIcon(ctx, 120, 300, (c) => c.drawImage());`,
+      Object.assign(sandbox, { ctx }));
+    assert(ctx.calls.length === 1, 'внутренний стенд: спрайт нарисован ровно один раз');
+    assert(ctx.depth() === 0, '15a: помощник не оставляет за собой незакрытый save()');
+    return ctx.calls[0];
+  };
+
+  for(const landscape of [false, true]){
+    const m = run(landscape);
+    const label = landscape ? 'горизонталь' : 'портрет';
+
+    // Центр иконки не должен уезжать: поворот идёт вокруг него самого.
+    const center = apply(m, 0, 0);
+    assert(near(center.x, 120) && near(center.y, 300),
+      `15b: ${label} — центр иконки остаётся на месте (${center.x}, ${center.y})`);
+
+    // «Низ» спрайта (его локальное +Y) обязан смотреть вниз ЭКРАНА. В портрете экранный
+    // низ — это +y кадра, в горизонтали кадр повёрнут и экранный низ — это +x кадра.
+    const down = apply(m, 0, 1);
+    const dx = down.x - center.x;
+    const dy = down.y - center.y;
+    if(landscape){
+      assert(near(dx, 1) && near(dy, 0),
+        `15c: ${label} — низ спрайта смотрит в +x кадра, то есть вниз экрана (${dx}, ${dy})`);
+    } else {
+      assert(near(dx, 0) && near(dy, 1),
+        `15c: ${label} — низ спрайта смотрит в +y кадра, то есть вниз экрана (${dx}, ${dy})`);
+    }
+
+    // Спрайт не должен зеркалиться: определитель матрицы положительный.
+    assert(m[0] * m[3] - m[1] * m[2] > 0, `15d: ${label} — иконка не отражается`);
+  }
+
+  // Портрет обязан остаться байт-в-байт прежним, поэтому в нём поворота нет вовсе.
+  assert(/if\(isBoardLandscapeActive\(\)\)\{\s*ctx2d\.rotate\(-Math\.PI \/ 2\);/.test(
+    uprightSource.replace(/\n\s*/g, '')),
+    '15e: поворот включается только в горизонтали');
+
+  // Счёт матча (яйца и кукуруза) — и заполненные, и «призраки».
+  const matchScore = extractFunctionSource(source, 'drawMatchScore');
+  const uprightDraws = matchScore.match(/withUprightHudIcon\(/g) || [];
+  assert(uprightDraws.length === 2,
+    `15f: и призрак, и заполненная иконка счёта идут через встречный поворот (${uprightDraws.length})`);
+  assert(!/(?<!c)\bctx\.drawImage\(/.test(matchScore),
+    '15g: в счёте матча не осталось прямых ctx.drawImage — иначе иконка ляжет на бок');
+
+  // Счётчик самолётов наверху разворачивается сам, до отрисовки спрайта.
+  const counter = extractFunctionSource(source, 'drawPlaneCounterIcon');
+  const flat = counter.replace(/\n\s*/g, ' ');
+  assert(/ctx2d\.translate\(x, y\); if \(isBoardLandscapeActive\(\)\) \{[^}]*ctx2d\.rotate\(-Math\.PI \/ 2\);/.test(flat),
+    '15h: значок самолёта разворачивается сразу после переноса в свой центр');
+  assert(flat.indexOf('rotate(-Math.PI / 2)') < flat.indexOf('ctx2d.drawImage(img'),
+    '15i: разворот стоит ДО отрисовки спрайта');
+
+  // Песочные часы возрождения в аркаде: цифра внутри, лежать на боку ей нельзя.
+  const timer = extractFunctionSource(source, 'drawHudPlaneTimerOverlay');
+  assert(/withUprightHudIcon\(ctx2d, cx, cy,/.test(timer),
+    '15j: таймер возрождения тоже ставится прямо');
+}
+
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
 assert(/if\(mode !== 'GAME' && typeof setBoardLandscape === "function"\)/.test(source),
   '8: при уходе с игрового экрана разворот сбрасывается');
