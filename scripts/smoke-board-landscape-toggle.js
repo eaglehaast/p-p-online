@@ -189,8 +189,10 @@ assert(/originX = \(-CARGO_ANIM_OFFSET_X \+ crateSize\.width \/ 2\) \* scaleX/.t
 // Флаг разворачивается ровно (на боку он читается плохо), а БАЗА намеренно едет
 // вместе с полем — в той же системе координат, что самолёты: развёрнутая корзинка
 // не помещается в свою клетку, а боком читается нормально.
+// Сдвиг по y — это рисовальная поправка домашней раскладки, её разбирает
+// smoke-flag-sprite-symmetry.js; здесь важно только, что спрайт идёт через «ровный» путь.
 const flagFn = source.slice(source.indexOf('function drawFlagSprite('));
-assert(/drawWorldSpriteUpright\(ctx2d, sprite, layout\.x, layout\.y, layout\.width, layout\.height\)/
+assert(/drawWorldSpriteUpright\(ctx2d, sprite, layout\.x, layout\.y \+ nudgeY, layout\.width, layout\.height\)/
   .test(flagFn.slice(0, flagFn.indexOf('\n}'))),
   '7e: флаг рисуется ровно');
 const baseFn = source.slice(source.indexOf('function drawBaseSprite('));
