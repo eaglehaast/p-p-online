@@ -49079,11 +49079,28 @@ function getFlagSpriteLayoutForPlacement(flag, anchor = null){
   return null;
 }
 
+// Домашняя раскладка флагов несимметрична, причём одинаково во всех картах: синий флаг
+// стоит в y 41..61, зелёный — в y 568..588, зеркало которой это y 52..72. Базы при этом
+// зеркальны идеально. Замер разницей кадров «с флагом» и «без» на холсте доски 360x640:
+//
+//   база синих   22..40      флаг синих (гнездо)  41..60   — просвет 0 строк
+//   база зелёных 599..617    флаг зелёных (кукуруза) 568..587 — просвет 11 строк
+//
+// То есть гнездо прижато к своей базе вплотную, а кукуруза отстоит от своей на 11px.
+// Правильный вариант — кукуруза, поэтому поднимаем гнездо на те же 11px.
+//
+// Саму раскладку не трогаем: по ней считается точка захвата флага и цели ИИ, и она
+// записана в каждой из 44 карт. Сдвигаем ТОЛЬКО спрайт и только пока флаг лежит дома —
+// брошенный или несомый флаг обязан рисоваться ровно там, где он на самом деле есть.
+const FLAG_SPRITE_HOME_NUDGE_Y = Object.freeze({ blue: 11, green: 0 });
+
 function drawFlagSprite(ctx2d, flag, { anchor = null } = {}){
   const sprite = flagSprites[flag?.color];
   const layout = getFlagSpriteLayoutForPlacement(flag, anchor || getFlagAnchor(flag));
   if(layout && isSpriteReady(sprite)){
-    drawWorldSpriteUpright(ctx2d, sprite, layout.x, layout.y, layout.width, layout.height);
+    const atHome = !anchor && !flag?.droppedAt;
+    const nudgeY = atHome ? (FLAG_SPRITE_HOME_NUDGE_Y[flag?.color] ?? 0) : 0;
+    drawWorldSpriteUpright(ctx2d, sprite, layout.x, layout.y + nudgeY, layout.width, layout.height);
     return true;
   }
   return false;
