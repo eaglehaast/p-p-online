@@ -52,6 +52,7 @@ const buildContext = () => {
     greenScore: 5,
     arcadeUi: false,
     matchScoreAnimating: false,
+    landscape: false,
     points: [
       { color: 'blue', isAlive: true, burning: false, penalty: false, timer: null },
       { color: 'blue', isAlive: true, burning: false, penalty: false, timer: null },
@@ -62,6 +63,7 @@ const buildContext = () => {
   vm.createContext(context);
   vm.runInContext(`
     globalThis.isArcadeScoreUiActive = () => globalThis.arcadeUi;
+    globalThis.isBoardLandscapeActive = () => globalThis.landscape;
     globalThis.hasActiveMatchScoreAnimations = () => globalThis.matchScoreAnimating;
     globalThis.isPlaneRespawnPenaltyActive = (plane) => Boolean(plane && plane.penalty);
     globalThis.getHudPlaneTimerFrameImage = (plane) => (plane && plane.timer) || null;
@@ -91,6 +93,9 @@ const buildContext = () => {
     ['кто расставляет',    (c) => { c.currentPlacer = 'blue'; }],
     ['отладочная разметка',(c) => { c.DEBUG_LAYOUT = true; }],
     ['аркадное табло',     (c) => { c.arcadeUi = true; }],
+    // Иконки счётчиков рисуются по-разному в двух ориентациях, а размер холста при
+    // повороте не меняется — значит, сам поворот обязан быть в подписи.
+    ['ориентация поля',    (c) => { c.landscape = true; }],
     ['счёт синих',         (c) => { c.blueScore += 1; }],
     ['счёт зелёных',       (c) => { c.greenScore += 1; }],
     ['самолёт погиб',      (c) => { c.points[0].isAlive = false; }],

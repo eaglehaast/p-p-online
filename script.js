@@ -48633,13 +48633,71 @@ function hasCrashDelayElapsed(p){
   return performance.now() - start >= crashFxDelayMs;
 }
 
+// Полевые спрайты самолётов нарисованы БЕЗ тени, в отличие от иконок счётчика, где
+// тень запечена в картинку и потому едет вместе с кадром. В горизонтали собираем значок
+// из полевого спрайта: сам самолёт поворачивается вместе с кадром, как ему и положено,
+// а тень рисуем отдельно и кладём туда, куда она падает в портрете — влево-вниз ЭКРАНА.
+//
+// Силуэт для тени строится через source-in, то есть без чтения пикселей: «испачканный»
+// холст (страницу открыли файлом с диска) здесь ничему не мешает.
+const COUNTER_PLANE_FIELD_SPRITE_ROTATION = Object.freeze({
+  // Носом туда же, куда смотрят самолёты этой стороны на поле: синие летят влево
+  // по экрану, зелёные — вправо. Полевой спрайт нарисован носом вверх.
+  blue: Math.PI,
+  green: 0,
+});
+// Полевой спрайт занимает свой холст целиком, а у иконки счётчика самолёт был меньше
+// холста (33 из 39x44). Поджимаем, чтобы значок читался того же размера, что и раньше.
+const COUNTER_PLANE_FIELD_SPRITE_SCALE = 0.8;
+// Доли от самого самолёта, снятые с портретной иконки: там тень запечена со сдвигом на
+// 5 влево и 10 вниз при размере самолёта в 33 пикселя.
+const COUNTER_PLANE_SHADOW_SCREEN_OFFSET = Object.freeze({ x: -5 / 33, y: 10 / 33 });
+const COUNTER_PLANE_SHADOW_ALPHA = 215 / 255;
+const COUNTER_PLANE_SHADOW_BLUR_PX = 1;
+const COUNTER_PLANE_SHADOW_PADDING = 4;
+const counterPlaneShadowCache = new Map();
+
+function getCounterPlaneFieldSprite(color){
+  const img = color === "blue" ? bluePlaneImg : color === "green" ? greenPlaneImg : null;
+  return isSpriteReady(img) ? img : null;
+}
+
+function buildCounterPlaneShadow(img){
+  const w = img?.naturalWidth | 0;
+  const h = img?.naturalHeight | 0;
+  if (!(w > 0 && h > 0)) return null;
+  if (typeof document === "undefined" || typeof document.createElement !== "function") return null;
+
+  const pad = COUNTER_PLANE_SHADOW_PADDING;
+  const canvas = document.createElement("canvas");
+  canvas.width = w + pad * 2;
+  canvas.height = h + pad * 2;
+  const shadowCtx = canvas.getContext("2d");
+  if (!shadowCtx) return null;
+
+  // Запечённая тень размыта по краю — повторяем это, иначе силуэт читается вырезанным.
+  // Запас по краям холста нужен, чтобы размытие не срезалось.
+  shadowCtx.filter = `blur(${COUNTER_PLANE_SHADOW_BLUR_PX}px)`;
+  shadowCtx.drawImage(img, pad, pad);
+  shadowCtx.filter = "none";
+  shadowCtx.globalCompositeOperation = "source-in";
+  shadowCtx.fillStyle = `rgba(0, 0, 0, ${COUNTER_PLANE_SHADOW_ALPHA})`;
+  shadowCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+  return { canvas, width: w, height: h, pad };
+}
+
+function getCounterPlaneShadow(color, img){
+  const cached = counterPlaneShadowCache.get(color);
+  if (cached && cached.source === img) return cached.shadow;
+  const shadow = buildCounterPlaneShadow(img);
+  counterPlaneShadowCache.set(color, { source: img, shadow });
+  return shadow;
+}
+
 function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
   ctx2d.save();
   ctx2d.translate(x, y);
-  if (isBoardLandscapeActive()) {
-    // См. withUprightHudIcon: иначе значок самолёта лежит на боку и его тень уезжает вверх.
-    ctx2d.rotate(-Math.PI / 2);
-  }
 
   const style = getHudPlaneStyle(color);
   const styleScale = Number.isFinite(style?.scale) && style.scale > 0 ? style.scale : 1;
@@ -48665,7 +48723,48 @@ function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
     img.naturalHeight > 0
   );
 
-  if (spriteReady) {
+  // В горизонтали значок собирается из полевого спрайта — он без запечённой тени.
+  const fieldSprite = isBoardLandscapeActive() ? getCounterPlaneFieldSprite(color) : null;
+
+  if (fieldSprite) {
+    const rotation = COUNTER_PLANE_FIELD_SPRITE_ROTATION[color] ?? 0;
+    const shadow = getCounterPlaneShadow(color, fieldSprite);
+
+    const drawSize = size * COUNTER_PLANE_FIELD_SPRITE_SCALE;
+
+    // Тень падает влево-вниз ЭКРАНА, а кадр повёрнут на +90°, поэтому экранное (-x, +y) —
+    // это кадровое (+y, +x). Сдвиг живёт СНАРУЖИ поворота спрайта: самолёт разворачивается
+    // вместе с кадром, а тень остаётся на своём месте относительно экрана.
+    const shadowFrameX = COUNTER_PLANE_SHADOW_SCREEN_OFFSET.y * drawSize;
+    const shadowFrameY = -COUNTER_PLANE_SHADOW_SCREEN_OFFSET.x * drawSize;
+    // Пару «самолёт + тень» центруем в клетке, разводя половинки сдвига в разные стороны —
+    // ровно так же обрезан портретный спрайт. Иначе тень вылезает на стену поля.
+    const pairX = -shadowFrameX / 2;
+    const pairY = -shadowFrameY / 2;
+
+    if (shadow) {
+      const padX = shadow.pad * (drawSize / shadow.width);
+      const padY = shadow.pad * (drawSize / shadow.height);
+
+      ctx2d.save();
+      ctx2d.translate(pairX + shadowFrameX, pairY + shadowFrameY);
+      ctx2d.rotate(rotation);
+      ctx2d.drawImage(
+        shadow.canvas,
+        -drawSize / 2 - padX,
+        -drawSize / 2 - padY,
+        drawSize + padX * 2,
+        drawSize + padY * 2
+      );
+      ctx2d.restore();
+    }
+
+    ctx2d.save();
+    ctx2d.translate(pairX, pairY);
+    ctx2d.rotate(rotation);
+    ctx2d.drawImage(fieldSprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+    ctx2d.restore();
+  } else if (spriteReady) {
     ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
   } else {
     // Fallback to simple outline if the counter icon isn't ready yet
@@ -50166,6 +50265,9 @@ function getHudCanvasSignature(now){
     currentPlacer,
     DEBUG_LAYOUT ? 1 : 0,
     isArcadeScoreUiActive() ? 1 : 0,
+    // Иконки счётчиков рисуются по-разному в двух ориентациях, а размер холста при
+    // повороте не меняется — без этого табло осталось бы старым до страховочного срока.
+    isBoardLandscapeActive() ? 1 : 0,
     blueScore,
     greenScore,
   ];

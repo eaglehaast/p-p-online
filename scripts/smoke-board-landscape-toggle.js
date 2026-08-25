@@ -787,18 +787,94 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
   assert(!/(?<!c)\bctx\.drawImage\(/.test(matchScore),
     '15g: в счёте матча не осталось прямых ctx.drawImage — иначе иконка ляжет на бок');
 
-  // Счётчик самолётов наверху разворачивается сам, до отрисовки спрайта.
-  const counter = extractFunctionSource(source, 'drawPlaneCounterIcon');
-  const flat = counter.replace(/\n\s*/g, ' ');
-  assert(/ctx2d\.translate\(x, y\); if \(isBoardLandscapeActive\(\)\) \{[^}]*ctx2d\.rotate\(-Math\.PI \/ 2\);/.test(flat),
-    '15h: значок самолёта разворачивается сразу после переноса в свой центр');
-  assert(flat.indexOf('rotate(-Math.PI / 2)') < flat.indexOf('ctx2d.drawImage(img'),
-    '15i: разворот стоит ДО отрисовки спрайта');
-
   // Песочные часы возрождения в аркаде: цифра внутри, лежать на боку ей нельзя.
   const timer = extractFunctionSource(source, 'drawHudPlaneTimerOverlay');
   assert(/withUprightHudIcon\(ctx2d, cx, cy,/.test(timer),
     '15j: таймер возрождения тоже ставится прямо');
+
+  // Ориентация обязана попасть в подпись табло: размер холста при повороте не меняется,
+  // и без неё счётчики остались бы нарисованными по-старому до страховочного срока.
+  const signature = extractFunctionSource(source, 'getHudCanvasSignature');
+  assert(/isBoardLandscapeActive\(\) \? 1 : 0/.test(signature),
+    '15k: подпись табло различает ориентации');
+}
+
+// === 16. Значок счётчика в горизонтали — полевой спрайт, а тень рисуется отдельно ===
+//
+// У иконок счётчика тень запечена в картинку, поэтому она едет вместе с кадром: развернуть
+// её отдельно от самолёта нельзя никаким преобразованием. Полевые спрайты нарисованы БЕЗ
+// тени — в горизонтали берём их, а тень кладём сами, туда же, куда она падает в портрете.
+{
+  const counter = extractFunctionSource(source, 'drawPlaneCounterIcon');
+  const picker = extractFunctionSource(source, 'getCounterPlaneFieldSprite');
+  const builder = extractFunctionSource(source, 'buildCounterPlaneShadow');
+
+  // Берём именно полевые спрайты, и оба цвета — иначе стороны выглядели бы по-разному.
+  assert(/color === "blue" \? bluePlaneImg : color === "green" \? greenPlaneImg : null/.test(picker),
+    '16a: значок в горизонтали берётся из полевых спрайтов, и синий, и зелёный');
+  assert(/isBoardLandscapeActive\(\) \? getCounterPlaneFieldSprite\(color\) : null/.test(counter),
+    '16b: полевой спрайт подставляется ТОЛЬКО в горизонтали — портрет остаётся на прежней иконке');
+  assert(/} else if \(spriteReady\) \{[\s\S]{0,120}ctx2d\.drawImage\(img, -size \/ 2, -size \/ 2, size, size\);/.test(counter),
+    '16c: в портрете (и пока полевой спрайт не загружен) рисуется прежняя иконка счётчика');
+  assert(/img = blueCounterPlaneImg;/.test(counter) && /img = greenCounterPlaneImg;/.test(counter),
+    '16d: портретная иконка счётчика никуда не делась');
+
+  // Разворот: нос туда же, куда смотрят самолёты этой стороны на поле. Стороны
+  // противоположны, значит и развороты обязаны отличаться ровно на 180°.
+  const rot = source.slice(source.indexOf('const COUNTER_PLANE_FIELD_SPRITE_ROTATION'));
+  const rotBody = rot.slice(0, rot.indexOf('});'));
+  const blueRot = /blue:\s*Math\.PI\s*,/.test(rotBody);
+  const greenRot = /green:\s*0\s*,/.test(rotBody);
+  assert(blueRot && greenRot,
+    '16e: синий развёрнут на 180°, зелёный не развёрнут — носами навстречу, как на поле');
+  assert(/ctx2d\.rotate\(rotation\);/.test(counter),
+    '16f: разворот применяется к спрайту');
+
+  // Сдвиг тени обязан жить СНАРУЖИ поворота: иначе, развернув синего на 180°, мы утащим
+  // его тень наверх и получим ровно ту же болезнь, что и с запечённой тенью.
+  const flat = counter.replace(/\n\s*/g, ' ');
+  assert(flat.indexOf('ctx2d.translate(pairX + shadowFrameX, pairY + shadowFrameY);')
+       < flat.indexOf('ctx2d.rotate(rotation); ctx2d.drawImage( shadow.canvas'),
+    '16g: тень сдвигается ДО поворота спрайта, то есть в координатах кадра, а не спрайта');
+
+  // Экранное направление тени обязано совпасть с портретным: влево и вниз.
+  const off = source.match(/const COUNTER_PLANE_SHADOW_SCREEN_OFFSET = Object\.freeze\(\{ x: (-?[\d./\s]+), y: (-?[\d./\s]+) \}\);/);
+  assert(off, '16h: сдвиг тени задан константой');
+  const ox = eval(off[1]);
+  const oy = eval(off[2]);
+  assert(ox < 0 && oy > 0, `16i: в портрете тень падает влево-вниз (${ox}, ${oy})`);
+  // В коде: shadowFrameX = oy * D, shadowFrameY = -ox * D — это кадровые координаты.
+  assert(/const shadowFrameX = COUNTER_PLANE_SHADOW_SCREEN_OFFSET\.y \* drawSize;/.test(counter)
+    && /const shadowFrameY = -COUNTER_PLANE_SHADOW_SCREEN_OFFSET\.x \* drawSize;/.test(counter),
+    '16j: кадровый сдвиг тени собран из портретного поворотом на -90°');
+  // Кадр повёрнут на +90°, поэтому кадровое (du, dv) видно на экране как (-dv, du).
+  const seenX = -(-ox);
+  const seenY = oy;
+  assert(seenX === ox && seenY === oy,
+    `16k: на экране тень падает туда же, куда в портрете (${seenX}, ${seenY}) против (${ox}, ${oy})`);
+
+  // Пара «самолёт + тень» центруется в клетке, иначе тень вылезает на стену поля.
+  assert(/const pairX = -shadowFrameX \/ 2;/.test(counter) && /const pairY = -shadowFrameY \/ 2;/.test(counter),
+    '16l: половинки сдвига разводятся в разные стороны — пара стоит по центру клетки');
+
+  // Полевой спрайт занимает холст целиком, иконка счётчика — нет. Без поджатия значок
+  // вылезал бы из полосы.
+  const fit = source.match(/const COUNTER_PLANE_FIELD_SPRITE_SCALE = ([\d.]+);/);
+  assert(fit && Number(fit[1]) > 0 && Number(fit[1]) < 1,
+    '16m: полевой спрайт поджимается под клетку счётчика');
+  assert(/const drawSize = size \* COUNTER_PLANE_FIELD_SPRITE_SCALE;/.test(counter),
+    '16n: поджатие применяется к отрисовке');
+
+  // Силуэт строится композицией, БЕЗ чтения пикселей: иначе «испачканный» холст
+  // (страницу открыли файлом с диска) ронял бы значок.
+  assert(!/getImageData/.test(builder),
+    '16o: силуэт тени строится без getImageData — испачканный холст не мешает');
+  assert(/globalCompositeOperation = "source-in"/.test(builder),
+    '16p: тень — силуэт спрайта, залитый чёрным');
+  assert(/blur\(\$\{COUNTER_PLANE_SHADOW_BLUR_PX\}px\)/.test(builder),
+    '16q: край тени размывается, иначе она читается вырезанной');
+  assert(/canvas\.width = w \+ pad \* 2;/.test(builder),
+    '16r: у холста тени есть запас по краям, иначе размытие срежется');
 }
 
 // Уходя в меню, возвращаемся в портрет: иначе повёрнутым окажется и меню.
