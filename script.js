@@ -8100,10 +8100,13 @@ function isClearSkyMapMeta(mapLike){
   return mapId === CLEAR_SKY_MAP_ID || mapName === CLEAR_SKY_MAP_NAME;
 }
 
+// С чего игра открывается на старте. Это принудительный сброс: он выполняется ПОСЛЕ
+// loadSettings и перекрывает сохранённый выбор игрока — так было задумано изначально,
+// поэтому и «TEMP».
 const TEMP_MENU_STARTUP_DEFAULTS = Object.freeze({
   enabled: true,
-  mode: "computer",
-  ruleset: "advanced",
+  mode: "hotSeat",
+  ruleset: "classic",
   mapId: CLEAR_SKY_MAP_ID,
   mapName: CLEAR_SKY_MAP_NAME
 });
