@@ -15,6 +15,28 @@ const MAP_FALLBACK_SPRITE_PATHS = Object.freeze({
 const MAPS = [];
 const MAPS_MANIFEST_PATH = 'ui_gamescreen/maps/manifest.json';
 
+// «random» — не игровая карта, а пункт меню Advanced Settings: выбрав её, игрок играет
+// обычную ротацию по правилам Classic (первые раунды easy, дальше hard). Сама она в
+// ротацию не попадает, поэтому и опознаётся по id, а не по имени: имя видно игроку и
+// его могут переименовать.
+const RANDOM_MAP_ID = 'random';
+
+// Порядок карт в карусели: сначала «random», потом easy, потом hard, потом архив.
+// Внутри группы порядок манифеста сохраняется — мелкую очерёдность по-прежнему задаёт
+// человек, редактируя манифест, а группу карта получает автоматически.
+const MAP_ORDER_RANKS = Object.freeze({ random: 0, easy: 1, hard: 2, archive: 3 });
+
+function getMapOrderRank(map){
+  if(map?.id === RANDOM_MAP_ID) return MAP_ORDER_RANKS.random;
+  if(map?.archived === true) return MAP_ORDER_RANKS.archive;
+  return map?.tier === 'easy' ? MAP_ORDER_RANKS.easy : MAP_ORDER_RANKS.hard;
+}
+
+function sortMapsForCarousel(maps){
+  // Array.prototype.sort стабилен по стандарту, поэтому порядок внутри группы — манифестный.
+  return maps.slice().sort((a, b) => getMapOrderRank(a) - getMapOrderRank(b));
+}
+
 function normalizeImportedMapTier(rawTier){
   const normalized = typeof rawTier === 'string' ? rawTier.trim().toLowerCase() : '';
   if(normalized === 'easy'){
@@ -113,7 +135,7 @@ function collectMapSpritePathsFromSidebar(){
 const MAP_SPRITE_PATHS = Object.freeze(collectMapSpritePathsFromSidebar());
 
 async function initializeImportedJsonMaps(){
-  const importedMaps = await loadMapsFromManifest();
+  const importedMaps = sortMapsForCarousel(await loadMapsFromManifest());
   MAPS.splice(0, MAPS.length, ...importedMaps);
   window.dispatchEvent(new CustomEvent('paperWingsMapsReady', {
     detail: {
@@ -127,6 +149,7 @@ async function initializeImportedJsonMaps(){
 window.paperWingsMapsData = {
   MAP_RENDER_MODES,
   MAPS,
+  RANDOM_MAP_ID,
   MAPS_READY: initializeImportedJsonMaps(),
   MAP_SPRITE_PATHS,
   MAP_DEFAULT_SPRITE_NAME,

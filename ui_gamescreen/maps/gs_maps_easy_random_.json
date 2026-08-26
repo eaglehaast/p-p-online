@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "map": {
-    "id": "clearSky",
-    "name": "?",
+    "id": "random",
+    "name": "random",
     "mode": "data",
     "tier": "easy",
     "difficulty": "easy",

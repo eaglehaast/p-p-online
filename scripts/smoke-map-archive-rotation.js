@@ -43,8 +43,16 @@ const MAPS = [
 
 const PLACEMENTS = { easyMoved: 'hard', easyArchivedLocal: 'archive' };
 
+// Карту-пункт «random» этот стенд не моделирует: здесь проверяется ротация обычных карт.
+// Id берём из maps.js, чтобы стенд не разошёлся с игрой, если id когда-нибудь сменят.
+const RANDOM_MAP_ID = fs.readFileSync('maps.js', 'utf8').match(/const RANDOM_MAP_ID = '([^']+)';/)?.[1];
+assert(RANDOM_MAP_ID, 'не нашёл id карты-пункта в maps.js');
+assert(!MAPS.some(map => map.id === RANDOM_MAP_ID),
+  'в наборе стенда не должно быть карты-пункта, иначе индексы ниже сдвинутся');
+
 const context = {
   MAPS,
+  RANDOM_MAP_ID,
   MAP_TESTER_PLACEMENTS: Object.freeze(['easy', 'hard', 'archive']),
   loadMapTesterPlacements: () => PLACEMENTS
 };

@@ -8106,9 +8106,9 @@ function isClearSkyMapMeta(mapLike){
 const TEMP_MENU_STARTUP_DEFAULTS = Object.freeze({
   enabled: true,
   mode: "hotSeat",
-  ruleset: "classic",
-  mapId: CLEAR_SKY_MAP_ID,
-  mapName: CLEAR_SKY_MAP_NAME
+  ruleset: "classic"
+  // Стартовая карта здесь не задаётся: список карт на этот момент ещё не загружен,
+  // поэтому её выбирает resolveStartupMapIndex по порядку карусели.
 });
 
 function normalizeGameMode(mode){
@@ -10988,6 +10988,7 @@ const MAP_SPRITE_COLLIDER_OVERRIDES = Object.freeze({
 const MAP_RENDER_MODES = mapDataBridge.MAP_RENDER_MODES || { DATA: 'data' };
 const MAPS = Array.isArray(mapDataBridge.MAPS) ? mapDataBridge.MAPS : [];
 const MAPS_READY = mapDataBridge.MAPS_READY;
+const RANDOM_MAP_ID = mapDataBridge.RANDOM_MAP_ID || 'random';
 
 async function ensureMapsDataReady(){
   if(MAPS.length > 0){
@@ -11304,8 +11305,16 @@ function serializeCurrentMapState(options = {}){
   };
 }
 
+// Карта «random» — это пункт меню, а не поле: выбрав её, игрок играет обычную ротацию
+// (первые раунды easy, дальше hard). Ищем по id: имя видно игроку и может измениться.
+// Раньше здесь искалось имя 'random map', которого не было ни у одной карты, — поиск
+// всегда возвращал -1, и вся ветка «случайная карта» никогда не срабатывала.
 function getRandomMapSentinelIndex(){
-  return MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
+  return MAPS.findIndex(map => map?.id === RANDOM_MAP_ID);
+}
+
+function isRandomMapSentinel(map){
+  return map?.id === RANDOM_MAP_ID;
 }
 
 function getPlayableMapIndices(){
@@ -11443,15 +11452,14 @@ function clampMapIndex(index){
   return Math.min(MAPS.length - 1, Math.max(0, numericIndex));
 }
 
-function resolveClearSkyMapIndex(){
-  const fallbackIndex = 0;
-  if(!Array.isArray(MAPS) || !MAPS.length){
-    return fallbackIndex;
-  }
-
-  const byIdOrNameIndex = MAPS.findIndex((map) => isClearSkyMapMeta(map));
-
-  return byIdOrNameIndex >= 0 ? byIdOrNameIndex : fallbackIndex;
+// Сброс выполняется синхронно при разборе скрипта, а MAPS приезжают асинхронно, поэтому
+// искать карту здесь по id бесполезно — список ещё пуст. Опираемся на порядок карусели:
+// «random» в ней стоит первой, значит нужный индекс — 0 и до загрузки, и после. Именно на
+// этом и спотыкался прежний стартовый выбор Clear Sky: поиск не находил ничего, индекс
+// схлопывался в 0, и открывалась просто первая карта манифеста.
+function resolveStartupMapIndex(){
+  const sentinelIndex = getRandomMapSentinelIndex();
+  return sentinelIndex >= 0 ? sentinelIndex : 0;
 }
 
 function applyTemporaryMenuStartupDefaults(){
@@ -11461,7 +11469,7 @@ function applyTemporaryMenuStartupDefaults(){
 
   selectedMode = TEMP_MENU_STARTUP_DEFAULTS.mode;
   selectedRuleset = TEMP_MENU_STARTUP_DEFAULTS.ruleset;
-  settings.mapIndex = clampMapIndex(resolveClearSkyMapIndex());
+  settings.mapIndex = clampMapIndex(resolveStartupMapIndex());
 }
 
 function setStoredSetting(key, value){
@@ -51371,6 +51379,8 @@ function renderMapTesterLists(){
 
   MAPS.forEach((map, mapIndex) => {
     if(!map || typeof map.id !== "string") return;
+    // «random» — пункт меню Advanced Settings, а не поле: тестировать в ней нечего.
+    if(isRandomMapSentinel(map)) return;
     const placement = getMapEffectivePlacement(map);
     if(placement === "archive"){
       archivedCount += 1;
