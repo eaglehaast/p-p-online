@@ -51447,40 +51447,53 @@ function syncMapTesterArchiveUi(archivedCount){
   }
 }
 
+// Текст, который кладёт в буфер кнопка «копировать пометки». Главное в нём — РАСКЛАДКА:
+// какая карта в какой категории лежит. Раскладка живёт в localStorage этого браузера, и
+// перенести её в json можно только переписав её руками, поэтому она идёт первой и
+// разложена по категориям. Дальше — чем раскладка отличается от json (ровно тот список
+// правок, который нужно применить), и только потом сами пометки.
+//
+// Раньше список категорий был размазан по строке «без пометки» вперемешку с остальным, и
+// вытащить из него раскладку было нечем.
 function buildMapTesterMarksSummary(){
   const marks = loadMapTesterMarks();
-  const groups = { keep: [], rework: [], archive: [], delete: [], moved: [], unmarked: [] };
+  const roster = { easy: [], hard: [], archive: [] };
+  const moved = [];
+  const marked = { keep: [], rework: [], archive: [], delete: [] };
+  let unmarkedCount = 0;
 
   for(const map of MAPS){
     if(!map || typeof map.id !== "string") continue;
+    // Карта-пункт «random» — не поле, её нет и в самом окне тестера.
+    if(isRandomMapSentinel(map)) continue;
+
     const naturalPlacement = getMapNaturalPlacement(map);
     const placement = getMapEffectivePlacement(map);
-    const entry = `${placement} ${describeMapTesterMap(map)}`;
-    const mark = marks[map.id];
-    let grouped = false;
+    const label = describeMapTesterMap(map);
 
-    if(groups[mark]){
-      groups[mark].push(entry);
-      grouped = true;
-    }
-    // Перетаскивание строки в другой список — отдельная запись:
-    // по ней меняется tier / флаг archived в JSON карты.
+    if(roster[placement]) roster[placement].push(label);
     if(placement !== naturalPlacement){
-      groups.moved.push(`${describeMapTesterMap(map)}: ${naturalPlacement} → ${placement}`);
-      grouped = true;
+      moved.push(`${label}: ${naturalPlacement} → ${placement}`);
     }
-    if(!grouped){
-      groups.unmarked.push(entry);
-    }
+
+    const mark = marks[map.id];
+    if(marked[mark]) marked[mark].push(label);
+    else unmarkedCount += 1;
   }
 
-  const lines = ["Пометки Map Tester:"];
-  lines.push(`оставить: ${groups.keep.length ? groups.keep.join(", ") : "—"}`);
-  lines.push(`доработать: ${groups.rework.length ? groups.rework.join(", ") : "—"}`);
-  lines.push(`в архив (A): ${groups.archive.length ? groups.archive.join(", ") : "—"}`);
-  lines.push(`удалить (D): ${groups.delete.length ? groups.delete.join(", ") : "—"}`);
-  lines.push(`перемещены в окне: ${groups.moved.length ? groups.moved.join(", ") : "—"}`);
-  lines.push(`без пометки: ${groups.unmarked.length ? groups.unmarked.join(", ") : "—"}`);
+  const list = (items) => (items.length ? items.join(", ") : "—");
+  const lines = ["Карты Map Tester — раскладка:"];
+  lines.push(`Easy (${roster.easy.length}): ${list(roster.easy)}`);
+  lines.push(`Hard (${roster.hard.length}): ${list(roster.hard)}`);
+  lines.push(`Archive (${roster.archive.length}): ${list(roster.archive)}`);
+  lines.push("");
+  lines.push(`Отличается от json (${moved.length}): ${list(moved)}`);
+  lines.push("");
+  lines.push("Пометки:");
+  for(const { mark, glyph } of MAP_TESTER_MARK_BUTTONS){
+    lines.push(`  ${MAP_TESTER_MARK_LABELS[mark]} (${glyph}): ${list(marked[mark])}`);
+  }
+  lines.push(`  без пометки: ${unmarkedCount}`);
   return lines.join("\n");
 }
 
