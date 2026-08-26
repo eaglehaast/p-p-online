@@ -77,10 +77,15 @@ const RANDOM_MAP_ID = idMatch[1];
 
   // Тот самый косяк, из-за которого id пришлось разводить.
   const collisions = [...byId.entries()].filter(([, list]) => list.length > 1);
+  assert(collisions.length === 0,
+    `1f: у карт не должно быть одинаковых id: ${collisions.map(([id]) => id).join(', ')}`);
+
+  // Файл карты, которого нет в манифесте, в игру не попадает и живёт мёртвым грузом —
+  // именно так тут завёлся дубль Pebbles с тем же id.
   const loaded = new Set(manifest);
-  const loadedCollisions = collisions.filter(([, list]) => list.filter(f => loaded.has(f)).length > 1);
-  assert(loadedCollisions.length === 0,
-    `1f: у загружаемых карт не должно быть одинаковых id: ${loadedCollisions.map(([id]) => id).join(', ')}`);
+  const orphans = [...byId.values()].flat().filter((file) => !loaded.has(file));
+  assert(orphans.length === 0,
+    `1g: каждый файл карты перечислен в манифесте, иначе он мёртвый груз: ${orphans.join(', ')}`);
 }
 
 // === 2. Обе стороны ищут карту по одному и тому же id ===
