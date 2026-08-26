@@ -4,8 +4,8 @@
     "id": "1336_v2",
     "name": "13:36_v2",
     "mode": "data",
-    "tier": "hard",
-    "difficulty": "hard",
+    "tier": "easy",
+    "difficulty": "easy",
     "sprites": [
       {
         "spriteName": "brick_1_default",
@@ -367,7 +367,6 @@
           "height": 20
         }
       }
-    ],
-    "archived": true
+    ]
   }
 }

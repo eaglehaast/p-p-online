@@ -1,490 +1,435 @@
 {
   "formatVersion": 1,
   "map": {
-    "id": "fiveBricks",
-    "name": "fiveBricks",
+    "id": "fiveBrick2",
+    "name": "fiveBrick2",
     "mode": "data",
+    "tier": "easy",
+    "difficulty": "easy",
     "sprites": [
       {
-        "id": "brick_v_left_1",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 20,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_1"
       },
       {
-        "id": "brick_v_left_2",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 60,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_2"
       },
       {
-        "id": "brick_v_left_3",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 100,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_3"
       },
       {
-        "id": "brick_v_left_4",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 140,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_4"
       },
       {
-        "id": "brick_v_left_5",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 180,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_5"
       },
       {
-        "id": "brick_v_left_6",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 220,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_6"
       },
       {
-        "id": "brick_v_left_7",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 260,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_7"
       },
       {
-        "id": "brick_v_left_8",
-        "spriteName": "brick_1_default",
-        "x": 0,
-        "y": 300,
-        "rotate": 0,
-        "scale": 1
-      },
-      {
-        "id": "brick_v_left_9",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 340,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_9"
       },
       {
-        "id": "brick_v_left_10",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 380,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_10"
       },
       {
-        "id": "brick_v_left_11",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 420,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_11"
       },
       {
-        "id": "brick_v_left_12",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 460,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_12"
       },
       {
-        "id": "brick_v_left_13",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 500,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_13"
       },
       {
-        "id": "brick_v_left_14",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 540,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_14"
       },
       {
-        "id": "brick_v_left_15",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 580,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_left_15"
       },
       {
-        "id": "brick_v_right_1",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 20,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_1"
       },
       {
-        "id": "brick_v_right_2",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 60,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_2"
       },
       {
-        "id": "brick_v_right_3",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 100,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_3"
       },
       {
-        "id": "brick_v_right_4",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 140,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_4"
       },
       {
-        "id": "brick_v_right_5",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 180,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_5"
       },
       {
-        "id": "brick_v_right_6",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 220,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_6"
       },
       {
-        "id": "brick_v_right_7",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 260,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_7"
       },
       {
-        "id": "brick_v_right_8",
-        "spriteName": "brick_1_default",
-        "x": 340,
-        "y": 300,
-        "rotate": 0,
-        "scale": 1
-      },
-      {
-        "id": "brick_v_right_9",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 340,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_9"
       },
       {
-        "id": "brick_v_right_10",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 380,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_10"
       },
       {
-        "id": "brick_v_right_11",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 420,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_11"
       },
       {
-        "id": "brick_v_right_12",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 460,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_12"
       },
       {
-        "id": "brick_v_right_13",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 500,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_13"
       },
       {
-        "id": "brick_v_right_14",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 540,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_14"
       },
       {
-        "id": "brick_v_right_15",
         "spriteName": "brick_1_default",
         "x": 340,
         "y": 580,
-        "rotate": 0,
-        "scale": 1
+        "id": "brick_v_right_15"
       },
       {
-        "id": "brick_h_top_01",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 0,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_top_01"
       },
       {
-        "id": "brick_h_top_02",
         "spriteName": "brick_1_default",
         "x": 40,
         "y": 0,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_top_02"
       },
       {
-        "id": "brick_h_top_03",
         "spriteName": "brick_1_default",
         "x": 80,
         "y": 0,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_top_03"
       },
       {
-        "id": "brick_h_top_04",
         "spriteName": "brick_1_default",
         "x": 120,
         "y": 0,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_top_04"
       },
       {
-        "id": "brick_h_top_05",
         "spriteName": "brick_1_default",
         "x": 160,
         "y": 0,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_top_05"
       },
       {
-        "id": "brick_h_top_06",
         "spriteName": "brick_1_default",
         "x": 200,
         "y": 0,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_top_06"
       },
       {
-        "id": "brick_h_top_07",
         "spriteName": "brick_1_default",
         "x": 240,
         "y": 0,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_top_07"
       },
       {
-        "id": "brick_h_top_08",
         "spriteName": "brick_1_default",
         "x": 280,
         "y": 0,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_top_08"
       },
       {
-        "id": "brick_h_top_09",
         "spriteName": "brick_1_default",
         "x": 320,
         "y": 0,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_top_09"
       },
       {
-        "id": "brick_h_bottom_01",
         "spriteName": "brick_1_default",
         "x": 0,
         "y": 620,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_bottom_01"
       },
       {
-        "id": "brick_h_bottom_02",
         "spriteName": "brick_1_default",
         "x": 40,
         "y": 620,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_bottom_02"
       },
       {
-        "id": "brick_h_bottom_03",
         "spriteName": "brick_1_default",
         "x": 80,
         "y": 620,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_bottom_03"
       },
       {
-        "id": "brick_h_bottom_04",
         "spriteName": "brick_1_default",
         "x": 120,
         "y": 620,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_bottom_04"
       },
       {
-        "id": "brick_h_bottom_05",
         "spriteName": "brick_1_default",
         "x": 160,
         "y": 620,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_bottom_05"
       },
       {
-        "id": "brick_h_bottom_06",
         "spriteName": "brick_1_default",
         "x": 200,
         "y": 620,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_bottom_06"
       },
       {
-        "id": "brick_h_bottom_07",
         "spriteName": "brick_1_default",
         "x": 240,
         "y": 620,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_bottom_07"
       },
       {
-        "id": "brick_h_bottom_08",
         "spriteName": "brick_1_default",
         "x": 280,
         "y": 620,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_bottom_08"
       },
       {
-        "id": "brick_h_bottom_09",
         "spriteName": "brick_1_default",
         "x": 320,
         "y": 620,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick_h_bottom_09"
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
-        "x": 80,
+        "x": 100,
         "y": 220,
         "rotate": -90,
-        "scale": -1
+        "scaleX": -1,
+        "scaleY": -1
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
-        "x": 120,
+        "x": 60,
         "y": 220,
         "rotate": -90,
-        "scale": -1
+        "scaleX": -1,
+        "scaleY": -1
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
         "x": 200,
         "y": 220,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick1"
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
         "x": 240,
         "y": 220,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick1"
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
         "x": 140,
         "y": 310,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick1"
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
         "x": 180,
         "y": 310,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick1"
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
         "x": 80,
         "y": 400,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick1"
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
         "x": 120,
         "y": 400,
         "rotate": -90,
-        "scale": -1
+        "scale": -1,
+        "id": "brick1"
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
-        "x": 200,
+        "x": 220,
         "y": 400,
         "rotate": -90,
-        "scale": -1
+        "scaleX": -1,
+        "scaleY": -1
       },
       {
-        "id": "brick1",
         "spriteName": "brick_1_default",
-        "x": 240,
+        "x": 260,
         "y": 400,
         "rotate": -90,
-        "scale": -1
+        "scaleX": -1,
+        "scaleY": -1
+      },
+      {
+        "spriteName": "brick_6_45",
+        "x": 320,
+        "y": 300
+      },
+      {
+        "spriteName": "brick_6_45",
+        "x": 0,
+        "y": 300
       }
     ],
-    "tier": "easy",
     "flags": [
       {
+        "id": "blue-0",
         "color": "blue",
-        "x": 170,
-        "y": 41,
-        "width": 20,
-        "height": 20
+        "layout": {
+          "x": 170,
+          "y": 41,
+          "width": 20,
+          "height": 20
+        }
       },
       {
+        "id": "green-1",
         "color": "green",
-        "x": 170,
-        "y": 568,
-        "width": 20,
-        "height": 20
+        "layout": {
+          "x": 170,
+          "y": 568,
+          "width": 20,
+          "height": 20
+        }
       }
     ]
   }
