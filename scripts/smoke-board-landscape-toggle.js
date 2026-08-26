@@ -56,6 +56,7 @@ const buildContext = ({ landscape, scale = 1, frameLeft = 0, frameTop = 0 } = {}
   };
   vm.createContext(context);
   vm.runInContext(extractFunctionSource(source, 'isBoardLandscapeActive'), context);
+  vm.runInContext(extractFunctionSource(source, 'getUiFrameScales'), context);
   vm.runInContext(extractFunctionSource(source, 'toDesignCoords'), context);
   return context;
 };
@@ -186,6 +187,20 @@ assert(/element\.style\.transform = withLandscapeUprightTransform\('translate\(-
 // садится в одном месте, а готовый ящик появляется в другом.
 assert(/originX = \(-CARGO_ANIM_OFFSET_X \+ crateSize\.width \/ 2\) \* scaleX/.test(source),
   '7g: анимация груза разворачивается вокруг точки приземления ящика');
+// Мина: у спрайта горизонтальный поясок и блик сверху справа, поэтому на боку она
+// читается как повешенная. Разворачиваем её встречно, а покачивание идёт ПОВЕРХ
+// разворота — иначе оно либо потеряется, либо начнёт качать её вокруг чужой оси.
+{
+  const mines = source.slice(source.indexOf('function drawMines('));
+  const body = mines.slice(0, mines.indexOf('\n}'));
+  assert(/const uprightRad = isBoardLandscapeActive\(\) \? -Math\.PI \/ 2 : 0;/.test(body),
+    '7h: мина разворачивается встречно только в горизонтали');
+  assert(/gsBoardCtx\.rotate\(uprightRad \+ swayRad\);/.test(body),
+    '7i: покачивание складывается с разворотом, а не заменяет его');
+  assert(/gsBoardCtx\.translate\(mine\.x, mine\.y\);\s*\n\s*gsBoardCtx\.rotate\(/.test(body),
+    '7j: поворот идёт вокруг центра мины, иначе она уедет с места');
+}
+
 // Флаг разворачивается ровно (на боку он читается плохо), а БАЗА намеренно едет
 // вместе с полем — в той же системе координат, что самолёты: развёрнутая корзинка
 // не помещается в свою клетку, а боком читается нормально.
