@@ -343,6 +343,7 @@
       }
     ],
     "tier": "hard",
-    "difficulty": "hard"
+    "difficulty": "hard",
+    "archived": true
   }
 }

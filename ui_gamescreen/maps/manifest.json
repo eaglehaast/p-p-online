@@ -1,10 +1,10 @@
 {
   "maps": [
-    "ui_gamescreen/maps/gs_maps_easy_Pebbles.json",
+    "ui_gamescreen/maps/gs_maps_easy_random_.json",
+    "ui_gamescreen/maps/gs_maps_easy_fiveBrick2_v2.json",
     "ui_gamescreen/maps/gs_maps_easy_TwinGate.json",
     "ui_gamescreen/maps/gs_maps_hard_arena.json",
     "ui_gamescreen/maps/gs_maps_hard_clearSky.json",
-    "ui_gamescreen/maps/gs_maps_easy_fiveBricks.json",
     "ui_gamescreen/maps/gs_maps_hard_horserows.json",
     "ui_gamescreen/maps/gs_maps_easy_weakBrick.json",
     "ui_gamescreen/maps/gs_maps_hard_pockets2.json",
@@ -30,7 +30,6 @@
     "ui_gamescreen/maps/maps_9_august/gs_maps_easy_ladder.json",
     "ui_gamescreen/maps/maps_9_august/gs_maps_easy_ladder2.json",
     "ui_gamescreen/maps/maps_9_august/gs_maps_easy_pebbles_v2.json",
-    "ui_gamescreen/maps/maps_9_august/gs_maps_easy_rooms.json",
     "ui_gamescreen/maps/maps_9_august/gs_maps_easy_x2.json",
     "ui_gamescreen/maps/maps_9_august/gs_maps_hard_13_36.json",
     "ui_gamescreen/maps/maps_9_august/gs_maps_hard_13_36_v2.json",
@@ -44,6 +43,7 @@
     "ui_gamescreen/maps/maps_9_august/gs_maps_hard_sharpedge2.json",
     "ui_gamescreen/maps/maps_9_august/gs_maps_hard_sharpedge3.json",
     "ui_gamescreen/maps/maps_9_august/gs_maps_hard_trenches.json",
-    "ui_gamescreen/maps/maps_9_august/gs_maps_hard_turtle.json"
+    "ui_gamescreen/maps/maps_9_august/gs_maps_hard_turtle.json",
+    "ui_gamescreen/maps/gs_maps_hard_rooms2_v2.json"
   ]
 }
