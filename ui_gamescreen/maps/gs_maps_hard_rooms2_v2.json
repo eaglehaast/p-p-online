@@ -1,11 +1,11 @@
 {
   "formatVersion": 1,
   "map": {
-    "id": "rooms",
-    "name": "rooms",
+    "id": "rooms2",
+    "name": "rooms2",
     "mode": "data",
-    "tier": "easy",
-    "difficulty": "easy",
+    "tier": "hard",
+    "difficulty": "hard",
     "sprites": [
       {
         "spriteName": "brick_1_default",
@@ -335,14 +335,7 @@
       },
       {
         "spriteName": "brick_1_default",
-        "x": 140,
-        "y": 300,
-        "rotate": 90,
-        "scaleX": -1
-      },
-      {
-        "spriteName": "brick_1_default",
-        "x": 180,
+        "x": 160,
         "y": 300,
         "rotate": 90,
         "scaleX": -1
@@ -406,12 +399,7 @@
       {
         "spriteName": "brick_1_default",
         "x": 200,
-        "y": 260
-      },
-      {
-        "spriteName": "brick_1_default",
-        "x": 200,
-        "y": 320
+        "y": 280
       },
       {
         "spriteName": "brick_1_default",
@@ -424,6 +412,13 @@
         "spriteName": "brick_1_default",
         "x": 180,
         "y": 500,
+        "rotate": 90,
+        "scaleX": -1
+      },
+      {
+        "spriteName": "brick_1_default",
+        "x": 200,
+        "y": 320,
         "rotate": 90,
         "scaleX": -1
       }
@@ -449,7 +444,6 @@
           "height": 20
         }
       }
-    ],
-    "archived": true
+    ]
   }
 }
