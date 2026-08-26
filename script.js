@@ -266,14 +266,20 @@ function isBoardLandscapeActive(){
     && document.documentElement?.classList?.contains("is-board-landscape") === true;
 }
 
-function toDesignCoords(clientX, clientY) {
-  const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
+// Во сколько раз кадр растянут на экране. Единицы дизайна умножаются на это, чтобы
+// получить экранные пиксели, и делятся на это, чтобы вернуться обратно.
+function getUiFrameScales() {
   const rootStyle = window.getComputedStyle(document.documentElement);
   const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
   const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
   const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
   const pinchScale = getEffectivePinchScale();
-  const effectiveScale = uiScale * pinchScale;
+  return { uiScale, pinchScale, effectiveScale: uiScale * pinchScale };
+}
+
+function toDesignCoords(clientX, clientY) {
+  const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
+  const { uiScale, pinchScale, effectiveScale } = getUiFrameScales();
   const localX = (clientX - rect.left) / effectiveScale;
   const localY = (clientY - rect.top) / effectiveScale;
   if(isBoardLandscapeActive()){
@@ -3404,6 +3410,11 @@ const MINE_INVENTORY_ICON_PATH = "ui_gamescreen/gs_inventory/gs_inventory_mine.p
 // DRAG preview to this (instead of the inventory-icon SCREEN_PX) makes the mine the player
 // is dragging match how it will look once dropped — the player can size it up in place.
 // Falls back to SCREEN_PX before the board is laid out (board rect not measurable yet).
+//
+// getBoardCssRect отдаёт единицы ДИЗАЙНА (360x640), а не экранные пиксели, поэтому одного
+// отношения boardWidth/worldWidth мало: весь кадр ещё растянут на --ui-scale. Без этого
+// множителя перетаскиваемая мина была 22px против 35px у поставленной — в горизонтали
+// масштаб 1.6 против 1.075 в портрете, и потому там расхождение и бросалось в глаза.
 function getPlacedMineOnScreenSizePx(){
   let boardWidth = 0;
   try {
@@ -3418,7 +3429,8 @@ function getPlacedMineOnScreenSizePx(){
   if(!(boardWidth > 0) || !(worldWidth > 0)){
     return mineSizeRuntime.SCREEN_PX;
   }
-  const sizePx = mineSizeRuntime.LOGICAL_PX * (boardWidth / worldWidth);
+  const { effectiveScale } = getUiFrameScales();
+  const sizePx = mineSizeRuntime.LOGICAL_PX * (boardWidth / worldWidth) * effectiveScale;
   return Number.isFinite(sizePx) && sizePx > 0 ? sizePx : mineSizeRuntime.SCREEN_PX;
 }
 
@@ -49173,10 +49185,14 @@ function drawMines(){
     const phase = ((mine.x + mine.y) * 0.07) + i * 0.37;
     const swayDeg = Math.sin(globalFrame * FIELD_MINE_SWAY_OMEGA + phase) * FIELD_MINE_SWAY_DEG;
     const swayRad = swayDeg * Math.PI / 180;
+    // Спрайт мины нарисован с горизонтальным пояском и бликом сверху справа. В горизонтали
+    // холст повёрнут вместе с кадром, и мина ложится на бок — поясок встаёт вертикально.
+    // Разворачиваем её встречно вокруг собственного центра; покачивание идёт поверх.
+    const uprightRad = isBoardLandscapeActive() ? -Math.PI / 2 : 0;
 
     gsBoardCtx.save();
     gsBoardCtx.translate(mine.x, mine.y);
-    gsBoardCtx.rotate(swayRad);
+    gsBoardCtx.rotate(uprightRad + swayRad);
 
     if(isSpriteReady(mineIconSprite)){
       gsBoardCtx.drawImage(
