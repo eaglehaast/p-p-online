@@ -49942,9 +49942,19 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
     const srcW = Math.max(1, icon.naturalWidth - srcInset * 2);
     const srcH = Math.max(1, icon.naturalHeight - srcInset);
 
+    // В горизонтали полосы счёта лежат вдоль нижнего края экрана, и точка кадра (u,v)
+    // видна в (800 - v, u) — значит полоса с БОЛЬШИМ y кадра лежит ЛЕВЕЕ. Ряды нумеруются
+    // по возрастанию y, то есть по экрану идут справа налево: правая полоса набирается от
+    // своего края к центру сама собой, а левой ряды надо развернуть, иначе она набирается
+    // от центра наружу. В портрете полосы стоят одна под другой, там всё как было.
+    const fillsTowardScreenCentre = isBoardLandscapeActive()
+      && (spec.y + spec.height / 2) > FRAME_BASE_HEIGHT / 2;
+
     for (let i = 0; i < POINTS_TO_WIN; i += 1){
+      const row = Math.floor(i / 2);
+      const placedRow = fillsTowardScreenCentre ? (totalRows - 1 - row) : row;
       const localX = paddingX + (i % 2) * cellSize;
-      const localY = Math.min(maxTop, Math.floor(i / 2) * rowStride);
+      const localY = Math.min(maxTop, placedRow * rowStride);
 
       const centerX = Math.round(frame.left + (localX + cellSize / 2) * scaleX);
       const centerY = Math.round(frame.top + (localY + cellSize / 2) * scaleY);
