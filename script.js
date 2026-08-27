@@ -11656,8 +11656,55 @@ function loadSettingsForRuleset(ruleset = selectedRuleset){
   }
 }
 
+// Map Tester и Map Editor — инструменты разработки, игроку в меню они не нужны. Прячем
+// их по умолчанию и показываем консольной командой devToolsOn(). Выбор запоминается,
+// иначе его пришлось бы вводить после каждой перезагрузки.
+//
+// Приём тот же, что у отладочного лога ИИ (aiLogOn / aiLogOff / aiLogStatus).
+const DEV_TOOLS_STORAGE_KEY = "devTools.visible";
+const DEV_TOOLS_ROOT_CLASS = "dev-tools-on";
+// Режимы, в которые пускают только эти кнопки: пряча их, из такого режима надо выйти.
+const DEV_TOOLS_RULESETS = Object.freeze(["mapeditor", "maptester"]);
+
+function isDevToolsVisible(){
+  return getStoredSetting(DEV_TOOLS_STORAGE_KEY) === "true";
+}
+
+function applyDevToolsVisibility(){
+  const visible = isDevToolsVisible();
+  document.documentElement?.classList?.toggle(DEV_TOOLS_ROOT_CLASS, visible);
+
+  // Кнопки спрятаны, а игрок уже в режиме редактора — вернуться было бы нечем.
+  if(!visible && DEV_TOOLS_RULESETS.includes(selectedRuleset)){
+    selectedRuleset = "classic";
+    if(typeof loadSettingsForRuleset === "function") loadSettingsForRuleset(selectedRuleset);
+    if(typeof syncRulesButtonSkins === "function") syncRulesButtonSkins(selectedRuleset);
+  }
+  return visible;
+}
+
+function setDevToolsVisible(visible){
+  setStoredSetting(DEV_TOOLS_STORAGE_KEY, visible ? "true" : "false");
+  applyDevToolsVisibility();
+}
+
+if(typeof window !== "undefined"){
+  window.devToolsOn = function(){
+    setDevToolsVisible(true);
+    return "Map Tester и Map Editor показаны в меню. devToolsOff() — спрятать обратно.";
+  };
+  window.devToolsOff = function(){
+    setDevToolsVisible(false);
+    return "Map Tester и Map Editor спрятаны (по умолчанию). devToolsOn() — показать.";
+  };
+  window.devToolsStatus = function(){
+    return isDevToolsVisible() ? "visible" : "hidden";
+  };
+}
+
 loadSettings();
 applyTemporaryMenuStartupDefaults();
+applyDevToolsVisibility();
 syncInventoryVisibility();
 
 window.addEventListener('paperWingsSettingsChanged', (event) => {

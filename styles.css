@@ -2891,6 +2891,17 @@ body, button {
   z-index: 4;
 }
 
+/* Map Tester и Map Editor — инструменты разработки. В меню их нет, пока в консоли не
+   вызовут devToolsOn(): она вешает класс на корень документа. display:none заодно
+   убирает их из фокуса и из дерева доступности, то есть кнопку не нажать вслепую. */
+#menuLayer #modeMenu .mode-menu__btn--editor {
+  display: none;
+}
+
+html.dev-tools-on #menuLayer #modeMenu .mode-menu__btn--editor {
+  display: inline-flex;
+}
+
 #menuLayer #modeMenu .mode-menu__btn--editor span {
   pointer-events: none;
 }
