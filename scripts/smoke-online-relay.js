@@ -120,6 +120,7 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
     extractFunctionSource(source, 'isLocalColor'),
     extractFunctionSource(source, 'isAiColor'),
     extractFunctionSource(source, 'isRemoteColor'),
+    extractFunctionSource(source, 'resolveOnlineRelayAddress'),
     extractFunctionSource(source, 'parseOnlineSeatFromSearch'),
     extractFunctionSource(source, 'isOnlineHostSeat'),
     extractFunctionSource(source, 'getOnlineSeatColor'),
@@ -150,6 +151,7 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
     '  publishOnlineTurnMove, publishOnlineStateAfterTurn, publishOnlineRoomSettings,',
     '  collectOnlineRoomSettings, applyOnlineRoomSettings, loadMapTesterPlacements,',
     '  isOnlineHostSeat, isLocalColor, getSharedRandomFraction,',
+    '  parseOnlineSeatFromSearch, resolveOnlineRelayAddress,',
     '  session: () => onlineSession,',
     '  inboxSize: () => onlineInbox.length,',
     '  mapCache: () => [randomMapPairSequenceNumber, randomMapPairIndex],',
@@ -479,6 +481,57 @@ const relay = await import('../worker/room.js');
         `8d: у провода «${fnName}» есть «${key}» — снаружи провода неотличимы`);
     }
   }
+}
+
+// === 8a. relay=auto: адрес сокета выводится из того, как открыли страницу ===
+//
+// Нужно, когда сервером работает чей-то компьютер. Одна и та же ссылка открывается с
+// localhost, по локальной сети и через туннель, а адрес сокета каждый раз разный.
+// Вписанный руками, он верен ровно для одного из этих случаев — и это тот сорт ошибки,
+// где всё выглядит правильно, а соединения нет.
+{
+  const client = makeClient('blue', {});
+  const parse = client.api.parseOnlineSeatFromSearch;
+
+  assert(parse('?seat=blue&relay=auto', { protocol: 'http:', host: '192.168.1.5:8080' }).relay
+    === 'ws://192.168.1.5:8080',
+    '8a: по локальной сети адрес берётся из того, откуда открыта страница');
+  assert(parse('?seat=blue&relay=auto', { protocol: 'http:', host: 'localhost:8080' }).relay
+    === 'ws://localhost:8080',
+    '8a2: и с localhost тоже — та же ссылка, другой адрес');
+  assert(parse('?seat=blue&relay=auto', { protocol: 'https:', host: 'x.trycloudflare.com' }).relay
+    === 'wss://x.trycloudflare.com',
+    '8a3: через https — ОБЯЗАТЕЛЬНО wss: страница по https незашифрованный сокет не откроет, ' +
+    'браузер молча его отвергнет');
+
+  // Явный адрес не трогаем, и без relay остаётся настройка из кода.
+  assert(parse('?seat=blue&relay=wss://relay.example', { protocol: 'https:', host: 'x' }).relay
+    === 'wss://relay.example', '8a4: явно указанный адрес остаётся как есть');
+  const configured = source.match(/const ONLINE_RELAY_URL = "([^"]*)";/)[1];
+  assert(parse('?seat=blue', { protocol: 'https:', host: 'x' }).relay === configured,
+    '8a5: без relay в ссылке берётся настройка из кода');
+}
+
+// === 8b. Локальный сервер крутит ТУ ЖЕ комнату, что и облако ===
+//
+// Иначе «поиграть на своём компе» и «поиграть через облако» стали бы двумя разными
+// онлайнами, и починенное в одном не чинилось бы в другом.
+{
+  const local = fs.readFileSync('worker/local-server.js', 'utf8');
+  assert(/from "\.\/room\.js"/.test(local),
+    '8b: локальный сервер берёт комнату из того же room.js, что и Worker');
+  for(const fn of ['joinRoom', 'routeEnvelope', 'leaveRoom', 'parseJoinRequest']){
+    assert(new RegExp(`\\b${fn}\\(`).test(local), `8b2: и пользуется её ${fn}`);
+  }
+  // Ни одной зависимости: запуск должен быть одной командой на любой машине с node.
+  const imports = [...local.matchAll(/^import .*? from "([^"]+)";/gm)].map((m) => m[1]);
+  assert(imports.every((name) => name.startsWith('node:') || name.startsWith('./')),
+    `8b3: локальный сервер обходится без npm install (нашлось: ${imports.join(', ')})`);
+
+  const frames = fs.readFileSync('worker/ws-frames.js', 'utf8');
+  assert(!/\bimport\b/.test(frames) && !/require\(/.test(frames),
+    '8b4: разбор кадров ни от чего не зависит и ничего не поднимает — иначе его нельзя ' +
+    'было бы проверить, не запустив сервер');
 }
 
 // === 9. Настройки отправляются оттуда, откуда их видно ===

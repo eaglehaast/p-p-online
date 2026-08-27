@@ -8271,14 +8271,33 @@ let onlineInbox = [];
 // вместе с запуском, а не поодиночке: соперник должен увидеть ход целиком и сразу.
 let onlineTurnDraft = null;
 
-function parseOnlineSeatFromSearch(search){
+// relay=auto — «ретранслятор там же, откуда открыта страница».
+//
+// Нужно это, когда сервером работает чей-то компьютер: одна и та же ссылка открывается и
+// с localhost, и по локальной сети, и через туннель, — а адрес сокета каждый раз должен
+// быть свой. Вписанный в ссылку руками, он был бы верен ровно для одного из этих случаев,
+// и это тот сорт ошибки, где всё выглядит правильно, а соединения нет.
+//
+// https -> wss обязателен: страница по https не открывает незашифрованный сокет, браузер
+// молча его отвергнет.
+function resolveOnlineRelayAddress(relayRaw, location){
+  if(relayRaw !== "auto") return relayRaw;
+  const protocol = location?.protocol === "https:" ? "wss:" : "ws:";
+  const host = location?.host;
+  return host ? `${protocol}//${host}` : "";
+}
+
+function parseOnlineSeatFromSearch(search, location = window.location){
   const params = new URLSearchParams(typeof search === "string" ? search : "");
   const seat = (params.get("seat") || "").trim().toLowerCase();
   if(!ONLINE_SEAT_COLORS.includes(seat)) return null;
   const roomRaw = (params.get("room") || "").trim();
   const room = roomRaw ? roomRaw.slice(0, ONLINE_ROOM_MAX_LENGTH) : ONLINE_ROOM_FALLBACK;
   const relayRaw = (params.get("relay") || "").trim();
-  return { seat, room, relay: relayRaw || ONLINE_RELAY_URL };
+  const relay = relayRaw
+    ? resolveOnlineRelayAddress(relayRaw, location)
+    : ONLINE_RELAY_URL;
+  return { seat, room, relay };
 }
 
 function isOnlineHostSeat(){

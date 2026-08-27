@@ -141,6 +141,7 @@ function buildTable(){
       extractFunctionSource(source, 'isLocalColor'),
       extractFunctionSource(source, 'isAiColor'),
       extractFunctionSource(source, 'isRemoteColor'),
+      extractFunctionSource(source, 'resolveOnlineRelayAddress'),
       extractFunctionSource(source, 'parseOnlineSeatFromSearch'),
       extractFunctionSource(source, 'getOnlineSeatColor'),
       extractFunctionSource(source, 'getSharedRandomFraction'),
