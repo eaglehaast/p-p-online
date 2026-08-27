@@ -1,0 +1,13 @@
+name = "paper-wings-relay"
+main = "index.js"
+compatibility_date = "2026-08-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+# new_sqlite_classes, а не new_classes — иначе на бесплатном плане деплой откажет:
+# там поддерживаются только Durable Objects на SQLite.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
