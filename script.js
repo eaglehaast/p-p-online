@@ -50110,6 +50110,230 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
   }
 }
 
+/* ======= СНИМОК ПАРТИИ =======
+ *
+ * Онлайну и восстановлению после обрыва нужно уметь сказать «вот всё состояние партии»
+ * и «встань на него». Снимок берётся МЕЖДУ ходами, когда анимации уже отыграли, поэтому
+ * в него идёт только то, что переживает ход. Всё, что живёт кадрами — кадр огня, тайминги
+ * затухания, след самолёта — восстанавливается само и в снимок не попадает.
+ *
+ * Отдельное правило: НИКАКИХ отметок времени. crashStart и подобные считаются от
+ * performance.now(), который у второго игрока свой, и приехавшее число означало бы там
+ * совсем другой момент.
+ *
+ * Что осознанно НЕ переносится и почему — MATCH_STATE_SKIPPED_PLANE_FIELDS ниже. Список
+ * нужен не для красоты: смоук требует, чтобы каждое поле самолёта было либо в снимке,
+ * либо в этом списке, так что новое поле нельзя добавить молча.
+ */
+const MATCH_STATE_VERSION = 1;
+
+const MATCH_STATE_PLANE_FIELDS = Object.freeze([
+  "x", "y", "angle", "color",
+  "isAlive", "lifeState", "burning", "shieldActive",
+  "flagColor", "carriedFlagId", "killAwardedThisLife",
+  "respawnState", "respawnStage", "respawnPenaltyActive",
+  "respawnHalfTurnsRemaining", "respawnBlockedByEnemy",
+  "homeX", "homeY", "homeAngle",
+]);
+
+const MATCH_STATE_SKIPPED_PLANE_FIELDS = Object.freeze({
+  burningFlameImg: "кадр огня, подхватится сам",
+  burningFlameSrc: "кадр огня, подхватится сам",
+  burningFlameStyleKey: "оформление огня, локальная настройка",
+  burningFlameStyleRevision: "оформление огня, локальная настройка",
+  crashFlameImg: "кадр огня падения",
+  crashFlameSrc: "кадр огня падения",
+  flameFxDisabled: "локальный признак сбоя загрузки кадров",
+  crashStart: "отметка времени performance.now, у второго игрока своя",
+  respawnHudCrossStart: "отметка времени анимации крестика в счётчике",
+  invisibilityFadeTargetAlpha: "кадр затухания невидимости; сам эффект лежит в activeTurnBuffs",
+  invisibilityFadeStartAtMs: "отметка времени затухания",
+  invisibilityFadeDurationMs: "длительность затухания, константа",
+  invisibilityFadeStartAlpha: "кадр затухания",
+  invisibilityAlphaCurrent: "текущий кадр затухания",
+  glow: "подсветка самолёта, чисто визуальная",
+  segments: "след полёта, между ходами пуст",
+  collisionX: "точка столкновения текущего полёта",
+  collisionY: "точка столкновения текущего полёта",
+  prevX: "предыдущий кадр полёта",
+  prevY: "предыдущий кадр полёта",
+  activeTurnBuffs: "переносится отдельным полем buffs — только ключи, без ссылок",
+});
+
+function serializeMatchState(){
+  const planeIndex = (plane) => (plane ? points.indexOf(plane) : -1);
+  const num = (value) => (Number.isFinite(value) ? Math.round(value * 100) / 100 : null);
+
+  const planes = points.map((plane) => {
+    const out = {};
+    for(const field of MATCH_STATE_PLANE_FIELDS){
+      const value = plane?.[field];
+      out[field] = typeof value === "number" ? num(value) : (value ?? null);
+    }
+    // Эффекты предметов на этот ход — только имена, без ссылок на определения.
+    out.buffs = plane?.activeTurnBuffs && typeof plane.activeTurnBuffs === "object"
+      ? Object.keys(plane.activeTurnBuffs).filter((key) => plane.activeTurnBuffs[key] === true).sort()
+      : [];
+    return out;
+  });
+
+  return {
+    v: MATCH_STATE_VERSION,
+    turnIndex,
+    roundNumber,
+    blueScore,
+    greenScore,
+    mapIndex: settings.mapIndex,
+    phase,
+    currentPlacer: currentPlacer ?? null,
+    isGameOver: isGameOver === true,
+    hasShotThisRound: hasShotThisRound === true,
+    duelModeActive: duelModeActive === true,
+    planes,
+    mines: (Array.isArray(mines) ? mines : []).map((mine) => ({
+      id: mine?.id ?? null, owner: mine?.owner ?? null, x: num(mine?.x), y: num(mine?.y),
+    })),
+    cargo: (Array.isArray(cargoState) ? cargoState : []).map((cargo) => ({
+      x: num(cargo?.x), y: num(cargo?.y), state: cargo?.state ?? null,
+    })),
+    // Носитель флага в игре — ССЫЛКА на самолёт. По проводу едет его номер в points.
+    flags: (Array.isArray(flags) ? flags : []).map((flag) => ({
+      id: flag?.id ?? null,
+      color: flag?.color ?? null,
+      state: flag?.state ?? null,
+      carrier: planeIndex(flag?.carrier),
+      droppedAt: flag?.droppedAt ? { x: num(flag.droppedAt.x), y: num(flag.droppedAt.y) } : null,
+    })),
+    // Зенитки сейчас выключены (AA_PLACEMENT_TEMP_DISABLED), но тип сущности переносим:
+    // иначе, включив их обратно, мы бы молча потеряли их в снимке.
+    aa: (Array.isArray(aaUnits) ? aaUnits : []).map((unit) => ({
+      id: unit?.id ?? null, owner: unit?.owner ?? null,
+      x: num(unit?.x), y: num(unit?.y), hp: unit?.hp ?? null,
+    })),
+    inventory: {
+      blue: (inventoryState?.blue ?? []).map((item) => item?.type ?? null),
+      green: (inventoryState?.green ?? []).map((item) => item?.type ?? null),
+    },
+  };
+}
+
+// Круговая проверка ловит поле, которое снимок пишет, но не читает обратно. Поле,
+// которого нет ни там, ни там, она не увидит — оно просто невидимо. От этого страхует
+// список пропущенных, но его полноту надо с чем-то сверять: сверяем с живым самолётом.
+// В консоли: matchStateCoverage().
+function getMatchStateCoverage(){
+  const known = new Set([
+    ...MATCH_STATE_PLANE_FIELDS,
+    ...Object.keys(MATCH_STATE_SKIPPED_PLANE_FIELDS),
+  ]);
+  const live = [...new Set((Array.isArray(points) ? points : []).flatMap((plane) => (
+    plane && typeof plane === "object" ? Object.keys(plane) : []
+  )))].sort();
+  const unclassified = live.filter((field) => !known.has(field));
+  return {
+    ok: unclassified.length === 0,
+    liveFields: live.length,
+    serialized: MATCH_STATE_PLANE_FIELDS.length,
+    skipped: Object.keys(MATCH_STATE_SKIPPED_PLANE_FIELDS).length,
+    unclassified,
+  };
+}
+
+if(typeof window !== "undefined"){
+  window.matchStateCoverage = function(){
+    const report = getMatchStateCoverage();
+    return report.ok
+      ? `Снимок покрывает все ${report.liveFields} полей самолёта (${report.serialized} переносится, ${report.skipped} пропущено осознанно).`
+      : `НЕ отнесены ни к переносимым, ни к пропущенным: ${report.unclassified.join(", ")}`;
+  };
+}
+
+function applyMatchState(state){
+  if(!state || typeof state !== "object") return false;
+  if(state.v !== MATCH_STATE_VERSION) return false;
+
+  turnIndex = Number.isInteger(state.turnIndex) ? state.turnIndex : turnIndex;
+  roundNumber = Number.isFinite(state.roundNumber) ? state.roundNumber : roundNumber;
+  blueScore = Number.isFinite(state.blueScore) ? state.blueScore : blueScore;
+  greenScore = Number.isFinite(state.greenScore) ? state.greenScore : greenScore;
+  phase = state.phase ?? phase;
+  currentPlacer = state.currentPlacer ?? null;
+  isGameOver = state.isGameOver === true;
+  hasShotThisRound = state.hasShotThisRound === true;
+  duelModeActive = state.duelModeActive === true;
+  if(Number.isInteger(state.mapIndex)) settings.mapIndex = clampMapIndex(state.mapIndex);
+
+  const planeStates = Array.isArray(state.planes) ? state.planes : [];
+  for(let i = 0; i < points.length; i += 1){
+    const plane = points[i];
+    const saved = planeStates[i];
+    if(!plane || !saved) continue;
+    for(const field of MATCH_STATE_PLANE_FIELDS){
+      plane[field] = saved[field];
+    }
+    plane.activeTurnBuffs = {};
+    for(const buff of (Array.isArray(saved.buffs) ? saved.buffs : [])){
+      plane.activeTurnBuffs[buff] = true;
+    }
+    // Полёт в снимок не входит: он всегда берётся между ходами.
+    plane.segments = [];
+    plane.prevX = plane.x;
+    plane.prevY = plane.y;
+    plane.collisionX = null;
+    plane.collisionY = null;
+  }
+
+  mines.length = 0;
+  for(const mine of (Array.isArray(state.mines) ? state.mines : [])){
+    mines.push({ id: mine.id, owner: mine.owner, x: mine.x, y: mine.y });
+  }
+
+  cargoState.length = 0;
+  for(const cargo of (Array.isArray(state.cargo) ? state.cargo : [])){
+    // Анимация падения к этому моменту отыграла — ящик кладётся сразу лежащим.
+    cargoState.push({
+      x: cargo.x, y: cargo.y, state: cargo.state,
+      animStartedAt: 0, animDurationMs: 0, pickedAt: null,
+    });
+  }
+
+  const flagStates = Array.isArray(state.flags) ? state.flags : [];
+  for(let i = 0; i < flags.length; i += 1){
+    const flag = flags[i];
+    const saved = flagStates[i];
+    if(!flag || !saved) continue;
+    flag.state = saved.state;
+    flag.droppedAt = saved.droppedAt ? { x: saved.droppedAt.x, y: saved.droppedAt.y } : null;
+    // Номер в points превращаем обратно в ссылку на самолёт.
+    flag.carrier = Number.isInteger(saved.carrier) && saved.carrier >= 0
+      ? (points[saved.carrier] ?? null)
+      : null;
+  }
+
+  aaUnits.length = 0;
+  for(const unit of (Array.isArray(state.aa) ? state.aa : [])){
+    aaUnits.push({ ...unit, trail: [], lastTriggerAt: null, sweepAngleDeg: 0 });
+  }
+
+  for(const color of ["blue", "green"]){
+    const saved = Array.isArray(state.inventory?.[color]) ? state.inventory[color] : [];
+    inventoryState[color].length = 0;
+    for(const type of saved){
+      const itemDef = INVENTORY_ITEMS.find((item) => item?.type === type);
+      if(itemDef) inventoryState[color].push(itemDef);
+    }
+  }
+
+  // Полёт и наведение принадлежат ходу, который уже закончился.
+  flyingPoints.length = 0;
+  pendingInventoryUse = null;
+
+  syncInventoryUI("blue");
+  syncInventoryUI("green");
+  invalidateHudCanvas();
+  return true;
+}
+
 function isArcadeScoreUiActive(){
   if(selectedRuleset === "mapeditor") return false;
   return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
