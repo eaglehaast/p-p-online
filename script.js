@@ -8247,6 +8247,16 @@ const ONLINE_SEAT_COLORS = Object.freeze(["blue", "green"]);
 const ONLINE_ROOM_FALLBACK = "local";
 const ONLINE_ROOM_MAX_LENGTH = 64;
 const ONLINE_CHANNEL_PREFIX = "paper-wings-room-";
+// Адрес ретранслятора. Пока пусто — игра остаётся на BroadcastChannel, то есть на двух
+// вкладках одного браузера; развернув worker/, впиши сюда его адрес (или передай
+// ?relay=wss://... в ссылке), и та же игра поедет между устройствами.
+const ONLINE_RELAY_URL = "";
+// Через сколько пытаться снова после обрыва. Растёт, но не бесконечно: интернет,
+// пропавший на полчаса, не повод переставать проверять.
+const ONLINE_RECONNECT_DELAYS_MS = Object.freeze([500, 1000, 2000, 4000, 8000, 15000]);
+// Создатель комнаты — синий. Не потому, что синий главнее, а потому, что решать, чьи
+// настройки в силе, должен ОДИН из двоих, и выбран он должен быть заранее.
+const ONLINE_HOST_SEAT = "blue";
 // Версия того, что едет по проводу. Пакет чужой версии отвергается ЦЕЛИКОМ: иначе игра
 // разложила бы его наполовину и разъехалась бы у двоих тихо и не сразу. Ровно то же
 // правило, что у снимка партии (MATCH_STATE_VERSION).
@@ -8267,7 +8277,12 @@ function parseOnlineSeatFromSearch(search){
   if(!ONLINE_SEAT_COLORS.includes(seat)) return null;
   const roomRaw = (params.get("room") || "").trim();
   const room = roomRaw ? roomRaw.slice(0, ONLINE_ROOM_MAX_LENGTH) : ONLINE_ROOM_FALLBACK;
-  return { seat, room };
+  const relayRaw = (params.get("relay") || "").trim();
+  return { seat, room, relay: relayRaw || ONLINE_RELAY_URL };
+}
+
+function isOnlineHostSeat(){
+  return getOnlineSeatColor() === ONLINE_HOST_SEAT;
 }
 
 function getOnlineSeatColor(){
@@ -8307,7 +8322,10 @@ function isOnlineMatchActive(){
   return onlineSession !== null;
 }
 
-// Единственное место, которое знает, ЧЕМ соединены игроки. Сервер встанет сюда.
+// Два провода, одинаковых снаружи. Всё, что выше, не знает, какой из них включён.
+
+// Две вкладки одного браузера. Пригодится и дальше — на нём проверяется вся игра, когда
+// ретранслятор не нужен.
 function createBroadcastTransport(room){
   if(typeof BroadcastChannel !== "function") return null;
   const channel = new BroadcastChannel(`${ONLINE_CHANNEL_PREFIX}${room}`);
@@ -8317,39 +8335,136 @@ function createBroadcastTransport(room){
   };
   return {
     kind: "broadcast",
+    status: () => "online",
     post(envelope){ channel.postMessage(envelope); },
     receive(handler){ handlers.push(handler); },
     close(){ channel.onmessage = null; channel.close(); },
   };
 }
 
+// Настоящий провод: сокет до ретранслятора (worker/).
+//
+// Он сам поднимается после обрыва — «у нас в рашке инет ща говно» это не оговорка, а
+// требование. Игра про обрыв не знает вовсе: пока сокета нет, пакеты копятся здесь, а
+// после подключения уезжают в том же порядке. Пошаговой игре это ничего не стоит —
+// сопернику всё равно нечего показывать, пока ход не сделан.
+function createWebSocketTransport(room, relayUrl, seat){
+  if(typeof WebSocket !== "function" || !relayUrl) return null;
+
+  const handlers = [];
+  const outbox = [];
+  let socket = null;
+  let attempt = 0;
+  let reconnectTimer = null;
+  let closedForGood = false;
+
+  const address = `${relayUrl.replace(/\/+$/, "")}/room/${encodeURIComponent(room)}`
+    + `?seat=${encodeURIComponent(seat)}&v=${ONLINE_PROTOCOL_VERSION}`;
+
+  const flush = () => {
+    while(outbox.length > 0 && socket?.readyState === WebSocket.OPEN){
+      socket.send(JSON.stringify(outbox.shift()));
+    }
+  };
+
+  const scheduleReconnect = () => {
+    if(closedForGood || reconnectTimer !== null) return;
+    const delay = ONLINE_RECONNECT_DELAYS_MS[
+      Math.min(attempt, ONLINE_RECONNECT_DELAYS_MS.length - 1)
+    ];
+    attempt += 1;
+    console.warn("[online] связь потеряна, пробуем снова", { через: delay, попытка: attempt });
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, delay);
+  };
+
+  function connect(){
+    if(closedForGood) return;
+    socket = new WebSocket(address);
+    socket.onopen = () => {
+      attempt = 0;
+      console.log("[online] связь есть", { room, seat });
+      // Комната сама пришлёт придержанное: настройки создателя и последний снимок
+      // партии. Просить об этом не надо — за тем она их и держит.
+      flush();
+    };
+    socket.onmessage = (event) => {
+      let envelope = null;
+      try { envelope = JSON.parse(event.data); } catch(_error){ return; }
+      for(const handler of handlers) handler(envelope);
+    };
+    socket.onclose = (event) => {
+      // 4000 — комната отказала (не то место, не та версия). Пробовать снова бессмысленно:
+      // с тем же адресом откажет и в следующий раз.
+      if(event?.code === 4000){
+        closedForGood = true;
+        console.error("[online] комната отказала", { причина: event.reason });
+        return;
+      }
+      scheduleReconnect();
+    };
+    socket.onerror = () => { try { socket.close(); } catch(_error){ /* уже закрыт */ } };
+  }
+
+  connect();
+
+  return {
+    kind: "relay",
+    status: () => (socket?.readyState === WebSocket.OPEN
+      ? "online"
+      : (closedForGood ? "rejected" : "reconnecting")),
+    post(envelope){
+      outbox.push(envelope);
+      flush();
+    },
+    receive(handler){ handlers.push(handler); },
+    close(){
+      closedForGood = true;
+      if(reconnectTimer !== null) clearTimeout(reconnectTimer);
+      try { socket?.close(); } catch(_error){ /* уже закрыт */ }
+    },
+  };
+}
+
 function startOnlineSession(options = {}){
   const seatInfo = options.seat
-    ? { seat: options.seat, room: options.room || ONLINE_ROOM_FALLBACK }
+    ? { seat: options.seat, room: options.room || ONLINE_ROOM_FALLBACK, relay: options.relay || "" }
     : parseOnlineSeatFromSearch(window.location?.search || "");
   if(!seatInfo || !ONLINE_SEAT_COLORS.includes(seatInfo.seat)) return null;
 
+  // Провод выбирается адресом ретранслятора: есть он — играем между устройствами, нет —
+  // между вкладками. Выше по коду разницы не видно.
   const createTransport = typeof options.createTransport === "function"
     ? options.createTransport
-    : createBroadcastTransport;
+    : (room) => (seatInfo.relay
+      ? createWebSocketTransport(room, seatInfo.relay, seatInfo.seat)
+      : createBroadcastTransport(room));
   const transport = createTransport(seatInfo.room);
   if(!transport){
-    console.warn("[online] провода нет: BroadcastChannel недоступен, играем как обычно");
+    console.warn("[online] провода нет, играем как обычно");
     return null;
   }
 
   onlineSession = {
     seat: seatInfo.seat,
     room: seatInfo.room,
+    relay: seatInfo.relay || null,
     // Свой номер нужен, чтобы не принять собственный пакет за чужой. BroadcastChannel
-    // себе не отвечает, но сервер-ретранслятор обычно шлёт всем, включая отправителя,
-    // и без этой проверки мы бы разыграли собственный ход второй раз.
+    // себе не отвечает, но ретранслятор при переподключении досылает придержанное, и без
+    // этой проверки мы бы разыграли собственный ход второй раз.
     selfId: `${seatInfo.seat}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     transport,
     outSeq: 0,
-    lastSeenSeq: 0,
+    // Номер последнего принятого пакета — ОТДЕЛЬНО ПО КАЖДОМУ ОТПРАВИТЕЛЮ.
+    //
+    // Одного общего счётчика хватало, пока никто не перезагружался. Но соперник,
+    // обновивший страницу, начинает нумерацию заново с единицы — и общий счётчик,
+    // добравшийся до восьми, отбросил бы все его ходы как «отставшие», молча и навсегда.
+    // Перезагрузка даёт новый номер отправителя, а с ним и чистый счёт.
+    lastSeenSeqByPeer: Object.create(null),
     moveHandlers: [],
     stateHandlers: [],
+    settingsHandlers: [],
+    settingsApplied: false,
   };
   onlineInbox = [];
   onlineTurnDraft = null;
@@ -8360,11 +8475,15 @@ function startOnlineSession(options = {}){
   transport.receive(receiveOnlineEnvelope);
   onRemoteMove((move) => { onlineInbox.push({ type: "move", payload: move }); });
   onRemoteState((state) => { onlineInbox.push({ type: "state", payload: state }); });
+  onRemoteSettings(applyOnlineRoomSettings);
   console.log("[online] место за столом", {
     seat: onlineSession.seat,
     room: onlineSession.room,
     transport: transport.kind,
+    хозяин: isOnlineHostSeat(),
   });
+  // Настройки создателя комнаты уезжают сразу и лежат в комнате, пока гость не придёт.
+  if(isOnlineHostSeat()) publishOnlineRoomSettings();
   return onlineSession;
 }
 
@@ -8374,6 +8493,9 @@ function stopOnlineSession(){
   onlineSession = null;
   onlineInbox = [];
   onlineTurnDraft = null;
+  // Настройки комнаты не переживают выход из неё: они были её правилами, а не выбором
+  // игрока.
+  onlineRoomPlacements = null;
   return true;
 }
 
@@ -8399,6 +8521,17 @@ function onRemoteState(handler){
   return true;
 }
 
+// Пятая: настройки комнаты. Едут только от создателя и только один раз за партию.
+function sendSettings(roomSettings){
+  return postOnlineEnvelope("settings", roomSettings);
+}
+
+function onRemoteSettings(handler){
+  if(!onlineSession || typeof handler !== "function") return false;
+  onlineSession.settingsHandlers.push(handler);
+  return true;
+}
+
 function postOnlineEnvelope(type, payload){
   if(!onlineSession) return false;
   onlineSession.outSeq += 1;
@@ -8421,18 +8554,112 @@ function receiveOnlineEnvelope(envelope){
   }
   // Своё эхо.
   if(envelope.from === onlineSession.selfId) return false;
-  // Чужая вкладка, севшая на наше же место: играть за одну сторону вдвоём нельзя.
-  if(envelope.seat === onlineSession.seat) return false;
-  // Повтор или отставший пакет. Понадобится, когда провод начнёт досылать пропущенное
-  // после обрыва: разыграть один и тот же ход дважды хуже, чем не получить его вовсе.
-  if(!(envelope.seq > onlineSession.lastSeenSeq)) return false;
-  onlineSession.lastSeenSeq = envelope.seq;
+  // Пакет с нашего же места. Обычно это чужая вкладка, севшая на нашу сторону, — играть
+  // за одну сторону вдвоём нельзя.
+  //
+  // Но комната, встречая вернувшегося после обрыва, досылает придержанный снимок — и он
+  // вполне может быть НАШИМ ЖЕ, отправленным до обрыва: последним ходил ты. Это самое
+  // свежее состояние партии, какое вообще есть; отказаться от него значит вернуться к
+  // пустой доске. Отличает их пометка комнаты, а не догадка.
+  if(envelope.seat === onlineSession.seat && envelope.replay !== true) return false;
+  // Повтор или отставший пакет: после переподключения комната досылает придержанное, и
+  // разыграть один и тот же ход дважды хуже, чем не получить его вовсе.
+  //
+  // Счёт ведётся по каждому отправителю отдельно — см. lastSeenSeqByPeer.
+  const peerId = String(envelope.from ?? "");
+  const lastSeen = onlineSession.lastSeenSeqByPeer[peerId] ?? 0;
+  if(!(envelope.seq > lastSeen)) return false;
+  onlineSession.lastSeenSeqByPeer[peerId] = envelope.seq;
 
   const handlers = envelope.t === "move" ? onlineSession.moveHandlers
     : envelope.t === "state" ? onlineSession.stateHandlers
+    : envelope.t === "settings" ? onlineSession.settingsHandlers
     : null;
   if(!handlers) return false;
   for(const handler of handlers) handler(envelope.payload, envelope);
+  return true;
+}
+
+/* --- настройки комнаты: играем по правилам того, кто её создал --- */
+
+// Настройки, которые ДЕЙСТВИТЕЛЬНО меняют происходящее на поле.
+//
+// Список перечислен поимённо, а не отправляется целиком, и это не перестраховка: в тех же
+// настройках лежит и оформление (стиль огня), навязывать которое гостю незачем — пусть
+// смотрит на свой огонь.
+const ONLINE_ROOM_SETTING_KEYS = Object.freeze([
+  "flightRangeCells",
+  "aimingAmplitude",
+  "addAA",
+  "sharpEdges",
+  "flagsEnabled",
+  "addCargo",
+  "arcadeMode",
+  "mapIndex",
+  "randomizeMapEachRound",
+]);
+
+// Раскладка карт по тирам, навязанная комнатой. Живёт только на время партии и в
+// localStorage не попадает: чужие настройки не должны пережить выход из комнаты.
+let onlineRoomPlacements = null;
+
+function collectOnlineRoomSettings(){
+  const picked = {};
+  for(const key of ONLINE_ROOM_SETTING_KEYS){
+    picked[key] = settings[key];
+  }
+  return {
+    ruleset: selectedRuleset,
+    settings: picked,
+    // Раскладка карт по тирам живёт в localStorage, и у каждого она своя: её тасуют
+    // руками в Map Tester. Без неё общий жребий выбирал бы карту из РАЗНЫХ наборов —
+    // и снова получились бы две партии вместо одной.
+    placements: loadMapTesterPlacements(),
+  };
+}
+
+function publishOnlineRoomSettings(){
+  if(!onlineSession || !isOnlineHostSeat()) return false;
+  return sendSettings(collectOnlineRoomSettings());
+}
+
+function applyOnlineRoomSettings(roomSettings){
+  if(!onlineSession || !roomSettings || typeof roomSettings !== "object") return false;
+  // Создатель свои же настройки обратно не принимает, и принимаются они один раз:
+  // переподключившись, гость получит их снова — но партия к тому времени уже идёт, и
+  // перенастраивать её посреди хода было бы хуже, чем ничего не делать.
+  if(isOnlineHostSeat() || onlineSession.settingsApplied) return false;
+  onlineSession.settingsApplied = true;
+
+  // Порядок: сначала правила (они перечитывают настройки из своего хранилища), потом
+  // значения от создателя — иначе перечитывание затёрло бы только что применённое.
+  if(typeof roomSettings.ruleset === "string"){
+    selectedRuleset = roomSettings.ruleset;
+    if(typeof loadSettingsForRuleset === "function") loadSettingsForRuleset(selectedRuleset);
+    if(typeof syncRulesButtonSkins === "function") syncRulesButtonSkins(selectedRuleset);
+  }
+
+  const incoming = roomSettings.settings ?? {};
+  for(const key of ONLINE_ROOM_SETTING_KEYS){
+    if(incoming[key] === undefined) continue;
+    // Присваиваем прямо в настройки, минуя сохранение: это правила ЭТОЙ партии, а не
+    // новый выбор игрока. Вышел из комнаты — вернулись свои.
+    settings[key] = incoming[key];
+  }
+
+  onlineRoomPlacements = (roomSettings.placements && typeof roomSettings.placements === "object")
+    ? roomSettings.placements
+    : {};
+  // Жребий кэширует выбранную карту на пару раундов. Набор карт только что сменился,
+  // поэтому кэш надо выбросить — иначе гость доиграет раунд на карте из своего набора.
+  randomMapPairSequenceNumber = null;
+  randomMapPairIndex = null;
+
+  console.log("[online] играем по настройкам создателя комнаты", {
+    ruleset: roomSettings.ruleset ?? null,
+    перенесено: Object.keys(incoming).length,
+    раскладок: Object.keys(onlineRoomPlacements).length,
+  });
   return true;
 }
 
@@ -8544,8 +8771,12 @@ function getOnlineStatus(){
     seat: onlineSession.seat,
     room: onlineSession.room,
     transport: onlineSession.transport.kind,
+    relay: onlineSession.relay,
+    связь: onlineSession.transport.status?.() ?? "unknown",
+    хозяин: isOnlineHostSeat(),
+    настройкиКомнаты: isOnlineHostSeat() ? "свои" : (onlineSession.settingsApplied ? "приняты" : "ждём"),
     sent: onlineSession.outSeq,
-    lastSeen: onlineSession.lastSeenSeq,
+    lastSeen: { ...onlineSession.lastSeenSeqByPeer },
     inbox: onlineInbox.length,
     myTurn: isLocalColor(turnColors?.[turnIndex]),
   };
@@ -12089,9 +12320,6 @@ loadSettings();
 applyTemporaryMenuStartupDefaults();
 applyDevToolsVisibility();
 syncInventoryVisibility();
-// Место за столом берётся из адреса и решает, чем можно управлять руками, поэтому
-// садиться надо до первого кадра, а не по кнопке в меню.
-startOnlineSession();
 
 if(typeof window !== "undefined"){
   window.onlineStatus = function(){
@@ -51752,10 +51980,17 @@ function getMapNaturalPlacement(map){
 }
 
 function loadMapTesterPlacements(){
+  // В комнате раскладку диктует её создатель: у гостя она своя, а набор карт для жребия
+  // обязан быть один на двоих.
+  if(onlineRoomPlacements) return onlineRoomPlacements;
   try {
     const parsed = JSON.parse(getStoredSetting(MAP_TESTER_PLACEMENTS_STORAGE_KEY) || "{}");
     return parsed && typeof parsed === "object" ? parsed : {};
-  } catch(_error){
+  } catch(error){
+    // Молчать здесь дорого. Этот catch стоит ради испорченного localStorage, но однажды
+    // он проглотил совсем другое — обращение к ещё не объявленной константе, — и «нет
+    // раскладки» разъехало партию у двоих. Пусть о своей неудаче он хотя бы говорит.
+    console.warn("[maps] раскладку карт прочитать не удалось, считаем её пустой", error);
     return {};
   }
 }
@@ -53352,5 +53587,19 @@ if (window.visualViewport) {
     setMenuVisibility(true);
     alert('Не удалось загрузить карты. Игра останется в меню без запуска раунда.');
   }
+
+// Место за столом занимается ЗДЕСЬ, в самом конце файла, а не там, где читаются
+// настройки.
+//
+// Причина не в красоте. Создатель комнаты, садясь за стол, сразу отправляет свои
+// настройки — вместе с раскладкой карт по тирам. А раскладка читается функцией, которая
+// объявлена ниже по файлу, и её ключ на тот момент ещё не существует. Обращение к нему
+// падало бы с ошибкой — но падало ВНУТРИ try/catch, который для того и стоял, чтобы
+// пережить испорченный localStorage. Ошибка молча превращалась в «раскладки нет»,
+// создатель отправлял пустую, и гость оставался при своей: та самая дырка, которую этот
+// шаг и закрывает, только заново и незаметно.
+//
+// Отсюда же видно и остальное, что нужно посадке: настройки, правила, общий жребий.
+startOnlineSession();
 
 bootstrapGame();
