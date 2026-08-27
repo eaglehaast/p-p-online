@@ -108,7 +108,9 @@ const maps = manifest.map((file) => {
 
   const sources = ['script.js', 'settings.js', 'maps.js', 'index.html']
     .map((name) => fs.readFileSync(name, 'utf8')).join('\n');
-  for(const goneId of ['fiveBricks', 'rooms', 'Pebbles']){
+  // Карты, выброшенные из набора по ходу отбора в Map Tester.
+  for(const goneId of ['fiveBricks', 'rooms', 'Pebbles',
+                       'edges', 'speedbumps', 'sharpedge2', 'sharpedge3']){
     assert(!known.has(goneId), `5b: карта «${goneId}» удалена из набора`);
     assert(!sources.includes(`'${goneId}'`) && !sources.includes(`"${goneId}"`),
       `5c: в коде не осталось ссылок на удалённую карту «${goneId}»`);
