@@ -176,7 +176,8 @@ assert(/landscape \? FRAME_BASE_HEIGHT : FRAME_BASE_WIDTH/.test(source),
 assert(/refreshInventoryContainerLayouts/.test(source),
   '7c: раскладка инвентарей пересобирается при смене ориентации');
 // Эффекты поля позиционируются инлайновым transform — поворот дописывается в коде.
-assert(/withLandscapeUprightTransform\('translate\(-50%, -100%\)'\)/.test(source),
+// Само содержимое строки для огня разбирает блок 7h-7o ниже.
+assert(/element\.style\.transform = getFlameElementTransform\(\);/.test(source),
   '7d: огонь сбитого самолёта разворачивается ровно');
 // У взрыва transform переписывается на каждом обновлении — поворот обязан быть и там,
 // иначе взрыв так и остаётся лежать на боку.
@@ -187,6 +188,62 @@ assert(/element\.style\.transform = withLandscapeUprightTransform\('translate\(-
 // садится в одном месте, а готовый ящик появляется в другом.
 assert(/originX = \(-CARGO_ANIM_OFFSET_X \+ crateSize\.width \/ 2\) \* scaleX/.test(source),
   '7g: анимация груза разворачивается вокруг точки приземления ящика');
+
+// Огонь над сбитым самолётом. Взрыв и груз переписывают свой transform на каждом
+// обновлении и поворот доски переживают сами; огню же transform ставится ОДИН раз, при
+// рождении, а горит он до конца раунда. Поэтому его надо переставлять при повороте —
+// иначе он замирает в той ориентации, в которой зажёгся, и лежит на боку.
+{
+  const build = (landscape) => {
+    const sandbox = {
+      document: {
+        documentElement: {
+          classList: { contains: (name) => landscape && name === 'is-board-landscape' },
+        },
+      },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext([
+      extractFunctionSource(source, 'isBoardLandscapeActive'),
+      source.match(/const FLAME_ANCHOR_TRANSFORM = '[^']*';/)[0],
+      extractFunctionSource(source, 'withLandscapeUprightTransform'),
+      extractFunctionSource(source, 'getFlameElementTransform'),
+      'this.transform = getFlameElementTransform();',
+    ].join('\n'), sandbox);
+    return sandbox.transform;
+  };
+
+  const portrait = build(false);
+  const landscape = build(true);
+  // Огонь прижат к точке на самолёте своим НИЗОМ — без этого он отъезжает от крепления.
+  assert(/translate\(-50%, -100%\)/.test(portrait),
+    `7h0: огонь крепится низом к самолёту («${portrait}»)`);
+  assert(!/rotate/.test(portrait),
+    `7h: в портрете огонь не разворачивается («${portrait}»)`);
+  assert(/rotate\(-90deg\)/.test(landscape),
+    `7i: в горизонтали огонь разворачивается встречно («${landscape}»)`);
+  // Низ огня прижат к самолёту, поэтому translate обязан остаться и в горизонтали:
+  // без него пламя отъезжает от точки крепления.
+  assert(landscape.startsWith(portrait),
+    `7j: разворот дописывается к прежнему креплению, а не заменяет его («${landscape}»)`);
+
+  // Строка одна на всех: и при рождении огня, и при перестановке.
+  const uses = (source.match(/getFlameElementTransform\(\)/g) || []).length;
+  assert(uses >= 3,
+    `7k: и рождение огня, и перестановка берут transform из одной функции (найдено ${uses})`);
+  assert(!/withLandscapeUprightTransform\('translate\(-50%, -100%\)'\)/.test(source),
+    '7l: строка крепления огня больше не дублируется — иначе две копии разъедутся');
+
+  // И сама перестановка: по живым огням, с записью transform.
+  const refresh = extractFunctionSource(source, 'refreshPlaneFlameOrientation');
+  assert(/planeFlameFx\.values\(\)/.test(refresh),
+    '7m: перестановка обходит живые огни');
+  assert(/element\.style\.transform = getFlameElementTransform\(\)/.test(refresh),
+    '7n: перестановка переписывает именно transform');
+  const toggle = extractFunctionSource(source, 'setBoardLandscape');
+  assert(/refreshPlaneFlameOrientation\(\)/.test(toggle),
+    '7o: поворот доски переставляет огонь — иначе он замирает в прежней ориентации');
+}
 // Мина: у спрайта горизонтальный поясок и блик сверху справа, поэтому на боку она
 // читается как повешенная. Разворачиваем её встречно, а покачивание идёт ПОВЕРХ
 // разворота — иначе оно либо потеряется, либо начнёт качать её вокруг чужой оси.
