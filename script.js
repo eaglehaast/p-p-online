@@ -4302,10 +4302,16 @@ function onInventoryItemPointerDown(event){
   }
 
   const activeColor = turnColors[turnIndex];
-  if (color !== activeColor){
+  // Две разные проверки, и раньше была только первая. «Сейчас не твой ход» — про
+  // очерёдность, «это не твоя сторона» — про принадлежность. В хот-сите вторая ничего не
+  // меняет (обе стороны за этим устройством), а вот против компьютера в ход ИИ его
+  // инвентарь оказывался кликабельным: activeColor там как раз синий, и первая проверка
+  // такой клик пропускала.
+  if (color !== activeColor || !isLocalColor(color)){
     logInventoryInputEarlyExit("pointerdown", event, "not active player", {
       foundItem: color && type ? { color, type } : null,
       activeColor,
+      localColor: color ? isLocalColor(color) : null,
     });
     return;
   }
@@ -8103,6 +8109,43 @@ let menuScreenLocked = false;
 
 const GAME_MODE_STORAGE_KEY = 'settings.gameMode';
 const VALID_GAME_MODES = new Set(["hotSeat", "computer", "online"]);
+
+// Кто управляет стороной НА ЭТОМ устройстве.
+//
+// До сих пор такого понятия в игре не было: она знала только «чей сейчас ход», а «ходит
+// ИИ» было записано шестью одинаковыми условиями вида gameMode === "computer" && цвет
+// синий. В хот-сите это работает потому, что оба игрока сидят за одним экраном, а против
+// компьютера — потому что ИИ ходит сам, а руки игрока отбиваются этим условием.
+//
+// Сводим все пять в одно место. Заодно это ровно то, чего не хватает онлайну: там
+// «не моя сторона» — это не ИИ, а второй игрок, но отбивать ввод надо точно так же.
+const COLOR_CONTROLLERS = Object.freeze({ LOCAL: "local", AI: "ai" });
+// В игре против компьютера ИИ всегда играет за синих, а человек за зелёных.
+const AI_PLAYER_COLOR = "blue";
+
+function getColorController(color){
+  if(color !== "blue" && color !== "green") return COLOR_CONTROLLERS.LOCAL;
+  if(gameMode === "computer" && color === AI_PLAYER_COLOR) return COLOR_CONTROLLERS.AI;
+  // Хот-сит: обе стороны за этим устройством. Сюда же встанет онлайн — там локальной
+  // будет только своя сторона, а вторая уедет к удалённому игроку.
+  return COLOR_CONTROLLERS.LOCAL;
+}
+
+// Сторона, которой можно управлять с этого устройства: её самолёты берутся рукой,
+// её инвентарь кликается.
+function isLocalColor(color){
+  return getColorController(color) === COLOR_CONTROLLERS.LOCAL;
+}
+
+// Сторона, за которую ходит ИИ. Отличается от «не локальной» тем, что ИИ надо ещё и
+// запускать — удалённого игрока запускать не нужно, его ход приедет сам.
+function isAiColor(color){
+  return getColorController(color) === COLOR_CONTROLLERS.AI;
+}
+
+function isAiControlledTurn(){
+  return isAiColor(turnColors?.[turnIndex]);
+}
 const CLEAR_SKY_MAP_ID = "clearsky";
 const CLEAR_SKY_MAP_NAME = "clear sky";
 
@@ -16434,7 +16477,7 @@ async function aiCoopMaybeYield(){
 }
 
 function isAiTurnStillApplicable(){
-  return !isGameOver && gameMode === "computer" && turnColors?.[turnIndex] === "blue";
+  return !isGameOver && isAiControlledTurn();
 }
 
 // TOP-priority plan: deliver a carried enemy (green) flag to our base THIS turn — a
@@ -20839,7 +20882,8 @@ function isPlaneGrabbableAt(x, y) {
   if(pendingInventoryUse) return false;
 
   const currentColor = turnColors[turnIndex];
-  if(gameMode === "computer" && currentColor === "blue") return false; // ход ИИ
+  // Чужой стороной с этого устройства не играют: против компьютера это ход ИИ.
+  if(!isLocalColor(currentColor)) return false;
 
   if(flyingPoints.some(fp => fp.plane.color === currentColor)) return false;
 
@@ -20854,7 +20898,8 @@ function getGrabRejectReason(mx, my, currentColor){
   if(isNuclearStrikeActionLocked()) return "nuclear_action_locked";
   if(isGameOver || !gameMode) return "game_not_active";
   if(pendingInventoryUse) return "pending_inventory_use";
-  if(gameMode === "computer" && currentColor === "blue") return "ai_turn";
+  if(isAiColor(currentColor)) return "ai_turn";
+  if(!isLocalColor(currentColor)) return "not_local_turn";
   if(flyingPoints.some(fp => fp.plane.color === currentColor)) return "plane_already_in_flight";
 
   const nearCurrentTeamPlane = points.some(pt =>
@@ -47127,7 +47172,7 @@ function advanceTurn(){
     };
   }
   invalidateAiPlanningState("turn_advanced");
-  if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
+  if(isAiControlledTurn()){
     aiMoveScheduled = false;
     scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
       trigger: "advance_turn",
@@ -47330,8 +47375,7 @@ function gameDraw(){
   // session, and creates a third one. Visible result: AI aims, then re-aims (sometimes a different
   // target). Triggered with ANY inventory item, since the 260ms delay always applies.
   if(
-    gameMode === "computer"
-    && turnColors?.[turnIndex] === "blue"
+    isAiControlledTurn()
     && flyingPoints.length === 0
     && !aiLaunchSession
     && !aiMoveScheduled
