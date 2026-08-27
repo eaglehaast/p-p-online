@@ -7542,6 +7542,28 @@ function withLandscapeUprightTransform(transform){
   return base ? `${base} rotate(-90deg)` : "rotate(-90deg)";
 }
 
+// Огонь прижат к точке на самолёте своим НИЗОМ, отсюда translate(-50%, -100%).
+// Строка одна на всех: её ставят и при рождении огня, и при повороте доски.
+const FLAME_ANCHOR_TRANSFORM = 'translate(-50%, -100%)';
+
+function getFlameElementTransform(){
+  return withLandscapeUprightTransform(FLAME_ANCHOR_TRANSFORM);
+}
+
+// Огню transform ставится ОДИН раз, при рождении, а горит он до конца раунда. Значит при
+// повороте доски его надо переставить: иначе сбитый самолёт остаётся гореть на боку — всё
+// развернулось, а пламя над ним нет. Взрыв и падающий груз переписывают свой transform на
+// каждом обновлении и чинятся сами; огонь между кадрами двигают только через left/top, до
+// transform дело не доходит.
+function refreshPlaneFlameOrientation(){
+  if(typeof planeFlameFx === "undefined") return;
+  for(const entry of planeFlameFx.values()){
+    const element = entry?.element || entry;
+    if(!element?.style) continue;
+    element.style.transform = getFlameElementTransform();
+  }
+}
+
 function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeColor = '', planeState = '') {
   if (!element) return;
   element.classList.add('fx-flame');
@@ -7552,7 +7574,7 @@ function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeC
   }
   element.style.position = 'absolute';
   element.style.pointerEvents = 'none';
-  element.style.transform = withLandscapeUprightTransform('translate(-50%, -100%)');
+  element.style.transform = getFlameElementTransform();
   const stateClass = planeState === 'alive' ? 'fx-flame--alive' : 'fx-flame--crashed';
   element.classList.add(stateClass);
   element.dataset.state = planeState || stateClass.replace('fx-flame--', '');
@@ -51644,6 +51666,8 @@ function setBoardLandscape(active){
   if(typeof refreshInventoryContainerLayouts === "function") refreshInventoryContainerLayouts();
   // Открытая подсказка инвентаря посчитана под прежнюю ориентацию — пересобираем.
   if(typeof refreshInventoryTooltip === "function") refreshInventoryTooltip();
+  // Огонь над сбитым самолётом горит до конца раунда, а разворот ему ставится один раз.
+  if(typeof refreshPlaneFlameOrientation === "function") refreshPlaneFlameOrientation();
   // Табличку «Play again» держит inline left/top, посчитанный под прежнюю
   // ориентацию. В матче её каждый кадр переставляет gameDraw, но в превью и на
   // паузе цикла пересчитать некому — делаем это сразу.
