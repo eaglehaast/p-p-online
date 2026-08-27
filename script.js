@@ -3013,9 +3013,19 @@ function showNuclearStrikeCinematicLayer(){
   }
 }
 
-function getRandomInventoryItem(){
+// Какой предмет выпал из ящика.
+//
+// Общими костями, а не своими: иначе у двоих в инвентаре оказываются РАЗНЫЕ предметы, и
+// это не косметика. Игрок применяет то, что видит у себя; у соперника такого предмета нет,
+// применение проваливается — и дальше самолёт летит по-разному. Снимок партии это потом
+// затирает, но затирает вместе с уже сделанным ходом.
+//
+// Повод жребия — сам ящик: его координаты у обоих одни и те же, поэтому из одного ящика
+// всегда выпадает одно и то же, и никаких счётчиков, которые могут разъехаться.
+function getRandomInventoryItem(label = null){
   if(INVENTORY_ITEMS.length === 0) return null;
-  const index = Math.floor(Math.random() * INVENTORY_ITEMS.length);
+  const fraction = getSharedRandomFraction(label ?? "item:unlabelled");
+  const index = Math.floor(fraction * INVENTORY_ITEMS.length);
   return INVENTORY_ITEMS[index] ?? null;
 }
 
@@ -10570,9 +10580,15 @@ function findCargoSpawnTarget(){
     return { x: spawn.x, targetY: spawn.targetY };
   };
 
+  // Общими костями, а не своими. Ящик, упавший у двоих в разных местах, — это уже не
+  // одна партия: один летит его подбирать туда, где у второго пусто.
+  //
+  // Повод жребия — раунд и номер хода: оба считаются одинаково у обоих, а ящик появляется
+  // ровно один раз на ход. Перебор сетки ниже и так одинаков — он не случайный.
   for(let attempt = 0; attempt < CARGO_MAX_SPAWN_ATTEMPTS; attempt++){
-    const x = minX + Math.random() * (maxX - minX);
-    const targetY = minY + Math.random() * (maxY - minY);
+    const seed = `cargo:${roundNumber}:${turnAdvanceCount}:${attempt}`;
+    const x = minX + getSharedRandomFraction(`${seed}:x`) * (maxX - minX);
+    const targetY = minY + getSharedRandomFraction(`${seed}:y`) * (maxY - minY);
     const spawn = trySpawnAt(x, targetY);
     if(spawn) return spawn;
   }
@@ -11076,7 +11092,11 @@ function updateCargoState(now = performance.now()){
       if(!plane?.isAlive || plane?.burning) continue;
       if(doesCargoIntersectPlaneBeneficialZone(cargo, plane)){
         cargo.pickedAt = now;
-        const item = getRandomInventoryItem();
+        // Повод жребия — этот ящик: координаты у него одни и те же на обоих устройствах,
+        // а подобрать его можно только раз.
+        const item = getRandomInventoryItem(
+          `item:${roundNumber}:${cargo.x.toFixed(2)}:${cargo.y.toFixed(2)}`
+        );
         addItemToInventory(plane.color, item);
         pickedUp = true;
         break;
