@@ -77,7 +77,12 @@ function buildWorld(){
     points,
     flags,
     mines: [{ id: 'm1', owner: 'green', x: 180, y: 300 }, { id: 'm2', owner: 'blue', x: 120, y: 220 }],
-    cargoState: [{ x: 150.456, y: 320.123, state: 'idle', animStartedAt: 999, animDurationMs: 500, pickedAt: 7 }],
+    cargoState: [
+      { x: 150.456, y: 320.123, state: 'idle', animStartedAt: 999, animDurationMs: 500, pickedAt: 7 },
+      // Ящик в падении: он появляется в тот же миг, что и ход, поэтому в снимок попадает
+      // регулярно.
+      { x: 210.5, y: 280.25, state: 'animating', animStartedAt: 1000, animDurationMs: 500, pickedAt: null },
+    ],
     aaUnits: [],
     flyingPoints: [{ plane: points[0] }],
     inventoryState: { blue: [INVENTORY_ITEMS[1]], green: [INVENTORY_ITEMS[0], INVENTORY_ITEMS[0], INVENTORY_ITEMS[2]] },
@@ -188,6 +193,21 @@ function buildWorld(){
     '4d: летящих самолётов после восстановления нет: снимок берётся между ходами');
   assert(world.pendingInventoryUse === null,
     '4e: незавершённое применение предмета не переезжает');
+
+  // Падающий ящик — тоже кадровое, только заметное не сразу.
+  //
+  // Груз появляется в том же месте кода, где переключается ход, поэтому в снимок он
+  // попадает ровно в разгар своего падения. Координаты у него финальные с самого начала,
+  // а «animating» всегда заканчивается одним и тем же «ready» — значит, записать надо
+  // сразу «ready». Иначе у отправителя ящик ещё летит, а у получателя применённый снимок
+  // кладёт его немедленно, и партии расходятся на время падения.
+  const snapshot = JSON.parse(text);
+  assert(snapshot.cargo[1].state === 'ready',
+    `4f: падающий ящик записан упавшим (сейчас «${snapshot.cargo[1].state}»)`);
+  assert(snapshot.cargo[1].x === 210.5 && snapshot.cargo[1].y === 280.25,
+    '4g: и там же, где упадёт — координаты у него финальные с самого начала');
+  assert(snapshot.cargo[0].state === 'idle',
+    '4h: остальные состояния груза не трогаем');
 }
 
 // === 5. Эффекты предметов переносятся именами, а не ссылками ===

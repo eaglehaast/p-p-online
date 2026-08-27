@@ -3166,6 +3166,16 @@ function useInventoryItemOnPlane(color, type, plane, options = {}){
   if(options?.skipUiSync !== true){
     syncInventoryUI(color);
   }
+  // Второй вход инвентаря (первый — applyInventoryItemAtBoardPlacement): клик и «липкое»
+  // применение приходят сюда. Записываем здесь, а не в обработчиках жестов, потому что
+  // жестов несколько, а место, где предмет действительно применился, — одно.
+  if(isOnlineMatchActive() && options?.actor !== "remote"){
+    recordOnlineTurnAction(color, {
+      kind: "plane",
+      type: normalizedType,
+      plane: points.indexOf(plane),
+    });
+  }
   return true;
 }
 
@@ -4469,38 +4479,64 @@ function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropC
     return false;
   }
 
+  return applyInventoryItemAtBoardPlacement(
+    activeItemState,
+    getBoardPlacementFromDropPoint(clientX, clientY),
+    dropContext,
+  );
+}
+
+// Хвост применения предмета, считая от ТОЧКИ НА ПОЛЕ, а не от пикселей курсора.
+//
+// Разделено ради онлайна: своей рукой точка получается из координат курсора, а чужой ход
+// приезжает уже с готовой точкой — но кладётся предмет дальше одним и тем же кодом. Иначе
+// у соперника предмет ставился бы «похожим» способом, а похожий — значит расходящийся.
+function applyInventoryItemAtBoardPlacement(activeItemState, placement, dropContext, options = {}){
+  if(!activeItemState || !placement) return false;
+  const { boardX, boardY, cellX, cellY } = placement;
+  if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return false;
+  const isRemote = options?.actor === "remote";
+  const debugPoint = { clientX: placement.clientX, clientY: placement.clientY };
+
   const usageConfig = getItemUsageConfig(activeItemState.type);
   if(!usageConfig){
-    logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: missing usage config", {
+    logInventoryInputEarlyExit(dropContext, debugPoint, "drop rejected: missing usage config", {
       foundItem: activeItemState,
     });
     return false;
   }
 
   if(usageConfig.target === ITEM_USAGE_TARGETS.SELF_PLANE){
-    const designPoint = toDesignCoords(clientX, clientY);
-    const { x: boardX, y: boardY } = designToBoardCoords(designPoint.x, designPoint.y);
     logDropCoordsDebug(`${dropContext}/self`, {
-      clientX,
-      clientY,
-      uiScale: designPoint.uiScale,
-      pinchScale: designPoint.pinchScale,
-      effectiveScale: designPoint.effectiveScale,
+      ...debugPoint,
+      uiScale: placement.uiScale,
+      pinchScale: placement.pinchScale,
+      effectiveScale: placement.effectiveScale,
       boardX,
       boardY
     });
     const ownPlane = getPlaneAtBoardPoint(activeItemState.color, boardX, boardY);
     if(!ownPlane){
-      logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: own plane not found", {
+      logInventoryInputEarlyExit(dropContext, debugPoint, "drop rejected: own plane not found", {
         foundItem: activeItemState,
       });
       return false;
     }
-    return applyItemToOwnPlane(activeItemState.type, activeItemState.color, ownPlane);
+    const applied = applyItemToOwnPlane(activeItemState.type, activeItemState.color, ownPlane);
+    // Предмет на свой самолёт едет номером самолёта, а не точкой: у соперника самолёт
+    // стоит там же, но попасть в него точкой с чужого экрана — лотерея.
+    if(applied && !isRemote){
+      recordOnlineTurnAction(activeItemState.color, {
+        kind: "plane",
+        type: activeItemState.type,
+        plane: points.indexOf(ownPlane),
+      });
+    }
+    return applied;
   }
 
   if(usageConfig.target !== ITEM_USAGE_TARGETS.BOARD){
-    logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: unsupported usage target", {
+    logInventoryInputEarlyExit(dropContext, debugPoint, "drop rejected: unsupported usage target", {
       foundItem: activeItemState,
       usageTarget: usageConfig.target,
     });
@@ -4508,21 +4544,20 @@ function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropC
   }
 
   if(activeItemState.type === INVENTORY_ITEM_TYPES.MINE){
-    const minePlacement = getMinePlacementFromDropPoint(clientX, clientY);
+    const minePlacement = { boardX, boardY, cellX, cellY, x: boardX, y: boardY };
     logDropCoordsDebug(`${dropContext}/mine`, {
-      clientX,
-      clientY,
-      uiScale: minePlacement.uiScale,
-      pinchScale: minePlacement.pinchScale,
-      effectiveScale: minePlacement.effectiveScale,
-      boardX: minePlacement.boardX,
-      boardY: minePlacement.boardY,
-      cellX: minePlacement.cellX,
-      cellY: minePlacement.cellY
+      ...debugPoint,
+      uiScale: placement.uiScale,
+      pinchScale: placement.pinchScale,
+      effectiveScale: placement.effectiveScale,
+      boardX,
+      boardY,
+      cellX,
+      cellY
     });
     const isPlacementValid = isMinePlacementValid(minePlacement);
     if(!isPlacementValid){
-      logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: mine placement invalid", {
+      logInventoryInputEarlyExit(dropContext, debugPoint, "drop rejected: mine placement invalid", {
         foundItem: activeItemState,
       });
       return false;
@@ -4534,14 +4569,23 @@ function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropC
       cellX: minePlacement.cellX,
       cellY: minePlacement.cellY,
     });
+    if(!isRemote){
+      recordOnlineTurnAction(activeItemState.color, {
+        kind: "board",
+        type: activeItemState.type,
+        x: boardX,
+        y: boardY,
+        cellX,
+        cellY,
+      });
+    }
     return true;
   }
 
   if(activeItemState.type === INVENTORY_ITEM_TYPES.DYNAMITE){
-    const dropPlacement = getDynamitePlacementFromDropPoint(clientX, clientY);
-    const targetBrick = findMapSpriteForDynamiteDrop(dropPlacement);
+    const targetBrick = findMapSpriteForDynamiteDrop({ boardX, boardY });
     if(!targetBrick){
-      logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: no brick target", {
+      logInventoryInputEarlyExit(dropContext, debugPoint, "drop rejected: no brick target", {
         foundItem: activeItemState,
       });
       return false;
@@ -4564,11 +4608,32 @@ function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropC
       brickRemoved: false,
     };
     dynamiteState.push(dynamiteEntry);
+    if(!isRemote){
+      recordOnlineTurnAction(activeItemState.color, {
+        kind: "board",
+        type: activeItemState.type,
+        x: boardX,
+        y: boardY,
+        cellX,
+        cellY,
+      });
+    }
     return true;
   }
 
   if(activeItemState.type === INVENTORY_ITEM_TYPES.INVISIBILITY){
-    return queueInvisibilityEffectForPlayer(activeItemState.color);
+    const applied = queueInvisibilityEffectForPlayer(activeItemState.color);
+    if(applied && !isRemote){
+      recordOnlineTurnAction(activeItemState.color, {
+        kind: "board",
+        type: activeItemState.type,
+        x: boardX,
+        y: boardY,
+        cellX,
+        cellY,
+      });
+    }
+    return applied;
   }
 
   return false;
@@ -4688,33 +4753,19 @@ function onInventoryItemClick(event){
   logInventoryInputDebug("click", event, inventoryInteractionState.mode);
 }
 
-function getMinePlacementFromDropPoint(clientX, clientY){
+// Пиксели курсора -> точка на поле. Раньше это же преобразование было переписано трижды —
+// отдельно для мины, для динамита и для своего самолёта; предметы отличаются тем, что с
+// этой точкой делают дальше, а не тем, как её считают.
+function getBoardPlacementFromDropPoint(clientX, clientY){
   const designPoint = toDesignCoords(clientX, clientY);
-  const { x: designX, y: designY } = designPoint;
-  const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
-  const cellX = Math.floor((boardX - FIELD_LEFT) / CELL_SIZE);
-  const cellY = Math.floor((boardY - FIELD_TOP) / CELL_SIZE);
+  const { x: boardX, y: boardY } = designToBoardCoords(designPoint.x, designPoint.y);
   return {
     boardX,
     boardY,
-    cellX,
-    cellY,
-    x: boardX,
-    y: boardY,
-    uiScale: designPoint.uiScale,
-    pinchScale: designPoint.pinchScale,
-    effectiveScale: designPoint.effectiveScale,
-  };
-}
-
-
-function getDynamitePlacementFromDropPoint(clientX, clientY){
-  const designPoint = toDesignCoords(clientX, clientY);
-  const { x: designX, y: designY } = designPoint;
-  const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
-  return {
-    boardX,
-    boardY,
+    cellX: Math.floor((boardX - FIELD_LEFT) / CELL_SIZE),
+    cellY: Math.floor((boardY - FIELD_TOP) / CELL_SIZE),
+    clientX,
+    clientY,
     uiScale: designPoint.uiScale,
     pinchScale: designPoint.pinchScale,
     effectiveScale: designPoint.effectiveScale,
@@ -8141,15 +8192,18 @@ const VALID_GAME_MODES = new Set(["hotSeat", "computer", "online"]);
 //
 // Сводим все пять в одно место. Заодно это ровно то, чего не хватает онлайну: там
 // «не моя сторона» — это не ИИ, а второй игрок, но отбивать ввод надо точно так же.
-const COLOR_CONTROLLERS = Object.freeze({ LOCAL: "local", AI: "ai" });
+const COLOR_CONTROLLERS = Object.freeze({ LOCAL: "local", AI: "ai", REMOTE: "remote" });
 // В игре против компьютера ИИ всегда играет за синих, а человек за зелёных.
 const AI_PLAYER_COLOR = "blue";
 
 function getColorController(color){
   if(color !== "blue" && color !== "green") return COLOR_CONTROLLERS.LOCAL;
+  // Онлайн решает первым: если мы сели за стол, то за столом два человека, и ИИ там
+  // не играет ни за кого — даже если в настройках осталась игра против компьютера.
+  const seat = getOnlineSeatColor();
+  if(seat) return color === seat ? COLOR_CONTROLLERS.LOCAL : COLOR_CONTROLLERS.REMOTE;
   if(gameMode === "computer" && color === AI_PLAYER_COLOR) return COLOR_CONTROLLERS.AI;
-  // Хот-сит: обе стороны за этим устройством. Сюда же встанет онлайн — там локальной
-  // будет только своя сторона, а вторая уедет к удалённому игроку.
+  // Хот-сит: обе стороны за этим устройством.
   return COLOR_CONTROLLERS.LOCAL;
 }
 
@@ -8168,6 +8222,335 @@ function isAiColor(color){
 function isAiControlledTurn(){
   return isAiColor(turnColors?.[turnIndex]);
 }
+
+// Сторона второго игрока: ходить за неё нельзя, но и запускать её не надо — ход приедет
+// сам. Тем и отличается от стороны ИИ.
+function isRemoteColor(color){
+  return getColorController(color) === COLOR_CONTROLLERS.REMOTE;
+}
+
+/* ======= ОНЛАЙН: МЕСТО ЗА СТОЛОМ И ПРОВОД МЕЖДУ ИГРОКАМИ ======= */
+//
+// Сервера здесь нет, и это намеренно. Провод — BroadcastChannel, то есть две вкладки
+// одного браузера. Всё остальное написано так, как будет с сервером: своё место за
+// столом, конверты с номерами, входящая очередь, снимок партии после хода. Заменить
+// потом придётся ровно одну функцию — createBroadcastTransport.
+//
+// Место берётся из адреса: ?seat=green&room=abc. Оттуда же его отдаст и телеграм:
+// start_param мини-приложения — это и есть номер комнаты.
+//
+// Игра пошаговая, поэтому задержка провода не имеет значения: пока ход не сделан, второму
+// игроку показывать нечего. По этой же причине по проводу едет НЕ каждый кадр полёта, а
+// один пакет на ход — что сделано — и следом снимок — что из этого вышло.
+
+const ONLINE_SEAT_COLORS = Object.freeze(["blue", "green"]);
+const ONLINE_ROOM_FALLBACK = "local";
+const ONLINE_ROOM_MAX_LENGTH = 64;
+const ONLINE_CHANNEL_PREFIX = "paper-wings-room-";
+// Версия того, что едет по проводу. Пакет чужой версии отвергается ЦЕЛИКОМ: иначе игра
+// разложила бы его наполовину и разъехалась бы у двоих тихо и не сразу. Ровно то же
+// правило, что у снимка партии (MATCH_STATE_VERSION).
+const ONLINE_PROTOCOL_VERSION = 1;
+
+let onlineSession = null;
+// Что приехало и ещё не применено. Одна очередь на ходы и снимки вместе — порядок
+// прибытия здесь и есть порядок событий: снимок описывает состояние ПОСЛЕ хода, поэтому
+// перепутать их местами нельзя.
+let onlineInbox = [];
+// Предметы, использованные в текущем ходе на этом устройстве. Уезжают одним пакетом
+// вместе с запуском, а не поодиночке: соперник должен увидеть ход целиком и сразу.
+let onlineTurnDraft = null;
+
+function parseOnlineSeatFromSearch(search){
+  const params = new URLSearchParams(typeof search === "string" ? search : "");
+  const seat = (params.get("seat") || "").trim().toLowerCase();
+  if(!ONLINE_SEAT_COLORS.includes(seat)) return null;
+  const roomRaw = (params.get("room") || "").trim();
+  const room = roomRaw ? roomRaw.slice(0, ONLINE_ROOM_MAX_LENGTH) : ONLINE_ROOM_FALLBACK;
+  return { seat, room };
+}
+
+function getOnlineSeatColor(){
+  return onlineSession?.seat ?? null;
+}
+
+// Общий жребий для двоих.
+//
+// Игра бросает кости в двух местах: какая будет карта и кто ходит первым. Офлайн это
+// обычный Math.random(). В онлайне так нельзя — каждое устройство бросило бы свои, и
+// это не «разошлись на кадр», а РАЗНЫЕ ПАРТИИ: один играет на своём поле, другой на
+// своём, и оба уверены, что соперник жульничает.
+//
+// Пакета для этого не нужно: достаточно, чтобы обе стороны бросили ОДИН И ТОТ ЖЕ жребий.
+// Он привязан к комнате и к поводу, так что совпадает и в первом раунде, и во всех
+// следующих. Целочисленный хеш и xorshift выбраны намеренно: в отличие от Math.sin и
+// Math.pow, которые стандарт разрешает считать по-разному, они дают побитово одинаковый
+// результат в любом движке — а значит, и на любом устройстве.
+function getSharedRandomFraction(label){
+  const room = onlineSession?.room;
+  if(!room) return Math.random();
+
+  let seed = 2166136261;
+  const text = `${room}#${label}`;
+  for(let i = 0; i < text.length; i += 1){
+    seed ^= text.charCodeAt(i);
+    seed = Math.imul(seed, 16777619);
+  }
+  seed |= 0;
+  seed ^= seed << 13; seed |= 0;
+  seed ^= seed >>> 17;
+  seed ^= seed << 5;  seed |= 0;
+  return ((seed >>> 0) % 1000000) / 1000000;
+}
+
+function isOnlineMatchActive(){
+  return onlineSession !== null;
+}
+
+// Единственное место, которое знает, ЧЕМ соединены игроки. Сервер встанет сюда.
+function createBroadcastTransport(room){
+  if(typeof BroadcastChannel !== "function") return null;
+  const channel = new BroadcastChannel(`${ONLINE_CHANNEL_PREFIX}${room}`);
+  const handlers = [];
+  channel.onmessage = (event) => {
+    for(const handler of handlers) handler(event?.data);
+  };
+  return {
+    kind: "broadcast",
+    post(envelope){ channel.postMessage(envelope); },
+    receive(handler){ handlers.push(handler); },
+    close(){ channel.onmessage = null; channel.close(); },
+  };
+}
+
+function startOnlineSession(options = {}){
+  const seatInfo = options.seat
+    ? { seat: options.seat, room: options.room || ONLINE_ROOM_FALLBACK }
+    : parseOnlineSeatFromSearch(window.location?.search || "");
+  if(!seatInfo || !ONLINE_SEAT_COLORS.includes(seatInfo.seat)) return null;
+
+  const createTransport = typeof options.createTransport === "function"
+    ? options.createTransport
+    : createBroadcastTransport;
+  const transport = createTransport(seatInfo.room);
+  if(!transport){
+    console.warn("[online] провода нет: BroadcastChannel недоступен, играем как обычно");
+    return null;
+  }
+
+  onlineSession = {
+    seat: seatInfo.seat,
+    room: seatInfo.room,
+    // Свой номер нужен, чтобы не принять собственный пакет за чужой. BroadcastChannel
+    // себе не отвечает, но сервер-ретранслятор обычно шлёт всем, включая отправителя,
+    // и без этой проверки мы бы разыграли собственный ход второй раз.
+    selfId: `${seatInfo.seat}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    transport,
+    outSeq: 0,
+    lastSeenSeq: 0,
+    moveHandlers: [],
+    stateHandlers: [],
+  };
+  onlineInbox = [];
+  onlineTurnDraft = null;
+  // Кто ходит первым — второй жребий, который нельзя бросать порознь. Дальше он просто
+  // чередуется по раундам, поэтому достаточно совпасть в начале.
+  lastFirstTurn = getSharedRandomFraction("first-turn") < 0.5 ? 0 : 1;
+  turnIndex = lastFirstTurn;
+  transport.receive(receiveOnlineEnvelope);
+  onRemoteMove((move) => { onlineInbox.push({ type: "move", payload: move }); });
+  onRemoteState((state) => { onlineInbox.push({ type: "state", payload: state }); });
+  console.log("[online] место за столом", {
+    seat: onlineSession.seat,
+    room: onlineSession.room,
+    transport: transport.kind,
+  });
+  return onlineSession;
+}
+
+function stopOnlineSession(){
+  if(!onlineSession) return false;
+  try { onlineSession.transport.close(); } catch(_error){ /* провод уже закрыт */ }
+  onlineSession = null;
+  onlineInbox = [];
+  onlineTurnDraft = null;
+  return true;
+}
+
+/* --- четыре функции провода --- */
+
+function sendMove(move){
+  return postOnlineEnvelope("move", move);
+}
+
+function sendState(state){
+  return postOnlineEnvelope("state", state);
+}
+
+function onRemoteMove(handler){
+  if(!onlineSession || typeof handler !== "function") return false;
+  onlineSession.moveHandlers.push(handler);
+  return true;
+}
+
+function onRemoteState(handler){
+  if(!onlineSession || typeof handler !== "function") return false;
+  onlineSession.stateHandlers.push(handler);
+  return true;
+}
+
+function postOnlineEnvelope(type, payload){
+  if(!onlineSession) return false;
+  onlineSession.outSeq += 1;
+  onlineSession.transport.post({
+    p: ONLINE_PROTOCOL_VERSION,
+    t: type,
+    from: onlineSession.selfId,
+    seat: onlineSession.seat,
+    seq: onlineSession.outSeq,
+    payload,
+  });
+  return true;
+}
+
+function receiveOnlineEnvelope(envelope){
+  if(!onlineSession || !envelope || typeof envelope !== "object") return false;
+  if(envelope.p !== ONLINE_PROTOCOL_VERSION){
+    console.warn("[online] пакет чужой версии, отброшен целиком", { p: envelope.p });
+    return false;
+  }
+  // Своё эхо.
+  if(envelope.from === onlineSession.selfId) return false;
+  // Чужая вкладка, севшая на наше же место: играть за одну сторону вдвоём нельзя.
+  if(envelope.seat === onlineSession.seat) return false;
+  // Повтор или отставший пакет. Понадобится, когда провод начнёт досылать пропущенное
+  // после обрыва: разыграть один и тот же ход дважды хуже, чем не получить его вовсе.
+  if(!(envelope.seq > onlineSession.lastSeenSeq)) return false;
+  onlineSession.lastSeenSeq = envelope.seq;
+
+  const handlers = envelope.t === "move" ? onlineSession.moveHandlers
+    : envelope.t === "state" ? onlineSession.stateHandlers
+    : null;
+  if(!handlers) return false;
+  for(const handler of handlers) handler(envelope.payload, envelope);
+  return true;
+}
+
+/* --- отправка своего хода --- */
+
+function recordOnlineTurnAction(color, action){
+  if(!onlineSession || !action) return false;
+  if(!isLocalColor(color)) return false;
+  if(!onlineTurnDraft || onlineTurnDraft.color !== color){
+    onlineTurnDraft = { color, items: [] };
+  }
+  onlineTurnDraft.items.push(action);
+  return true;
+}
+
+function publishOnlineTurnMove(plane, vx, vy){
+  if(!onlineSession) return false;
+  const color = plane?.color;
+  if(!isLocalColor(color)) return false;
+  // Самолёты едут номером в points, как и носитель флага в снимке партии: у обоих
+  // игроков этот список строится одинаково, а ссылку по проводу не передать.
+  const planeIndex = points.indexOf(plane);
+  if(planeIndex < 0) return false;
+
+  const items = (onlineTurnDraft && onlineTurnDraft.color === color)
+    ? onlineTurnDraft.items
+    : [];
+  onlineTurnDraft = null;
+  return sendMove({ color, plane: planeIndex, vx, vy, items });
+}
+
+function publishOnlineStateAfterTurn(movedColor){
+  onlineTurnDraft = null;
+  if(!onlineSession) return false;
+  // Снимок шлёт тот, кто только что ходил: у него состояние настоящее, а у соперника —
+  // пересчитанное. Расхождения неизбежны (плавающая точка, свой порядок кадров), и
+  // именно этот пакет их гасит, пока они не накопились.
+  if(!isLocalColor(movedColor)) return false;
+  return sendState(serializeMatchState());
+}
+
+/* --- применение чужого хода --- */
+
+// Ход соперника и его снимок применяются ТОЛЬКО между ходами. Снимок, приехавший посреди
+// полёта, оборвал бы его на середине: у отправителя полёт уже кончился, у нас ещё нет.
+function isBoardIdleForRemoteInput(){
+  return flyingPoints.length === 0 && !isAimSessionActive();
+}
+
+function drainOnlineInbox(){
+  if(!onlineSession || onlineInbox.length === 0) return 0;
+  let applied = 0;
+  // Ход, поставленный в игру, поднимает самолёт в воздух — и цикл на этом сам
+  // останавливается до конца полёта.
+  while(onlineInbox.length > 0 && isBoardIdleForRemoteInput()){
+    const entry = onlineInbox.shift();
+    if(entry.type === "move"){
+      applyRemoteTurnMove(entry.payload);
+    } else {
+      applyMatchState(entry.payload);
+    }
+    applied += 1;
+  }
+  return applied;
+}
+
+function applyRemoteTurnMove(move){
+  if(!move || typeof move !== "object") return false;
+  const plane = points[move.plane];
+  if(!plane){
+    console.warn("[online] приехал ход про самолёт, которого нет", move);
+    return false;
+  }
+  // Сначала предметы, потом запуск, и в том же порядке, в каком их применил соперник:
+  // топливо и крылья меняют сам полёт, приехав после запуска они бы опоздали.
+  const actions = Array.isArray(move.items) ? move.items : [];
+  for(const action of actions){
+    applyRemoteInventoryAction(move.color, action);
+  }
+  const result = runLaunchReleaseStage({ plane, vx: move.vx, vy: move.vy, actor: "remote" });
+  return result?.ok === true;
+}
+
+function applyRemoteInventoryAction(color, action){
+  if(!action || typeof action !== "object") return false;
+  if(action.kind === "plane"){
+    const plane = points[action.plane];
+    if(!plane) return false;
+    return useInventoryItemOnPlane(color, action.type, plane, { actor: "remote" });
+  }
+  if(action.kind === "board"){
+    // Тот же путь, которым предмет ставится своей рукой, — только точка приехала готовой,
+    // а не пересчитывается из пикселей курсора.
+    const applied = applyInventoryItemAtBoardPlacement(
+      { color, type: action.type },
+      { boardX: action.x, boardY: action.y, cellX: action.cellX, cellY: action.cellY },
+      "remote",
+      { actor: "remote" },
+    );
+    if(applied) removeItemFromInventory(color, action.type);
+    return applied;
+  }
+  return false;
+}
+
+function getOnlineStatus(){
+  if(!onlineSession) return "офлайн: место за столом не занято (?seat=blue или ?seat=green)";
+  return {
+    seat: onlineSession.seat,
+    room: onlineSession.room,
+    transport: onlineSession.transport.kind,
+    sent: onlineSession.outSeq,
+    lastSeen: onlineSession.lastSeenSeq,
+    inbox: onlineInbox.length,
+    myTurn: isLocalColor(turnColors?.[turnIndex]),
+  };
+}
+
 const CLEAR_SKY_MAP_ID = "clearsky";
 const CLEAR_SKY_MAP_NAME = "clear sky";
 
@@ -11706,6 +12089,15 @@ loadSettings();
 applyTemporaryMenuStartupDefaults();
 applyDevToolsVisibility();
 syncInventoryVisibility();
+// Место за столом берётся из адреса и решает, чем можно управлять руками, поэтому
+// садиться надо до первого кадра, а не по кнопке в меню.
+startOnlineSession();
+
+if(typeof window !== "undefined"){
+  window.onlineStatus = function(){
+    return getOnlineStatus();
+  };
+}
 
 window.addEventListener('paperWingsSettingsChanged', (event) => {
   const payloadAddCargo = event?.detail?.addCargo;
@@ -20794,6 +21186,10 @@ function runLaunchReleaseStage({ plane, vx, vy, actor = "human" }){
   recordAiSelfAnalyzerLaunch(plane, vx, vy, actor === "computer" ? "computer" : "human");
   if(actor === "human"){
     recordHumanDecisionEvent(plane, vx, vy);
+    // Ход уезжает отсюда, а не из обработчика отпускания мыши: запуск случается из
+    // нескольких мест, а это — единственное общее для всех. Чужой ход (actor "remote")
+    // сюда же и приходит, поэтому важно не отправить его обратно.
+    publishOnlineTurnMove(plane, vx, vy);
   }
 
   if(!hasShotThisRound){
@@ -21052,7 +21448,8 @@ function handleStart(e) {
   }
 
   const currentColor= turnColors[turnIndex];
-  if(gameMode==="computer" && currentColor==="blue") return; // ход ИИ
+  // Не наша сторона: ход ИИ или ход соперника по сети.
+  if(!isLocalColor(currentColor)) return;
 
   if(flyingPoints.some(fp=>fp.plane.color===currentColor)) return;
 
@@ -47241,6 +47638,10 @@ function advanceTurn(){
     };
   }
   invalidateAiPlanningState("turn_advanced");
+  // Ход доигран — самое время показать сопернику, что из него вышло. Снимок берётся
+  // именно здесь, потому что здесь состояние уже устоялось: анимации отыграли, эффекты
+  // предметов сняты, ход переключён.
+  publishOnlineStateAfterTurn(previousTurnColor);
   if(isAiControlledTurn()){
     aiMoveScheduled = false;
     scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
@@ -47421,6 +47822,10 @@ function gameDraw(){
     aiLaunchFrameHealthState.degradedSinceAt = 0;
   }
   globalFrame += delta;
+
+  // Что приехало от соперника, встаёт в игру здесь: между кадрами и только когда на поле
+  // ничего не летит.
+  drainOnlineInbox();
 
   // фон
   resetCanvasState(gsBoardCtx, gsBoardCanvas);
@@ -50193,8 +50598,14 @@ function serializeMatchState(){
     mines: (Array.isArray(mines) ? mines : []).map((mine) => ({
       id: mine?.id ?? null, owner: mine?.owner ?? null, x: num(mine?.x), y: num(mine?.y),
     })),
+    // Ящик, который ещё падает, записывается уже упавшим. Координаты у него финальные с
+    // самого начала — падение это только анимация, и «animating» всегда заканчивается
+    // одним и тем же «ready». Без этого снимок расходился бы у двоих на время падения:
+    // ход и груз появляются в одном и том же месте кода, но у отправителя ящик ещё
+    // летит, а у получателя применённый снимок кладёт его сразу.
     cargo: (Array.isArray(cargoState) ? cargoState : []).map((cargo) => ({
-      x: num(cargo?.x), y: num(cargo?.y), state: cargo?.state ?? null,
+      x: num(cargo?.x), y: num(cargo?.y),
+      state: cargo?.state === "animating" ? "ready" : (cargo?.state ?? null),
     })),
     // Носитель флага в игре — ССЫЛКА на самолёт. По проводу едет его номер в points.
     flags: (Array.isArray(flags) ? flags : []).map((flag) => ({
@@ -51200,7 +51611,9 @@ function getRandomPlayableMapIndex(upcomingRoundNumber = roundNumber + 1){
     return 0;
   }
 
-  const randomIndex = Math.floor(Math.random() * playableForRound.length);
+  const randomIndex = Math.floor(
+    getSharedRandomFraction(`map:${pairSequenceNumber}`) * playableForRound.length
+  );
   randomMapPairSequenceNumber = pairSequenceNumber;
   randomMapPairIndex = playableForRound[randomIndex] ?? 0;
   return randomMapPairIndex;

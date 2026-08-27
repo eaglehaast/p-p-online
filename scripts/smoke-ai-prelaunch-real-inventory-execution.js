@@ -39,6 +39,10 @@ const context = {
   turnColors: ['blue'], turnIndex: 0,
   aiRoundState: { currentGoal: 'simple_step2_selector' },
   syncInventoryUI(){}, logAiDecision(){},
+  // Онлайна в игре против компьютера нет, но применение предмета теперь спрашивает про
+  // него, чтобы записать ход для соперника.
+  isOnlineMatchActive(){ return false; }, recordOnlineTurnAction(){ return false; },
+  points: [],
   queueInvisibilityEffectForPlayer(){ return false; },
   isMinePlacementValid(){ return false; },
   placeMine(){ return false; },
