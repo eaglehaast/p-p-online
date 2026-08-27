@@ -8,7 +8,10 @@ function extractFunctionSource(source, fnName){
   const signature = `function ${fnName}(`;
   const start = source.indexOf(signature);
   if(start === -1) throw new Error(`Function not found in script.js: ${fnName}`);
-  const bodyStart = source.indexOf('{', start);
+  // Тело ищем после закрывающей скобки списка аргументов, а не от первой попавшейся «{».
+  // Иначе фигурная скобка в самих аргументах (деструктуризация) обрывает извлечение на
+  // полуслове — и тест падал с SyntaxError, ничего при этом не проверяя.
+  const bodyStart = source.indexOf('{', source.indexOf(')', start));
   if(bodyStart === -1) throw new Error(`Function body start not found for: ${fnName}`);
   let depth = 0;
   for(let i = bodyStart; i < source.length; i += 1){
@@ -56,6 +59,9 @@ const context = {
   INVENTORY_ITEM_TYPES: { WINGS: 'wings', CROSSHAIR: 'crosshair', FUEL: 'fuel', INVISIBILITY: 'invisibility' },
   isPlayerInvisibilityActive: () => false,
   isPlaneTargetable: () => true,
+  // Настоящий радиус считается от размаха крыльев; здесь проверяется не он, а точка
+  // против отрезка, поэтому достаточно постоянного.
+  getMineEffectiveTriggerRadius: () => 10,
   mines: [{ owner: 'blue', x: 50, y: 0 }],
   flyingPoints: [],
   canAwardKillPointForPlane: () => true,
