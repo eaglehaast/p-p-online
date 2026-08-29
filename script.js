@@ -10618,12 +10618,16 @@ function spawnCargoForTurn(){
     return;
   }
   const animStartedAt = performance.now();
+  const animDurationMs = resolveCargoAnimLifetimeMs();
   cargoState.push({
     x: candidate.x,
     y: candidate.targetY,
     state: "animating",
     animStartedAt,
-    animDurationMs: resolveCargoAnimLifetimeMs(),
+    animDurationMs,
+    // Срок готовности — в часах симуляции. Ящик появляется на одном и том же шаге у
+    // обоих игроков, значит и готов будет на одном и том же.
+    readyAtSim: simulationTimeSec + animDurationMs / 1000,
     pickedAt: null
   });
 }
@@ -11096,7 +11100,14 @@ function updateCargoState(now = performance.now()){
     const animDurationMs = Number.isFinite(cargo.animDurationMs)
       ? cargo.animDurationMs
       : CARGO_ANIM_MS_FALLBACK;
-    if(cargo.state === "animating" && now - cargo.animStartedAt >= animDurationMs){
+    // Готовность — по часам симуляции, а не по часам машины: от неё зависит, можно ли
+    // ящик подобрать, а значит она обязана наступить у обоих игроков в один и тот же
+    // момент ИГРЫ, а не в один и тот же момент реального времени. Само падение при этом
+    // рисуется по-прежнему от animStartedAt — это уже оформление.
+    const readyAtSim = Number.isFinite(cargo.readyAtSim)
+      ? cargo.readyAtSim
+      : -Infinity;
+    if(cargo.state === "animating" && simulationTimeSec >= readyAtSim){
       cargo.state = "ready";
       cargo.landingSettledAt = now;
       removeCargoAnimationDomEntry(cargo);
@@ -48086,6 +48097,144 @@ function drawInitialFrame(reason = "initial") {
   logRenderInit("first frame draw", { reason });
 }
 
+/* ======= ШАГ СИМУЛЯЦИИ ФИКСИРОВАННОЙ ДЛИНЫ ======= */
+//
+// Полёт считается порциями РОВНО одной длины, а не «сколько прошло с прошлого кадра».
+//
+// Раньше шаг равнялся времени кадра, и траектория зависела от того, насколько быстрая у
+// игрока машина. Замер: один и тот же бросок садился в разные точки — на 4.8 px при
+// одинаковой частоте кадров и на ~11 px при разнице в 4-8 раз. Ящик и мина — 20 px,
+// самолёт — 36 px. То есть у двоих игроков это буквально разные полёты, а в одиночной
+// игре на слабой машине — другая физика.
+//
+// Теперь длительность полёта — целое число шагов, одинаковое везде, а траектория
+// становится чистой функцией от вектора броска. Частота кадров влияет только на то,
+// сколько шагов посчитается за один кадр, и ни на что больше.
+const SIMULATION_STEP_SEC = 1 / 60;
+// Больше этого за кадр не считаем: вкладка, пролежавшая в фоне, иначе попыталась бы
+// нагнать всё пропущенное разом и повесила бы браузер.
+const SIMULATION_MAX_STEPS_PER_FRAME = 5;
+let simulationStepAccumulator = 0;
+
+// Часы симуляции: идут шагами, а не по performance.now().
+//
+// Нужны там, где игровое событие ждёт времени. Ящик, например, падает полсекунды и только
+// потом становится «готов» — и если этот срок мерить часами машины, а прилёт самолёта
+// считать шагами, то у быстрой и медленной вкладки эти две шкалы разъедутся. Один увидит
+// ящик уже готовым, второй — ещё падающим, и подбор случится только у одного.
+let simulationTimeSec = 0;
+
+function stepSimulation(deltaSec, now){
+  simulationTimeSec += deltaSec;
+    for(const aa of aaUnits){
+      aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec * deltaSec) % 360;
+      aa.trail.push({angleDeg: aa.sweepAngleDeg, time: now});
+      aa.trail = aa.trail.filter(seg => now - seg.time < AA_TRAIL_MS);
+    }
+
+
+    // полёты
+    if(flyingPoints.length){
+      const current = [...flyingPoints];
+      for(const fp of current){
+        const p = fp.plane;
+        if(!p.isAlive || p.burning){
+          flyingPoints = flyingPoints.filter(other => other !== fp);
+          continue;
+        }
+        if(fp.lastHitCooldown > 0){
+          fp.lastHitCooldown = Math.max(0, fp.lastHitCooldown - deltaSec);
+          if(fp.lastHitCooldown <= 0){
+            fp.lastHitPlane = null;
+            fp.lastHitCooldown = 0;
+          }
+        }
+        if(fp.shieldBreakLockActive){
+          const lockTarget = fp.shieldBreakLockTarget;
+          const attackerTargetable = isPlaneTargetable(p);
+          const lockTargetTargetable = isPlaneTargetable(lockTarget);
+          if(!attackerTargetable || !lockTargetTargetable){
+            fp.shieldBreakLockActive = false;
+            fp.shieldBreakLockTarget = null;
+          } else {
+            const attackerHitbox = getPlaneHitbox(p);
+            const lockTargetHitbox = getPlaneHitbox(lockTarget);
+            if(!planeHitboxesIntersect(attackerHitbox, lockTargetHitbox)){
+              fp.shieldBreakLockActive = false;
+              fp.shieldBreakLockTarget = null;
+            }
+          }
+        }
+        const prevX = p.x;
+        const prevY = p.y;
+
+        resolveFlightSurfaceCollision(fp, prevX, prevY, deltaSec);
+
+        if(!p.isAlive || p.burning){
+          continue;
+        }
+
+        // нос по текущей скорости
+        const colorShift = colorAngleOffset(p.color);
+        const baseAngle = Math.atan2(fp.vy, fp.vx) + Math.PI / 2;
+        p.angle = baseAngle + colorShift;
+
+        // трейл
+        const seg = {
+          x1: p.prevX, y1: p.prevY,
+          x2: p.x, y2: p.y,
+          lineWidth: PLANE_TRAIL_LINE_WIDTH
+        };
+        p.segments.push(seg);
+        if(p.segments.length > MAX_TRAIL_SEGMENTS) p.segments.shift();
+
+        // проверка попаданий по врагам
+        checkPlaneHits(p, fp);
+        handleFlagInteractions(p);
+        if(handleAAForPlane(p, fp)) continue;
+        if(handleMineForPlane(p, fp)) continue;
+
+        // Прошлое положение обновляется ЗДЕСЬ, после проверок попаданий, а не до них.
+        //
+        // Раньше оно обновлялось строчкой выше — и все проверки, которые честно смотрят
+        // «не задел ли самолёт что-нибудь по пути», получали отрезок нулевой длины: начало
+        // уже равнялось концу. То есть попадание считалось по ТОЧКЕ, где самолёт оказался в
+        // этом кадре, а весь путь между кадрами не проверялся вовсе.
+        //
+        // Самолёт летит около 600 пикселей за полторы секунды: это ~10 пикселей за кадр на
+        // ровном ходу и втрое больше на просевшем. Мина шириной в 20 пикселей и ящик такого
+        // же размера просто перепрыгивались. Проверка на отрезке в handleMineForPlane была
+        // написана именно от этого — и всё это время была мертва.
+        p.prevX = p.x; p.prevY = p.y;
+
+        fp.timeLeft -= deltaSec;
+        if(fp.timeLeft<=0){
+          flyingPoints = flyingPoints.filter(x => x !== fp);
+          // смена хода, когда полётов текущего цвета больше нет
+          if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
+            advanceTurn();
+          }
+        }
+      }
+    }
+}
+
+function runSimulationSteps(frameDeltaSec, now){
+  simulationStepAccumulator += frameDeltaSec;
+  let steps = 0;
+  while(simulationStepAccumulator >= SIMULATION_STEP_SEC && steps < SIMULATION_MAX_STEPS_PER_FRAME){
+    stepSimulation(SIMULATION_STEP_SEC, now);
+    simulationStepAccumulator -= SIMULATION_STEP_SEC;
+    steps += 1;
+  }
+  // Остаток сверх допустимого отбрасываем, а не копим: догонять его пришлось бы
+  // ускоренной перемоткой, и полёт у отставшего игрока пошёл бы иначе.
+  if(steps >= SIMULATION_MAX_STEPS_PER_FRAME){
+    simulationStepAccumulator = 0;
+  }
+  return steps;
+}
+
 function gameDraw(){
   if (!gameDrawFirstLogged) {
     logBootStep("gameDraw");
@@ -48160,97 +48309,7 @@ function gameDraw(){
   runAiInventorySequenceTick(now);
   runAiLaunchSessionTick(now);
 
-  for(const aa of aaUnits){
-    aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec * deltaSec) % 360;
-    aa.trail.push({angleDeg: aa.sweepAngleDeg, time: now});
-    aa.trail = aa.trail.filter(seg => now - seg.time < AA_TRAIL_MS);
-  }
-
-
-  // полёты
-  if(flyingPoints.length){
-    const current = [...flyingPoints];
-    for(const fp of current){
-      const p = fp.plane;
-      if(!p.isAlive || p.burning){
-        flyingPoints = flyingPoints.filter(other => other !== fp);
-        continue;
-      }
-      if(fp.lastHitCooldown > 0){
-        fp.lastHitCooldown = Math.max(0, fp.lastHitCooldown - deltaSec);
-        if(fp.lastHitCooldown <= 0){
-          fp.lastHitPlane = null;
-          fp.lastHitCooldown = 0;
-        }
-      }
-      if(fp.shieldBreakLockActive){
-        const lockTarget = fp.shieldBreakLockTarget;
-        const attackerTargetable = isPlaneTargetable(p);
-        const lockTargetTargetable = isPlaneTargetable(lockTarget);
-        if(!attackerTargetable || !lockTargetTargetable){
-          fp.shieldBreakLockActive = false;
-          fp.shieldBreakLockTarget = null;
-        } else {
-          const attackerHitbox = getPlaneHitbox(p);
-          const lockTargetHitbox = getPlaneHitbox(lockTarget);
-          if(!planeHitboxesIntersect(attackerHitbox, lockTargetHitbox)){
-            fp.shieldBreakLockActive = false;
-            fp.shieldBreakLockTarget = null;
-          }
-        }
-      }
-      const prevX = p.x;
-      const prevY = p.y;
-
-      resolveFlightSurfaceCollision(fp, prevX, prevY, deltaSec);
-
-      if(!p.isAlive || p.burning){
-        continue;
-      }
-
-      // нос по текущей скорости
-      const colorShift = colorAngleOffset(p.color);
-      const baseAngle = Math.atan2(fp.vy, fp.vx) + Math.PI / 2;
-      p.angle = baseAngle + colorShift;
-
-      // трейл
-      const seg = {
-        x1: p.prevX, y1: p.prevY,
-        x2: p.x, y2: p.y,
-        lineWidth: PLANE_TRAIL_LINE_WIDTH
-      };
-      p.segments.push(seg);
-      if(p.segments.length > MAX_TRAIL_SEGMENTS) p.segments.shift();
-
-      // проверка попаданий по врагам
-      checkPlaneHits(p, fp);
-      handleFlagInteractions(p);
-      if(handleAAForPlane(p, fp)) continue;
-      if(handleMineForPlane(p, fp)) continue;
-
-      // Прошлое положение обновляется ЗДЕСЬ, после проверок попаданий, а не до них.
-      //
-      // Раньше оно обновлялось строчкой выше — и все проверки, которые честно смотрят
-      // «не задел ли самолёт что-нибудь по пути», получали отрезок нулевой длины: начало
-      // уже равнялось концу. То есть попадание считалось по ТОЧКЕ, где самолёт оказался в
-      // этом кадре, а весь путь между кадрами не проверялся вовсе.
-      //
-      // Самолёт летит около 600 пикселей за полторы секунды: это ~10 пикселей за кадр на
-      // ровном ходу и втрое больше на просевшем. Мина шириной в 20 пикселей и ящик такого
-      // же размера просто перепрыгивались. Проверка на отрезке в handleMineForPlane была
-      // написана именно от этого — и всё это время была мертва.
-      p.prevX = p.x; p.prevY = p.y;
-
-      fp.timeLeft -= deltaSec;
-      if(fp.timeLeft<=0){
-        flyingPoints = flyingPoints.filter(x => x !== fp);
-        // смена хода, когда полётов текущего цвета больше нет
-        if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
-          advanceTurn();
-        }
-      }
-    }
-  }
+  runSimulationSteps(deltaSec, now);
 
   if(isGameOver && awaitingFlightResolution && flyingPoints.length === 0){
     awaitingFlightResolution = false;
@@ -51018,7 +51077,8 @@ function applyMatchState(state){
     // Анимация падения к этому моменту отыграла — ящик кладётся сразу лежащим.
     cargoState.push({
       x: cargo.x, y: cargo.y, state: cargo.state,
-      animStartedAt: 0, animDurationMs: 0, pickedAt: null,
+      // Снимок берётся между ходами, когда падение отыграло: ящик кладётся сразу готовым.
+      animStartedAt: 0, animDurationMs: 0, readyAtSim: -Infinity, pickedAt: null,
     });
   }
 
