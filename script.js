@@ -10655,6 +10655,20 @@ function getCargoVisualCenter(cargo){
   };
 }
 
+// Откуда считать путь самолёта для подбора груза: место, где его проверяли в прошлый раз.
+function getCargoSweepStart(plane){
+  return {
+    x: Number.isFinite(plane?.cargoSweepX) ? plane.cargoSweepX : plane?.x,
+    y: Number.isFinite(plane?.cargoSweepY) ? plane.cargoSweepY : plane?.y,
+  };
+}
+
+function markCargoSweepChecked(plane){
+  if(!plane) return;
+  plane.cargoSweepX = plane.x;
+  plane.cargoSweepY = plane.y;
+}
+
 function doesCargoIntersectPlaneBeneficialZone(cargo, plane){
   const { width, height } = getCargoSpriteSize();
   const cargoLeft = cargo.x;
@@ -11070,7 +11084,11 @@ async function collectAiCargoRouteCandidatesAsync(plane, cargo, context){
 }
 
 function updateCargoState(now = performance.now()){
+  // Отметку двигаем в любом случае, даже когда груза на поле нет. Иначе она осталась бы
+  // там, где самолёт был много кадров назад, и первый же появившийся ящик оказался бы
+  // «подобран» на пути, пройденном ещё до его появления.
   if(cargoState.length === 0){
+    for(const plane of points) markCargoSweepChecked(plane);
     return;
   }
   const remainingCargo = [];
@@ -11090,7 +11108,16 @@ function updateCargoState(now = performance.now()){
     let pickedUp = false;
     for(const plane of points){
       if(!plane?.isAlive || plane?.burning) continue;
-      if(doesCargoIntersectPlaneBeneficialZone(cargo, plane)){
+      // По пройденному пути, а не по точке. Тем же способом, каким ИИ ПРЕДСКАЗЫВАЕТ
+      // подбор груза на маршруте: до этого он планировал полёт по одному правилу, а
+      // подбирал по другому — и его расчёт на ящик регулярно не сбывался.
+      //
+      // Своя отметка, а не общий prevX: подбор груза считается в начале кадра, ДО шага
+      // полёта, и prevX к этому моменту уже сравнялся с текущим положением. Отметка же
+      // хранит место, на котором груз проверяли в прошлый раз, поэтому отрезок между
+      // проверками покрывается ровно один раз — без пропусков и без повторов.
+      const from = getCargoSweepStart(plane);
+      if(doesCargoIntersectBeneficialZoneAlongSegment(cargo, plane, from, plane)){
         cargo.pickedAt = now;
         // Повод жребия — этот ящик: координаты у него одни и те же на обоих устройствах,
         // а подобрать его можно только раз.
@@ -11112,6 +11139,8 @@ function updateCargoState(now = performance.now()){
     cargoState.length = 0;
     cargoState.push(...remainingCargo);
   }
+  // Все ящики этого кадра проверены — отсюда и пойдёт следующий отрезок.
+  for(const plane of points) markCargoSweepChecked(plane);
 }
 
 function getCargoLandingSettleYOffset(cargo, now = performance.now()){
@@ -48192,13 +48221,25 @@ function gameDraw(){
       };
       p.segments.push(seg);
       if(p.segments.length > MAX_TRAIL_SEGMENTS) p.segments.shift();
-      p.prevX = p.x; p.prevY = p.y;
 
       // проверка попаданий по врагам
       checkPlaneHits(p, fp);
       handleFlagInteractions(p);
       if(handleAAForPlane(p, fp)) continue;
       if(handleMineForPlane(p, fp)) continue;
+
+      // Прошлое положение обновляется ЗДЕСЬ, после проверок попаданий, а не до них.
+      //
+      // Раньше оно обновлялось строчкой выше — и все проверки, которые честно смотрят
+      // «не задел ли самолёт что-нибудь по пути», получали отрезок нулевой длины: начало
+      // уже равнялось концу. То есть попадание считалось по ТОЧКЕ, где самолёт оказался в
+      // этом кадре, а весь путь между кадрами не проверялся вовсе.
+      //
+      // Самолёт летит около 600 пикселей за полторы секунды: это ~10 пикселей за кадр на
+      // ровном ходу и втрое больше на просевшем. Мина шириной в 20 пикселей и ящик такого
+      // же размера просто перепрыгивались. Проверка на отрезке в handleMineForPlane была
+      // написана именно от этого — и всё это время была мертва.
+      p.prevX = p.x; p.prevY = p.y;
 
       fp.timeLeft -= deltaSec;
       if(fp.timeLeft<=0){
@@ -50809,6 +50850,8 @@ const MATCH_STATE_PLANE_FIELDS = Object.freeze([
 ]);
 
 const MATCH_STATE_SKIPPED_PLANE_FIELDS = Object.freeze({
+  cargoSweepX: "откуда считать путь для подбора груза; между ходами равно текущему месту",
+  cargoSweepY: "откуда считать путь для подбора груза; между ходами равно текущему месту",
   burningFlameImg: "кадр огня, подхватится сам",
   burningFlameSrc: "кадр огня, подхватится сам",
   burningFlameStyleKey: "оформление огня, локальная настройка",
@@ -50957,6 +51000,10 @@ function applyMatchState(state){
     plane.segments = [];
     plane.prevX = plane.x;
     plane.prevY = plane.y;
+    // И отметка для подбора груза: иначе восстановленный самолёт «пролетел бы» от места,
+    // где стоял до применения снимка, до нового — и подобрал бы всё по дороге.
+    plane.cargoSweepX = plane.x;
+    plane.cargoSweepY = plane.y;
     plane.collisionX = null;
     plane.collisionY = null;
   }
