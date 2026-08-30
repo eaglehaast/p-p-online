@@ -25,6 +25,8 @@ import {
   routeEnvelope,
   leaveRoom,
   parseJoinRequest,
+  buildPresenceEnvelope,
+  getRoomConnections,
 } from "./room.js";
 import { OPCODE, WS_GUID, buildFrame, readFrames } from "./ws-frames.js";
 
@@ -147,6 +149,12 @@ function serveFile(request, response){
 
 /* ======= СБОРКА ======= */
 
+// Кто за столом — рассказывает комната, всем её нынешним обитателям.
+function broadcastPresence(room){
+  const envelope = JSON.stringify(buildPresenceEnvelope(room));
+  for(const connection of getRoomConnections(room)) connection.send(envelope);
+}
+
 const rooms = new Map();
 function getRoom(name){
   if(!rooms.has(name)) rooms.set(name, createRoom());
@@ -187,6 +195,7 @@ server.on("upgrade", (request, socket) => {
 
   if(joined.evicted) joined.evicted.close(4001, "seat_taken_over");
   for(const envelope of joined.replay) connection.send(JSON.stringify(envelope));
+  broadcastPresence(room);
 
   connection.on("message", (text) => {
     let envelope = null;
@@ -198,6 +207,7 @@ server.on("upgrade", (request, socket) => {
   connection.on("close", () => {
     if(leaveRoom(room, seat, connection)){
       console.log(`  вышел: комната ${roomName}, место ${seat}`);
+      broadcastPresence(room);
     }
   });
 });

@@ -6436,7 +6436,13 @@ function syncModeButtonSkins(mode){
 
 function syncPlayButtonSkin(isReady){
   if(!(playBtn instanceof HTMLElement)) return;
-  const ready = !!isReady;
+  let ready = !!isReady;
+  // В онлайне «Play» — это «я готов», а не «поехали», и доступна она, только пока за
+  // столом двое и мы ещё не ответили. Решение живёт здесь, а не в вызывающих: их
+  // несколько, и любой забытый снова открыл бы возможность начать партию в одиночку.
+  if(ready && onlineSession && !gameMode){
+    ready = isOnlineTableFull() && !onlineReady.mine;
+  }
   playBtn.disabled = !ready;
   playBtn.classList.toggle("disabled", !ready);
   playBtn.setAttribute("aria-pressed", ready ? "true" : "false");
@@ -8071,6 +8077,11 @@ const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
+const onlineLobbyDiv = document.getElementById("onlineLobby");
+const onlineLobbyStatusEl = document.getElementById("onlineLobbyStatus");
+const onlineLobbyLinkInput = document.getElementById("onlineLobbyLink");
+const onlineLobbyCopyBtn = document.getElementById("onlineLobbyCopy");
+const onlineLobbyCloseBtn = document.getElementById("onlineLobbyClose");
 const leftModePlane = document.getElementById("mm_plane_left_mode");
 const rightModePlane = document.getElementById("mm_plane_right_mode");
 const leftRulesPlane = document.getElementById("mm_plane_left_rules");
@@ -8495,6 +8506,8 @@ function startOnlineSession(options = {}){
     settingsHandlers: [],
     settingsApplied: false,
     rematchHandlers: [],
+    presenceHandlers: [],
+    readyHandlers: [],
     // Ответы на «ещё раз?»: свой и соперника. null — ещё не ответил.
     rematch: { mine: null, theirs: null },
   };
@@ -8502,13 +8515,24 @@ function startOnlineSession(options = {}){
   onlineTurnDraft = null;
   // Кто ходит первым — второй жребий, который нельзя бросать порознь. Дальше он просто
   // чередуется по раундам, поэтому достаточно совпасть в начале.
-  lastFirstTurn = getSharedRandomFraction("first-turn") < 0.5 ? 0 : 1;
+  onlineSession.firstTurnBase = getSharedRandomFraction("first-turn") < 0.5 ? 0 : 1;
+  lastFirstTurn = onlineSession.firstTurnBase;
   turnIndex = lastFirstTurn;
+  // Выбор карты, сделанный ДО входа в комнату, надо забыть: он бросался своими костями,
+  // а теперь кости общие. Создатель комнаты жмёт «Online» уже после загрузки игры, и его
+  // запомненная карта иначе переживает вход — а гость, пришедший по ссылке, считает
+  // жребий сразу и получает другую. Ровно так стороны и оказывались на разных полях.
+  randomMapPairSequenceNumber = null;
+  randomMapPairIndex = null;
   transport.receive(receiveOnlineEnvelope);
   onRemoteMove((move) => { onlineInbox.push({ type: "move", payload: move }); });
   onRemoteState((state) => { onlineInbox.push({ type: "state", payload: state }); });
   onRemoteSettings(applyOnlineRoomSettings);
   onRemoteRematch(receiveOnlineRematchAnswer);
+  onlineSession.presenceHandlers.push(receiveOnlinePresence);
+  onlineSession.readyHandlers.push(receiveOnlineReady);
+  onlinePresence = null;
+  onlineReady = { mine: false, theirs: false };
   console.log("[online] место за столом", {
     seat: onlineSession.seat,
     room: onlineSession.room,
@@ -8620,6 +8644,8 @@ function receiveOnlineEnvelope(envelope){
     : envelope.t === "state" ? onlineSession.stateHandlers
     : envelope.t === "settings" ? onlineSession.settingsHandlers
     : envelope.t === "rematch" ? onlineSession.rematchHandlers
+    : envelope.t === "presence" ? onlineSession.presenceHandlers
+    : envelope.t === "ready" ? onlineSession.readyHandlers
     : null;
   if(!handlers) return false;
   for(const handler of handlers) handler(envelope.payload, envelope);
@@ -8707,6 +8733,159 @@ function applyOnlineRoomSettings(roomSettings){
     раскладок: Object.keys(onlineRoomPlacements).length,
   });
   return true;
+}
+
+/* --- ЛОББИ: комната, ссылка другу и «оба на месте» --- */
+//
+// До сих пор комната задавалась адресом страницы, и позвать друга можно было, только
+// собрав ссылку руками. Кнопка «Online» в меню при этом стояла выключенной с самого
+// начала: обработчик у неё был, но он лишь запоминал название режима и к проводу не
+// прикасался.
+//
+// Здесь она оживает. Но только когда есть КУДА подключаться: без адреса ретранслятора
+// нажимать её бессмысленно — соединять нечем, и честнее оставить её выключенной, чем
+// делать вид, что онлайн готов.
+
+const ONLINE_ROOM_ID_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
+const ONLINE_ROOM_ID_LENGTH = 6;
+
+// Кто за столом по сведениям комнаты. null — комната ещё не сказала.
+let onlinePresence = null;
+// Готовность начать: нажатие «Play» это ещё не старт, а половина решения — ровно как
+// «да» в реванше.
+let onlineReady = { mine: false, theirs: false };
+
+function getConfiguredRelayUrl(){
+  const params = new URLSearchParams(window.location?.search || "");
+  const fromLink = (params.get("relay") || "").trim();
+  if(fromLink) return resolveOnlineRelayAddress(fromLink, window.location);
+  return ONLINE_RELAY_URL;
+}
+
+// Онлайн вообще возможен? Только если есть адрес ретранслятора.
+function isOnlineAvailable(){
+  return Boolean(getConfiguredRelayUrl());
+}
+
+function makeOnlineRoomId(){
+  // Буквы, которые не путаются на слух и на глаз: без l/o/0/1 — ссылку могут и продиктовать.
+  let id = "";
+  for(let i = 0; i < ONLINE_ROOM_ID_LENGTH; i += 1){
+    const index = Math.floor(Math.random() * ONLINE_ROOM_ID_ALPHABET.length);
+    id += ONLINE_ROOM_ID_ALPHABET[index] ?? "x";
+  }
+  return id;
+}
+
+// Ссылка для друга: та же страница, но место — свободное.
+function buildOnlineInviteLink(){
+  if(!onlineSession) return "";
+  const location = window.location;
+  const params = new URLSearchParams();
+  params.set("room", onlineSession.room);
+  params.set("seat", onlineSession.seat === "blue" ? "green" : "blue");
+  // Адрес ретранслятора передаём тем же способом, каким получили сами: «auto» останется
+  // «auto» и у друга выведется из его собственной ссылки — а это единственное, что
+  // сработает и по локальной сети, и через туннель.
+  const relayInLink = new URLSearchParams(location?.search || "").get("relay");
+  if(relayInLink) params.set("relay", relayInLink);
+  return `${location.origin}${location.pathname}?${params.toString()}`;
+}
+
+function isOnlineTableFull(){
+  return Boolean(onlinePresence?.blue && onlinePresence?.green);
+}
+
+function receiveOnlinePresence(payload){
+  const seats = payload?.seats;
+  if(!seats || typeof seats !== "object") return false;
+  const wasFull = isOnlineTableFull();
+  onlinePresence = { blue: seats.blue === true, green: seats.green === true };
+  console.log("[online] за столом", onlinePresence);
+
+  // Соперник только что пришёл. Если мы нажали «Play» ещё до его прихода, наша
+  // готовность улетела в пустоту — комната такие пакеты не придерживает. Скажем ещё раз.
+  if(!wasFull && isOnlineTableFull() && onlineReady.mine){
+    sendOnlineReady();
+  }
+  // Соперник ушёл — его готовность больше ничего не значит.
+  if(!isOnlineTableFull()) onlineReady.theirs = false;
+
+  refreshOnlineLobbyUi();
+  return true;
+}
+
+function sendOnlineReady(){
+  return postOnlineEnvelope("ready", { ready: true });
+}
+
+function receiveOnlineReady(){
+  onlineReady.theirs = true;
+  refreshOnlineLobbyUi();
+  maybeStartOnlineMatch();
+  return true;
+}
+
+// Начинаем, только когда готовы оба: иначе ход одного уедет второму, который ещё в меню,
+// и попадёт в игру, которая у него не началась.
+function maybeStartOnlineMatch(){
+  if(!onlineSession || !onlineReady.mine || !onlineReady.theirs) return false;
+  if(gameMode) return false; // уже играем
+  onlineReady = { mine: false, theirs: false };
+  hideOnlineLobby();
+  handlePlayStart();
+  return true;
+}
+
+function createOnlineRoom(){
+  const relay = getConfiguredRelayUrl();
+  if(!relay) return null;
+  const room = makeOnlineRoomId();
+  const session = startOnlineSession({ seat: ONLINE_HOST_SEAT, room, relay });
+  if(!session) return null;
+  showOnlineLobby();
+  return session;
+}
+
+/* --- лобби: то, что видно --- */
+
+function showOnlineLobby(){
+  if(!(onlineLobbyDiv instanceof HTMLElement)) return;
+  onlineLobbyDiv.hidden = false;
+  if(onlineLobbyLinkInput instanceof HTMLInputElement){
+    onlineLobbyLinkInput.value = buildOnlineInviteLink();
+  }
+  refreshOnlineLobbyUi();
+}
+
+function hideOnlineLobby(){
+  if(!(onlineLobbyDiv instanceof HTMLElement)) return;
+  onlineLobbyDiv.hidden = true;
+}
+
+function getOnlineLobbyStatusText(){
+  if(!onlineSession) return "";
+  const connection = onlineSession.transport.status?.() ?? "online";
+  if(connection === "rejected") return "Комната не приняла. Обнови страницу.";
+  if(connection !== "online") return "Связь потеряна, пробуем снова…";
+  if(!onlinePresence) return "Комната создана. Подключаемся…";
+  if(!isOnlineTableFull()) return "Ждём соперника. Отправь ему ссылку.";
+  if(onlineReady.mine) return "Ты готов. Ждём соперника.";
+  if(onlineReady.theirs) return "Соперник готов и ждёт тебя. Жми Play.";
+  return "Соперник на месте. Жми Play.";
+}
+
+function refreshOnlineLobbyUi(){
+  if(onlineLobbyDiv instanceof HTMLElement && !onlineLobbyDiv.hidden){
+    if(onlineLobbyStatusEl instanceof HTMLElement){
+      onlineLobbyStatusEl.textContent = getOnlineLobbyStatusText();
+    }
+    onlineLobbyDiv.classList.toggle("is-ready", isOnlineTableFull());
+  }
+  // Пока соперника нет, начинать нечего.
+  if(onlineSession && !gameMode){
+    syncPlayButtonSkin(true);
+  }
 }
 
 /* --- «ещё раз?»: решение общее, а не у каждого своё --- */
@@ -20352,7 +20531,46 @@ onlineBtn.addEventListener("click",()=>{
   setStoredGameMode(selectedMode);
   lastModeSelectionButton = onlineBtn;
   updateModeSelection(onlineBtn);
+
+  // Пришли по ссылке — место уже занято, комнату создавать не надо: мы гость.
+  if(onlineSession){
+    showOnlineLobby();
+    return;
+  }
+  if(!createOnlineRoom()){
+    console.warn("[online] комнату создать не удалось: нет адреса ретранслятора");
+  }
 });
+
+if(onlineLobbyCopyBtn instanceof HTMLElement){
+  onlineLobbyCopyBtn.addEventListener("click", async () => {
+    const link = onlineLobbyLinkInput?.value || "";
+    if(!link) return;
+    // Буфер обмена доступен не везде (нужен https или localhost), поэтому есть и запасной
+    // путь: выделить текст, чтобы человек скопировал сам.
+    try {
+      await navigator.clipboard.writeText(link);
+      onlineLobbyCopyBtn.textContent = "Скопировано";
+      setTimeout(() => { onlineLobbyCopyBtn.textContent = "Скопировать ссылку"; }, 1500);
+    } catch(_error){
+      onlineLobbyLinkInput?.select?.();
+      onlineLobbyCopyBtn.textContent = "Скопируй вручную";
+    }
+  });
+}
+
+if(onlineLobbyCloseBtn instanceof HTMLElement){
+  onlineLobbyCloseBtn.addEventListener("click", () => {
+    stopOnlineSession();
+    onlinePresence = null;
+    onlineReady = { mine: false, theirs: false };
+    hideOnlineLobby();
+    selectedMode = "hotSeat";
+    setStoredGameMode(selectedMode);
+    lastModeSelectionButton = hotSeatBtn;
+    updateModeSelection(hotSeatBtn);
+  });
+}
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     settings.flightRangeCells = 30;
@@ -20665,6 +20883,21 @@ async function handlePlayStart(){
 }
 
 playBtn.addEventListener("click",async ()=>{
+  // Онлайн: «Play» — это «я готов», а не «поехали». Начать в одиночку нельзя: наш первый
+  // ход уехал бы сопернику, который ещё в меню, и попал бы в игру, которая у него не
+  // началась.
+  if(onlineSession && !gameMode){
+    if(!isOnlineTableFull()){
+      console.warn("[online] соперник ещё не подключился");
+      return;
+    }
+    if(onlineReady.mine) return;
+    onlineReady.mine = true;
+    sendOnlineReady();
+    refreshOnlineLobbyUi();
+    maybeStartOnlineMatch();
+    return;
+  }
   await handlePlayStart();
 });
 
@@ -51990,10 +52223,23 @@ function startNewRound(){
   shouldShowEndScreen = false;
 
 
-  lastFirstTurn = 1 - lastFirstTurn;
+  const upcomingRoundNumber = roundNumber + 1;
+  // Кто ходит первым.
+  //
+  // Офлайн — просто чередуется от раунда к раунду. В онлайне так нельзя: чередование
+  // прибавляет к прошлому значению, а СКОЛЬКО раз оно прибавилось, у двоих разное.
+  // Гость садится за стол до загрузочного раунда, хозяин — после, и одного лишнего
+  // прибавления хватает, чтобы стороны разошлись во мнении, чей сейчас ход.
+  //
+  // Поэтому в комнате первый ход считается ОТ НОМЕРА РАУНДА: чередование то же самое, но
+  // оно больше не зависит от истории вызовов.
+  if(onlineSession){
+    lastFirstTurn = (onlineSession.firstTurnBase + upcomingRoundNumber) % 2;
+  } else {
+    lastFirstTurn = 1 - lastFirstTurn;
+  }
   turnIndex = lastFirstTurn;
   const roundStartTurnColor = turnColors[turnIndex] === "green" ? "green" : "blue";
-  const upcomingRoundNumber = roundNumber + 1;
   const roundStartTurnTexts = buildTransferTurnTexts(roundStartTurnColor, upcomingRoundNumber);
   showTransferFrame({
     mode: "turn",
@@ -53867,5 +54113,24 @@ if (window.visualViewport) {
 //
 // Отсюда же видно и остальное, что нужно посадке: настройки, правила, общий жребий.
 startOnlineSession();
+
+// Кнопка «Online» включается, только если есть куда подключаться. Пока адрес
+// ретранслятора не задан (ONLINE_RELAY_URL пуст и в ссылке нет ?relay=), нажимать её
+// незачем: соединять нечем, и выключенная кнопка честнее работающей вхолостую.
+if(onlineBtn instanceof HTMLElement){
+  const available = isOnlineAvailable();
+  onlineBtn.disabled = !available;
+  onlineBtn.title = available
+    ? "Игра по ссылке с другом"
+    : "Онлайн не настроен: нужен адрес ретранслятора (worker/README.md)";
+}
+
+// Пришли по ссылке — сразу показываем лобби: ждать соперника надо в нём, а не гадать,
+// почему «Play» не нажимается.
+if(onlineSession){
+  selectedMode = "online";
+  updateModeSelection(onlineBtn);
+  showOnlineLobby();
+}
 
 bootstrapGame();

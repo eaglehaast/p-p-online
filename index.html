@@ -49,6 +49,16 @@
               <span class="visually-hidden">Advanced Settings</span>
             </button>
 
+            <div id="onlineLobby" class="online-lobby" hidden aria-live="polite">
+              <p id="onlineLobbyStatus" class="online-lobby__status">Комната создаётся…</p>
+              <input id="onlineLobbyLink" class="online-lobby__link" type="text" readonly
+                     aria-label="Ссылка для друга" />
+              <div class="online-lobby__actions">
+                <button id="onlineLobbyCopy" class="online-lobby__btn" type="button">Скопировать ссылку</button>
+                <button id="onlineLobbyClose" class="online-lobby__btn online-lobby__btn--quiet" type="button">Отмена</button>
+              </div>
+            </div>
+
             <button id="mapTesterBtn" class="mode-menu__btn mode-menu__btn--editor mode-menu__btn--tester" type="button" aria-label="Map Tester">
               <span>Map Tester</span>
             </button>

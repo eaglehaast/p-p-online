@@ -109,6 +109,38 @@ export function isRoomEmpty(room){
   return RELAY_SEATS.every((seat) => room.seats[seat] === null);
 }
 
+// Кто сейчас за столом.
+//
+// Это единственное, что комната знает про игру, и знает по праву: занятость мест — её
+// собственное состояние, а не игровое. Клиенту иначе неоткуда узнать, пришёл ли соперник:
+// сам он может только слать «я здесь» в пустоту и не знать, услышал ли кто-нибудь. И уж
+// точно он не узнает, что соперник ЗАКРЫЛ вкладку — молчание неотличимо от раздумья.
+export function getRoomPresence(room){
+  const seats = {};
+  for(const seat of RELAY_SEATS) seats[seat] = room.seats[seat] !== null;
+  return seats;
+}
+
+// Конверт о присутствии — от самой комнаты, а не от игрока. Отправитель "room" не
+// совпадает ни с одним местом, поэтому клиентские проверки «своё эхо» и «пакет с нашего
+// же места» его не отбрасывают.
+export function buildPresenceEnvelope(room){
+  room.presenceSeq = (room.presenceSeq ?? 0) + 1;
+  return {
+    p: RELAY_PROTOCOL_VERSION,
+    t: "presence",
+    from: "room",
+    seat: "room",
+    seq: room.presenceSeq,
+    payload: { seats: getRoomPresence(room) },
+  };
+}
+
+// Кому разослать: всем, кто сейчас в комнате.
+export function getRoomConnections(room){
+  return RELAY_SEATS.map((seat) => room.seats[seat]).filter((connection) => connection !== null);
+}
+
 // Разбор адреса подключения: /room/<имя>?seat=blue&v=1
 export function parseJoinRequest(url){
   const parsed = new URL(url);
