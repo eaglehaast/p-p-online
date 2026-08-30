@@ -176,7 +176,7 @@ function makeStand({ relay = 'wss://relay.example', session = null } = {}){
   const status = extractFunctionSource(source, 'getOnlineLobbyStatusText');
   assert(/connection === "connecting"/.test(status),
     '4c: у «connecting» своя строка в лобби');
-  assert(status.indexOf('connecting') < status.indexOf('Связь потеряна'),
+  assert(status.indexOf('connecting') < status.indexOf('Connection lost'),
     '4d: и проверяется она раньше — иначе её строка недостижима');
 
   // Состояние связи меняется само, без нашего участия. Если о нём не сообщать, на экране

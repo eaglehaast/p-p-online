@@ -269,11 +269,15 @@ function makeSide(seat, { search = '', room = 'stand' } = {}){
       `6b: «${text}» — внятная строка, а не заглушка`);
   }
 
-  // Оборванная связь тоже названа.
+  // Оборванная связь тоже названа — своими словами, а не молчанием и не той же строкой,
+  // что при рабочей связи. Проверяем именно это, а не конкретную формулировку: язык
+  // интерфейса менялся и ещё может смениться, а «состояние названо» — не должно.
   const broken = makeSide('green');
   broken.sandbox.onlineSession.transport.status = () => 'reconnecting';
-  assert(/связь/i.test(broken.api.getOnlineLobbyStatusText()),
-    '6c: про потерянную связь лобби говорит, а не молчит');
+  const brokenText = broken.api.getOnlineLobbyStatusText();
+  assert(brokenText.trim().length > 8, '6c: про потерянную связь лобби говорит, а не молчит');
+  assert(!seen.has(brokenText),
+    `6d: у оборванной связи своя строка, не та же, что при рабочей («${brokenText}»)`);
 }
 
 // === 7. Панель и её место в разметке ===

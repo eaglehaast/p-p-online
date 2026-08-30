@@ -50,24 +50,24 @@
             </button>
 
             <div id="onlineLobby" class="online-lobby" hidden aria-live="polite">
-              <p id="onlineLobbyStatus" class="online-lobby__status">Комната создаётся…</p>
+              <p id="onlineLobbyStatus" class="online-lobby__status">Creating room…</p>
 
-              <p class="online-lobby__label">Твой код — продиктуй его другу</p>
+              <p class="online-lobby__label">Your code — read it out to a friend</p>
               <p id="onlineLobbyCode" class="online-lobby__code">······</p>
 
               <input id="onlineLobbyLink" class="online-lobby__link" type="text" readonly
-                     aria-label="Ссылка для друга" />
+                     aria-label="Invite link" />
               <div class="online-lobby__actions">
-                <button id="onlineLobbyCopy" class="online-lobby__btn" type="button">Скопировать ссылку</button>
-                <button id="onlineLobbyClose" class="online-lobby__btn online-lobby__btn--quiet" type="button">Отмена</button>
+                <button id="onlineLobbyCopy" class="online-lobby__btn" type="button">Copy link</button>
+                <button id="onlineLobbyClose" class="online-lobby__btn online-lobby__btn--quiet" type="button">Cancel</button>
               </div>
 
-              <p class="online-lobby__label online-lobby__label--join">…или войди в чужую комнату</p>
+              <p class="online-lobby__label online-lobby__label--join">…or join a friend’s room</p>
               <div class="online-lobby__actions">
                 <input id="onlineLobbyJoinCode" class="online-lobby__link online-lobby__link--join"
                        type="text" inputmode="latin" autocomplete="off" spellcheck="false"
-                       placeholder="код или ссылка" aria-label="Код комнаты друга" />
-                <button id="onlineLobbyJoin" class="online-lobby__btn" type="button">Войти</button>
+                       placeholder="code or link" aria-label="Friend’s room code" />
+                <button id="onlineLobbyJoin" class="online-lobby__btn" type="button">Join</button>
               </div>
             </div>
 
