@@ -8082,6 +8082,9 @@ const onlineLobbyStatusEl = document.getElementById("onlineLobbyStatus");
 const onlineLobbyLinkInput = document.getElementById("onlineLobbyLink");
 const onlineLobbyCopyBtn = document.getElementById("onlineLobbyCopy");
 const onlineLobbyCloseBtn = document.getElementById("onlineLobbyClose");
+const onlineLobbyCodeEl = document.getElementById("onlineLobbyCode");
+const onlineLobbyJoinInput = document.getElementById("onlineLobbyJoinCode");
+const onlineLobbyJoinBtn = document.getElementById("onlineLobbyJoin");
 const leftModePlane = document.getElementById("mm_plane_left_mode");
 const rightModePlane = document.getElementById("mm_plane_right_mode");
 const leftRulesPlane = document.getElementById("mm_plane_left_rules");
@@ -8388,7 +8391,7 @@ function createBroadcastTransport(room){
 // требование. Игра про обрыв не знает вовсе: пока сокета нет, пакеты копятся здесь, а
 // после подключения уезжают в том же порядке. Пошаговой игре это ничего не стоит —
 // сопернику всё равно нечего показывать, пока ход не сделан.
-function createWebSocketTransport(room, relayUrl, seat){
+function createWebSocketTransport(room, relayUrl, seat, onStatusChange){
   if(typeof WebSocket !== "function" || !relayUrl) return null;
 
   const handlers = [];
@@ -8397,6 +8400,12 @@ function createWebSocketTransport(room, relayUrl, seat){
   let attempt = 0;
   let reconnectTimer = null;
   let closedForGood = false;
+  // Первое подключение и обрыв — разные вещи, и говорить о них надо разное. Пока сокет
+  // только открывается, «связь потеряна» — неправда: терять ещё нечего.
+  let everOpened = false;
+  const announce = () => {
+    if(typeof onStatusChange === "function") onStatusChange();
+  };
 
   const address = `${relayUrl.replace(/\/+$/, "")}/room/${encodeURIComponent(room)}`
     + `?seat=${encodeURIComponent(seat)}&v=${ONLINE_PROTOCOL_VERSION}`;
@@ -8422,10 +8431,12 @@ function createWebSocketTransport(room, relayUrl, seat){
     socket = new WebSocket(address);
     socket.onopen = () => {
       attempt = 0;
+      everOpened = true;
       console.log("[online] связь есть", { room, seat });
       // Комната сама пришлёт придержанное: настройки создателя и последний снимок
       // партии. Просить об этом не надо — за тем она их и держит.
       flush();
+      announce();
     };
     socket.onmessage = (event) => {
       let envelope = null;
@@ -8438,9 +8449,11 @@ function createWebSocketTransport(room, relayUrl, seat){
       if(event?.code === 4000){
         closedForGood = true;
         console.error("[online] комната отказала", { причина: event.reason });
+        announce();
         return;
       }
       scheduleReconnect();
+      announce();
     };
     socket.onerror = () => { try { socket.close(); } catch(_error){ /* уже закрыт */ } };
   }
@@ -8449,9 +8462,11 @@ function createWebSocketTransport(room, relayUrl, seat){
 
   return {
     kind: "relay",
-    status: () => (socket?.readyState === WebSocket.OPEN
-      ? "online"
-      : (closedForGood ? "rejected" : "reconnecting")),
+    status: () => {
+      if(socket?.readyState === WebSocket.OPEN) return "online";
+      if(closedForGood) return "rejected";
+      return everOpened ? "reconnecting" : "connecting";
+    },
     post(envelope){
       outbox.push(envelope);
       flush();
@@ -8476,7 +8491,10 @@ function startOnlineSession(options = {}){
   const createTransport = typeof options.createTransport === "function"
     ? options.createTransport
     : (room) => (seatInfo.relay
-      ? createWebSocketTransport(room, seatInfo.relay, seatInfo.seat)
+      // Лобби показывает состояние связи, а состояние это меняется само по себе —
+      // без нашего участия и в любой момент. Значит, о нём надо не спрашивать, а
+      // узнавать: иначе на экране навсегда застывает то, что было в миг открытия.
+      ? createWebSocketTransport(room, seatInfo.relay, seatInfo.seat, refreshOnlineLobbyUi)
       : createBroadcastTransport(room));
   const transport = createTransport(seatInfo.room);
   if(!transport){
@@ -8792,6 +8810,53 @@ function buildOnlineInviteLink(){
   return `${location.origin}${location.pathname}?${params.toString()}`;
 }
 
+// Что человек ввёл в поле «код или ссылка» — превращаем в имя комнаты.
+//
+// Принимаем и то, и другое нарочно. Ссылка удобна там, где её есть куда вставить; код
+// работает везде — его можно продиктовать голосом. А на itch.io, например, ссылка не
+// работает вовсе: игра открывается внутри рамки на их странице, и параметры адреса до
+// неё не доезжают. Там код — единственный способ позвать друга.
+//
+// Заодно прощаем то, что люди делают на самом деле: пробелы по краям, ВЕРХНИЙ РЕГИСТР,
+// целиком скопированную ссылку.
+function normalizeOnlineRoomCode(raw){
+  const text = `${raw ?? ""}`.trim();
+  if(!text) return "";
+
+  // Похоже на ссылку — достаём из неё имя комнаты.
+  if(/[?&]room=/.test(text)){
+    const match = /[?&]room=([^&\s]+)/.exec(text);
+    if(match) return normalizeOnlineRoomCode(decodeURIComponent(match[1]));
+  }
+
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "")
+    .slice(0, ONLINE_ROOM_MAX_LENGTH);
+}
+
+// Войти в чужую комнату: своё место — свободное, то есть не хозяйское.
+function joinOnlineRoomByCode(rawCode){
+  const room = normalizeOnlineRoomCode(rawCode);
+  if(!room) return null;
+  const relay = getConfiguredRelayUrl();
+  if(!relay) return null;
+
+  // Свою комнату, если успели создать, бросаем: играть в двух сразу нельзя.
+  stopOnlineSession();
+  onlinePresence = null;
+  onlineReady = { mine: false, theirs: false };
+
+  const session = startOnlineSession({
+    seat: ONLINE_HOST_SEAT === "blue" ? "green" : "blue",
+    room,
+    relay,
+  });
+  if(!session) return null;
+  showOnlineLobby();
+  return session;
+}
+
 function isOnlineTableFull(){
   return Boolean(onlinePresence?.blue && onlinePresence?.green);
 }
@@ -8855,6 +8920,9 @@ function showOnlineLobby(){
   if(onlineLobbyLinkInput instanceof HTMLInputElement){
     onlineLobbyLinkInput.value = buildOnlineInviteLink();
   }
+  if(onlineLobbyCodeEl instanceof HTMLElement){
+    onlineLobbyCodeEl.textContent = onlineSession?.room ?? "······";
+  }
   refreshOnlineLobbyUi();
 }
 
@@ -8867,6 +8935,7 @@ function getOnlineLobbyStatusText(){
   if(!onlineSession) return "";
   const connection = onlineSession.transport.status?.() ?? "online";
   if(connection === "rejected") return "Комната не приняла. Обнови страницу.";
+  if(connection === "connecting") return "Подключаемся…";
   if(connection !== "online") return "Связь потеряна, пробуем снова…";
   if(!onlinePresence) return "Комната создана. Подключаемся…";
   if(!isOnlineTableFull()) return "Ждём соперника. Отправь ему ссылку.";
@@ -20556,6 +20625,30 @@ if(onlineLobbyCopyBtn instanceof HTMLElement){
       onlineLobbyLinkInput?.select?.();
       onlineLobbyCopyBtn.textContent = "Скопируй вручную";
     }
+  });
+}
+
+if(onlineLobbyJoinBtn instanceof HTMLElement){
+  const join = () => {
+    const raw = onlineLobbyJoinInput?.value ?? "";
+    const code = normalizeOnlineRoomCode(raw);
+    if(!code){
+      // Молчать нельзя: человек ввёл что-то и ждёт. Пишем прямо в строку состояния —
+      // другого места сказать ему у нас нет.
+      if(onlineLobbyStatusEl instanceof HTMLElement){
+        onlineLobbyStatusEl.textContent =
+          `Не разобрал код. ${ONLINE_ROOM_ID_LENGTH} букв и цифр, без пробелов.`;
+      }
+      return;
+    }
+    if(!joinOnlineRoomByCode(code) && onlineLobbyStatusEl instanceof HTMLElement){
+      onlineLobbyStatusEl.textContent = "Войти не вышло. Проверь код.";
+    }
+  };
+  onlineLobbyJoinBtn.addEventListener("click", join);
+  // Enter в поле — то же самое: набрал код и нажал ввод, как везде.
+  onlineLobbyJoinInput?.addEventListener?.("keydown", (event) => {
+    if(event.key === "Enter") join();
   });
 }
 
