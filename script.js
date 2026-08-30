@@ -8494,6 +8494,9 @@ function startOnlineSession(options = {}){
     stateHandlers: [],
     settingsHandlers: [],
     settingsApplied: false,
+    rematchHandlers: [],
+    // Ответы на «ещё раз?»: свой и соперника. null — ещё не ответил.
+    rematch: { mine: null, theirs: null },
   };
   onlineInbox = [];
   onlineTurnDraft = null;
@@ -8505,6 +8508,7 @@ function startOnlineSession(options = {}){
   onRemoteMove((move) => { onlineInbox.push({ type: "move", payload: move }); });
   onRemoteState((state) => { onlineInbox.push({ type: "state", payload: state }); });
   onRemoteSettings(applyOnlineRoomSettings);
+  onRemoteRematch(receiveOnlineRematchAnswer);
   console.log("[online] место за столом", {
     seat: onlineSession.seat,
     room: onlineSession.room,
@@ -8561,6 +8565,18 @@ function onRemoteSettings(handler){
   return true;
 }
 
+// Шестая: ответ на «ещё раз?». Комната его не придерживает — это одноразовое решение,
+// а не состояние партии.
+function sendRematchAnswer(answer){
+  return postOnlineEnvelope("rematch", { answer });
+}
+
+function onRemoteRematch(handler){
+  if(!onlineSession || typeof handler !== "function") return false;
+  onlineSession.rematchHandlers.push(handler);
+  return true;
+}
+
 function postOnlineEnvelope(type, payload){
   if(!onlineSession) return false;
   onlineSession.outSeq += 1;
@@ -8603,6 +8619,7 @@ function receiveOnlineEnvelope(envelope){
   const handlers = envelope.t === "move" ? onlineSession.moveHandlers
     : envelope.t === "state" ? onlineSession.stateHandlers
     : envelope.t === "settings" ? onlineSession.settingsHandlers
+    : envelope.t === "rematch" ? onlineSession.rematchHandlers
     : null;
   if(!handlers) return false;
   for(const handler of handlers) handler(envelope.payload, envelope);
@@ -8690,6 +8707,81 @@ function applyOnlineRoomSettings(roomSettings){
     раскладок: Object.keys(onlineRoomPlacements).length,
   });
   return true;
+}
+
+/* --- «ещё раз?»: решение общее, а не у каждого своё --- */
+//
+// До сих пор обе кнопки были чисто локальными, и это давало ровно то, чего быть не должно:
+// один нажимал «ещё раз» и в одиночку начинал новый матч, второй оставался в законченном;
+// один уходил в меню, а второй продолжал играть с пустотой и даже не знал об этом.
+//
+// Правило простое и привычное: реванш начинается, только если ЗА него оба. Любой отказ
+// отменяет партию, и в меню уходят оба.
+
+function getOnlineRematchState(){
+  return onlineSession?.rematch ?? null;
+}
+
+function resetOnlineRematchAnswers(){
+  if(!onlineSession) return;
+  onlineSession.rematch.mine = null;
+  onlineSession.rematch.theirs = null;
+  applyRematchWaitingUi(false);
+}
+
+// Свой ответ: записать, отправить, и дальше решать уже по двум ответам.
+function answerOnlineRematch(answer){
+  if(!onlineSession) return false;
+  const normalized = answer === "yes" ? "yes" : "no";
+  // Передумать нельзя: иначе «нет», уже уведшее соперника в меню, можно было бы отменить.
+  if(onlineSession.rematch.mine !== null) return false;
+  onlineSession.rematch.mine = normalized;
+  sendRematchAnswer(normalized);
+  resolveOnlineRematch();
+  return true;
+}
+
+function receiveOnlineRematchAnswer(payload){
+  if(!onlineSession) return false;
+  const answer = payload?.answer === "yes" ? "yes" : "no";
+  onlineSession.rematch.theirs = answer;
+  resolveOnlineRematch();
+  return true;
+}
+
+function resolveOnlineRematch(){
+  if(!onlineSession) return "offline";
+  const { mine, theirs } = onlineSession.rematch;
+
+  // Отказ решает сразу, чей бы он ни был, и ждать второго незачем.
+  if(mine === "no" || theirs === "no"){
+    console.log("[online] реванша не будет", { свой: mine, соперника: theirs });
+    resetOnlineRematchAnswers();
+    resetGame({ forceMenu: true });
+    return "cancelled";
+  }
+
+  if(mine === "yes" && theirs === "yes"){
+    console.log("[online] играем ещё раз");
+    resetOnlineRematchAnswers();
+    startRematchRound();
+    return "rematch";
+  }
+
+  // Ответил только один — ждём второго. Кнопки при этом гаснут: выбор уже сделан, и
+  // человек должен видеть, что игра его услышала, а не что она зависла.
+  if(mine !== null){
+    applyRematchWaitingUi(true);
+    console.log("[online] ждём ответа соперника");
+    return "waiting";
+  }
+  return "pending";
+}
+
+// Панель ждёт соперника: выбор сделан, но матч ещё не начат.
+function applyRematchWaitingUi(isWaiting){
+  if(!(endGameDiv instanceof HTMLElement)) return;
+  endGameDiv.classList.toggle("is-waiting", Boolean(isWaiting));
 }
 
 /* --- отправка своего хода --- */
@@ -51693,8 +51785,12 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
 
 
 /* ======= SCORE / ROUND ======= */
-yesBtn.addEventListener("click", () => {
-  logEndGameAction('click-yes');
+// Начать заново: либо следующий раунд, либо новый матч, если предыдущий доигран.
+//
+// Вынесено из обработчика кнопки, потому что теперь этот же путь проходят ОБА игрока —
+// каждый у себя, но по общему решению. Код один на всех, иначе стороны начнут матч
+// по-разному.
+function startRematchRound(){
   const gameOver = blueScore >= POINTS_TO_WIN || greenScore >= POINTS_TO_WIN;
   if (gameOver) {
     blueScore = 0;
@@ -51715,9 +51811,30 @@ yesBtn.addEventListener("click", () => {
     applyCurrentMap();
   }
   startNewRound();
+  // Создатель комнаты сразу присылает снимок нового матча. Обе стороны запускают его
+  // одним и тем же кодом и должны получить одно и то же — но проверять это догадкой
+  // дороже, чем прислать один пакет.
+  if(onlineSession && isOnlineHostSeat()){
+    sendState(serializeMatchState());
+  }
+}
+
+yesBtn.addEventListener("click", () => {
+  logEndGameAction('click-yes');
+  // Онлайн: своё «да» — это ещё не реванш, а только половина решения.
+  if(onlineSession){
+    answerOnlineRematch("yes");
+    return;
+  }
+  startRematchRound();
 });
 noBtn.addEventListener("click", () => {
   logEndGameAction('click-no');
+  // Онлайн: отказ уводит в меню обоих, поэтому сначала о нём надо сказать сопернику.
+  if(onlineSession){
+    answerOnlineRematch("no");
+    return;
+  }
   resetGame({ forceMenu: true });
 });
 
@@ -51807,6 +51924,9 @@ if(mapEditorBrickSidebar instanceof HTMLElement){
 
 function startNewRound(){
   logBootStep("startNewRound");
+  // Ответы на «ещё раз?» живут ровно до начала новой игры. Оставленное «да» иначе
+  // запустило бы следующий реванш само, без спроса.
+  resetOnlineRematchAnswers();
   console.log('[mode] startNewRound effective gameMode', { gameMode, selectedMode, selectedRuleset, phase });
   loadSettingsForRuleset(selectedRuleset);
   const useStoredRulesetSettings = isAdvancedLikeRuleset(selectedRuleset);

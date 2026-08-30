@@ -79,6 +79,12 @@ function buildTable(){
       mines: [],
       inventoryState: { blue: [], green: [] },
       isAimSessionActive: () => false,
+      // Последствия реванша в стенде только записываются: сам он проверяется отдельно,
+      // в smoke-online-rematch.js.
+      HTMLElement: function HTMLElement(){},
+      endGameDiv: null,
+      resetGame(){ log.push(['resetGame']); },
+      startRematchRound(){ log.push(['startRematchRound']); },
       // Заглушки того, что онлайн-слой вызывает наружу. Всё записываем: тест смотрит
       // не на возвращаемые значения, а на то, ЧТО и в каком порядке было вызвано.
       runLaunchReleaseStage({ plane, vx, vy, actor }){
@@ -154,6 +160,13 @@ function buildTable(){
       extractFunctionSource(source, 'onRemoteState'),
       extractFunctionSource(source, 'sendSettings'),
       extractFunctionSource(source, 'onRemoteSettings'),
+      extractFunctionSource(source, 'sendRematchAnswer'),
+      extractFunctionSource(source, 'onRemoteRematch'),
+      extractFunctionSource(source, 'resetOnlineRematchAnswers'),
+      extractFunctionSource(source, 'answerOnlineRematch'),
+      extractFunctionSource(source, 'receiveOnlineRematchAnswer'),
+      extractFunctionSource(source, 'resolveOnlineRematch'),
+      extractFunctionSource(source, 'applyRematchWaitingUi'),
       extractFunctionSource(source, 'isOnlineHostSeat'),
       extractFunctionSource(source, 'collectOnlineRoomSettings'),
       extractFunctionSource(source, 'publishOnlineRoomSettings'),
