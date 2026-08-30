@@ -16,6 +16,8 @@ import {
   routeEnvelope,
   leaveRoom,
   parseJoinRequest,
+  buildPresenceEnvelope,
+  getRoomConnections,
 } from "./room.js";
 
 export default {
@@ -97,7 +99,18 @@ export class Room {
       try { server.send(JSON.stringify(envelope)); } catch(_error){ /* закрылся на полуслове */ }
     }
 
+    // Кто за столом — знает только комната, поэтому она и рассказывает об этом обоим.
+    // Без этого гость не узнает, что хозяин уже здесь, а хозяин — что гость пришёл.
+    this.broadcastPresence();
+
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  broadcastPresence(){
+    const envelope = JSON.stringify(buildPresenceEnvelope(this.room));
+    for(const connection of getRoomConnections(this.room)){
+      try { connection.send(envelope); } catch(_error){ /* уже отвалился */ }
+    }
   }
 
   async webSocketMessage(socket, message){
@@ -116,10 +129,12 @@ export class Room {
   }
 
   webSocketClose(socket){
-    leaveRoom(this.room, this.state.getTags(socket)[0], socket);
+    // Оставшемуся надо сказать, что он остался один: молчание соперника иначе
+    // неотличимо от долгого раздумья.
+    if(leaveRoom(this.room, this.state.getTags(socket)[0], socket)) this.broadcastPresence();
   }
 
   webSocketError(socket){
-    leaveRoom(this.room, this.state.getTags(socket)[0], socket);
+    if(leaveRoom(this.room, this.state.getTags(socket)[0], socket)) this.broadcastPresence();
   }
 }

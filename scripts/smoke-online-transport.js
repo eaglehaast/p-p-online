@@ -83,6 +83,10 @@ function buildTable(){
       // в smoke-online-rematch.js.
       HTMLElement: function HTMLElement(){},
       endGameDiv: null,
+      onlineLobbyDiv: null, onlineLobbyStatusEl: null,
+      syncPlayButtonSkin(){},
+      handlePlayStart(){ log.push(['handlePlayStart']); },
+      hideOnlineLobby(){},
       resetGame(){ log.push(['resetGame']); },
       startRematchRound(){ log.push(['startRematchRound']); },
       // Заглушки того, что онлайн-слой вызывает наружу. Всё записываем: тест смотрит
@@ -167,6 +171,15 @@ function buildTable(){
       extractFunctionSource(source, 'receiveOnlineRematchAnswer'),
       extractFunctionSource(source, 'resolveOnlineRematch'),
       extractFunctionSource(source, 'applyRematchWaitingUi'),
+      // Лобби: присутствие и готовность. Подробно проверяются в smoke-online-lobby.js.
+      extractFunctionSource(source, 'isOnlineTableFull'),
+      extractFunctionSource(source, 'receiveOnlinePresence'),
+      extractFunctionSource(source, 'sendOnlineReady'),
+      extractFunctionSource(source, 'receiveOnlineReady'),
+      extractFunctionSource(source, 'maybeStartOnlineMatch'),
+      extractFunctionSource(source, 'refreshOnlineLobbyUi'),
+      extractFunctionSource(source, 'getOnlineLobbyStatusText'),
+      'let onlinePresence = null; let onlineReady = { mine: false, theirs: false };',
       extractFunctionSource(source, 'isOnlineHostSeat'),
       extractFunctionSource(source, 'collectOnlineRoomSettings'),
       extractFunctionSource(source, 'publishOnlineRoomSettings'),
@@ -488,11 +501,29 @@ function buildTable(){
 
   // Первый ход выбран при посадке за стол, а не оставлен на волю Math.random().
   const starter = extractFunctionSource(source, 'startOnlineSession');
-  assert(/lastFirstTurn = getSharedRandomFraction\("first-turn"\)/.test(starter),
+  assert(/firstTurnBase = getSharedRandomFraction\("first-turn"\)/.test(starter),
     '14e: садясь за стол, первый ход берут из общего жребия');
   assert(typeof table.blue.api.firstTurn() === 'number'
       && table.blue.api.firstTurn() === table.green.api.firstTurn(),
     '14f: и он совпал у обоих');
+
+  // И дальше он считается ОТ НОМЕРА РАУНДА, а не прибавлением к прошлому значению.
+  //
+  // Чередование прибавлением зависит от того, сколько раз оно случилось, — а у гостя,
+  // который садится за стол до загрузочного раунда, и у хозяина, который садится после,
+  // это число разное. Одного лишнего прибавления хватало, чтобы стороны разошлись во
+  // мнении, чей сейчас ход: поймано настоящим лобби в двух браузерах.
+  const round = extractFunctionSource(source, 'startNewRound');
+  assert(/lastFirstTurn = \(onlineSession\.firstTurnBase \+ upcomingRoundNumber\) % 2;/.test(round),
+    '14j: в комнате первый ход считается от номера раунда');
+  assert(/lastFirstTurn = 1 - lastFirstTurn;/.test(round),
+    '14k: офлайн чередование осталось прежним');
+
+  // Выбор карты, сделанный до входа в комнату, при посадке забывается: он бросался
+  // своими костями, а в комнате кости общие.
+  assert(/randomMapPairSequenceNumber = null;/.test(starter),
+    '14l: садясь за стол, забываем карту, выбранную своими костями — иначе хозяин ' +
+    'войдёт в комнату с уже запомненной картой, а гость посчитает жребий заново');
 
   // Карта тоже.
   const mapPick = extractFunctionSource(source, 'getRandomPlayableMapIndex');

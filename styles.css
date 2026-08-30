@@ -3728,3 +3728,77 @@ html.is-board-landscape #aiThinkHoof {
      z-index 60), и копыто ушло бы под неё. Пусть перекрывает — так задумано. */
   z-index: 61;
 }
+
+/* ======= ЛОББИ ОНЛАЙНА ======= */
+/*
+   Панель поверх меню: ссылка другу и состояние стола. Появляется, только когда комната
+   создана, и живёт ровно до начала партии.
+
+   Намеренно скромная. Своих спрайтов у неё нет, а рисовать их наугад — значит вклинить
+   в игру чужеродный кусок; лучше сдержанная бумага в тон остальному, чем самодеятельность.
+*/
+#menuLayer #modeMenu .online-lobby {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  width: 356px;
+  max-width: calc(100% - 32px);
+  padding: 14px 16px 12px;
+  border-radius: 10px;
+  background: rgba(253, 250, 240, 0.96);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  color: #2b2b2b;
+  font-family: inherit;
+  text-align: center;
+  z-index: 6;
+}
+
+#menuLayer #modeMenu .online-lobby[hidden] { display: none; }
+
+#menuLayer #modeMenu .online-lobby__status {
+  margin: 0 0 10px;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+/* Ссылка длинная, и её будут выделять и копировать руками, поэтому поле обычное
+   текстовое, а не картинка с текстом. */
+#menuLayer #modeMenu .online-lobby__link {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  border-radius: 6px;
+  background: #fff;
+  color: #2b2b2b;
+  font-size: 12px;
+  text-align: center;
+}
+
+#menuLayer #modeMenu .online-lobby__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+#menuLayer #modeMenu .online-lobby__btn {
+  padding: 7px 14px;
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  border-radius: 6px;
+  background: #f3ede0;
+  color: #2b2b2b;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#menuLayer #modeMenu .online-lobby__btn:hover { background: #ece4d3; }
+#menuLayer #modeMenu .online-lobby__btn--quiet { background: transparent; }
+
+/* Соперник на месте — состояние становится заметным, чтобы не вглядываться в текст. */
+#menuLayer #modeMenu .online-lobby.is-ready .online-lobby__status {
+  font-weight: 600;
+  color: #1d6f2b;
+}
