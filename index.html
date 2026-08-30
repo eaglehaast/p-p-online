@@ -51,11 +51,23 @@
 
             <div id="onlineLobby" class="online-lobby" hidden aria-live="polite">
               <p id="onlineLobbyStatus" class="online-lobby__status">Комната создаётся…</p>
+
+              <p class="online-lobby__label">Твой код — продиктуй его другу</p>
+              <p id="onlineLobbyCode" class="online-lobby__code">······</p>
+
               <input id="onlineLobbyLink" class="online-lobby__link" type="text" readonly
                      aria-label="Ссылка для друга" />
               <div class="online-lobby__actions">
                 <button id="onlineLobbyCopy" class="online-lobby__btn" type="button">Скопировать ссылку</button>
                 <button id="onlineLobbyClose" class="online-lobby__btn online-lobby__btn--quiet" type="button">Отмена</button>
+              </div>
+
+              <p class="online-lobby__label online-lobby__label--join">…или войди в чужую комнату</p>
+              <div class="online-lobby__actions">
+                <input id="onlineLobbyJoinCode" class="online-lobby__link online-lobby__link--join"
+                       type="text" inputmode="latin" autocomplete="off" spellcheck="false"
+                       placeholder="код или ссылка" aria-label="Код комнаты друга" />
+                <button id="onlineLobbyJoin" class="online-lobby__btn" type="button">Войти</button>
               </div>
             </div>
 
