@@ -1559,32 +1559,26 @@ const ITEM_USAGE_TARGETS = Object.freeze({
 const itemUsageConfig = Object.freeze({
   [INVENTORY_ITEM_TYPES.CROSSHAIR]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
-    hintText: "Apply to your plane. Guaranteed hit!",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.FUEL]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
-    hintText: "Apply to your plane. Double flight range!",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.MINE]: {
     target: ITEM_USAGE_TARGETS.BOARD,
-    hintText: "install it on the field. Stay away!",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.DYNAMITE]: {
     target: ITEM_USAGE_TARGETS.BOARD,
-    hintText: "Drag it onto a brick tile to plant dynamite.",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.WINGS]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
-    hintText: "",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.INVISIBILITY]: {
     target: ITEM_USAGE_TARGETS.BOARD,
-    hintText: "",
     requiresDragAndDrop: true,
   },
 });
@@ -1911,29 +1905,6 @@ function expireInvisibilityAfterEnemyTurnEnded(previousTurnColor){
     clearPlayerInvisibilityEffectState(color);
   }
 }
-
-const inventoryHintState = {
-  blue: {
-    color: "blue",
-    text: "",
-    visible: false,
-    anchorX: 0,
-    anchorY: 0,
-    timeoutId: null,
-  },
-  green: {
-    color: "green",
-    text: "",
-    visible: false,
-    anchorX: 0,
-    anchorY: 0,
-    timeoutId: null,
-  },
-};
-
-const INVENTORY_DISABLED_HINT_TEXT = "";
-const INVENTORY_SELECTED_HINT_TEXT = "";
-const INVENTORY_SELECTION_CANCEL_HINT_TEXT = "";
 
 const INVENTORY_TOOLTIP_TEXT_BY_TYPE = Object.freeze({
   [INVENTORY_ITEM_TYPES.CROSSHAIR]: [
@@ -2961,25 +2932,6 @@ function cancelActiveInventoryPickup(){
   clearInventoryHoverState("green");
   syncInventoryUI("blue");
   syncInventoryUI("green");
-}
-
-function showInventorySelectionCancelHint(color){
-  const state = inventoryHintState[color];
-  if(!state) return;
-  state.text = INVENTORY_SELECTION_CANCEL_HINT_TEXT;
-  state.visible = true;
-  state.anchorX = INVENTORY_UI_CONFIG.containerSize.w / 2;
-  state.anchorY = color === "blue"
-    ? INVENTORY_UI_CONFIG.containers.blue.y + INVENTORY_UI_CONFIG.containerSize.h / 2
-    : INVENTORY_UI_CONFIG.containers.green.y + INVENTORY_UI_CONFIG.containerSize.h / 2;
-  if(state.timeoutId){
-    clearTimeout(state.timeoutId);
-  }
-  state.timeoutId = setTimeout(() => {
-    state.visible = false;
-    state.text = "";
-    state.timeoutId = null;
-  }, 800);
 }
 
 function resetInventoryInteractionState(){
@@ -5236,24 +5188,6 @@ function refreshInventoryContainerLayouts(){
   }
 }
 
-function showInventoryDisabledHint(color, slotLayout){
-  const state = inventoryHintState[color];
-  if(!state || !slotLayout?.frame) return;
-  const frame = slotLayout.frame;
-  state.text = INVENTORY_DISABLED_HINT_TEXT;
-  state.visible = true;
-  state.anchorX = frame.x + frame.w / 2;
-  state.anchorY = frame.y + frame.h / 2;
-  if(state.timeoutId){
-    clearTimeout(state.timeoutId);
-  }
-  state.timeoutId = setTimeout(() => {
-    state.visible = false;
-    state.text = "";
-    state.timeoutId = null;
-  }, 900);
-}
-
 function syncInventoryUI(color){
   syncInventoryVisibility();
   const host = inventoryHosts[color];
@@ -5261,15 +5195,6 @@ function syncInventoryUI(color){
   const slotItemCache = inventorySlotItemElementByColor[color];
   if(slotItemCache instanceof Map){
     slotItemCache.clear();
-  }
-  const hintState = inventoryHintState[color];
-  if (hintState && hintState.timeoutId) {
-    clearTimeout(hintState.timeoutId);
-    hintState.timeoutId = null;
-  }
-  if (hintState) {
-    hintState.visible = false;
-    hintState.text = "";
   }
   clearInventoryHoverState(color);
   applyInventoryContainerLayout(color, host);
@@ -5350,9 +5275,6 @@ function syncInventoryUI(color){
     slotContainer.style.left = `${Math.round(frameLayout.x)}px`;
     if(!isImplemented){
       slotContainer.classList.add("inventory-slot--disabled");
-      slotContainer.addEventListener("click", () => {
-        showInventoryDisabledHint(color, slot.layout);
-      });
     }
 
     frameImg.src = INVENTORY_UI_CONFIG.frameAtlasPath;
@@ -5409,13 +5331,6 @@ function syncInventoryUI(color){
       if(isSameInventoryItemSelection(getInventoryInteractionActiveItem(), color, slot.type) && inventoryInteractionState.mode !== "idle"){
         img.classList.add("inventory-item--selected");
         slotContainer.classList.add("inventory-slot--selected");
-        if (hintState && slot.layout?.frame) {
-          const frame = slot.layout.frame;
-          hintState.visible = true;
-          hintState.text = INVENTORY_SELECTED_HINT_TEXT;
-          hintState.anchorX = frame.x + frame.w / 2;
-          hintState.anchorY = frame.y + frame.h / 2;
-        }
       }
     }
     if(
@@ -5442,49 +5357,6 @@ function syncInventoryUI(color){
   refreshInventoryTooltip();
 }
 
-function drawInventoryHintOnHud(ctx) {
-  if (!(ctx instanceof CanvasRenderingContext2D)) return;
-  if (!(hudCanvas instanceof HTMLCanvasElement)) return;
-
-  const scaleX = FRAME_BASE_WIDTH !== 0 ? hudCanvas.width / FRAME_BASE_WIDTH : 1;
-  const scaleY = FRAME_BASE_HEIGHT !== 0 ? hudCanvas.height / FRAME_BASE_HEIGHT : 1;
-
-  const colorStyles = {
-    blue: {
-      fill: "rgba(255, 255, 255, 0.96)",
-      stroke: "rgba(1, 60, 131, 0.95)",
-      yShift: 30,
-    },
-    green: {
-      fill: "rgba(255, 255, 255, 0.96)",
-      stroke: "rgba(95, 130, 55, 0.95)",
-      yShift: -30,
-    },
-  };
-
-  for (const playerColor of ["blue", "green"]) {
-    const state = inventoryHintState[playerColor];
-    if (!state?.visible || !state.text) continue;
-    if (!Number.isFinite(state.anchorX) || !Number.isFinite(state.anchorY)) continue;
-
-    const style = colorStyles[state.color] ?? colorStyles.blue;
-    const canvasX = state.anchorX * scaleX;
-    const canvasY = (state.anchorY + style.yShift) * scaleY;
-
-    if(ctx === hudCtx) markHudCanvasOverlayDrawn();
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.font = "700 12px 'Patrick Hand', cursive";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = style.stroke;
-    ctx.fillStyle = style.fill;
-    ctx.strokeText(state.text, canvasX, canvasY);
-    ctx.fillText(state.text, canvasX, canvasY);
-    ctx.restore();
-  }
-}
 
 function addItemToInventory(color, item){
   if(!color || item == null) return;
@@ -49128,7 +49000,6 @@ function gameDraw(){
   renderScoreboard();
 
   drawAimOverlay(rangeTextInfo);
-  drawInventoryHintOnHud(hudCtx);
 
   const shouldShowNoSurvivorsText = roundEndedByNuke
     && nuclearStrikeTimelineState.currentPhase === NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS;
