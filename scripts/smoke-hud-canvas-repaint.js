@@ -129,22 +129,27 @@ const buildContext = () => {
 
 // === 4. Инварианты по исходнику ===
 
-// Холст табло делят с ним подпись дальности, подсказка инвентаря и текст конца
-// матча. Все трое рисуют ПОСЛЕ renderScoreboard и стираются только его clearRect,
-// поэтому пропускать очистку можно ровно тогда, когда их на холсте нет.
+// Холст табло делят с ним подпись дальности и текст конца матча. Оба рисуют ПОСЛЕ
+// renderScoreboard и стираются только его clearRect, поэтому пропускать очистку можно
+// ровно тогда, когда их на холсте нет.
+//
+// Раньше рисовальщиков было трое: подсказку инвентаря на канвасе удалили вместе со всей
+// её мёртвой машинерией — она никогда ничего не рисовала, потому что тексты у неё были
+// пустыми строками.
 assert(/if\(signature === hudCanvasSignature && fresh && !hudCanvasHasOverlays\) return;/.test(source),
   '4: пропуск перерисовки обязан учитывать чужие рисунки на холсте, иначе они остаются висеть');
 assert(/hudCtx\.clearRect\(0, 0, hudCanvas\.width, hudCanvas\.height\);\s*\n\s*hudCanvasHasOverlays = false;/.test(source),
   '4b: очистка холста снимает флаг чужих рисунков');
 const overlayMarks = (source.match(/markHudCanvasOverlayDrawn\(\)/g) || []).length;
-assert(overlayMarks === 4,
-  `4c: флаг взводят ровно три рисовальщика поверх табло плюс сама функция-пометка, найдено ${overlayMarks}`);
+assert(overlayMarks === 3,
+  `4c: флаг взводят ровно два рисовальщика поверх табло плюс сама функция-пометка, найдено ${overlayMarks}`);
 const aimFn = source.slice(source.indexOf('function drawAimOverlay('));
 assert(/markHudCanvasOverlayDrawn\(\)/.test(aimFn.slice(0, 400)),
   '4d: подпись дальности помечает холст как испачканный');
-const hintFn = source.slice(source.indexOf('function drawInventoryHintOnHud('));
-assert(/markHudCanvasOverlayDrawn\(\)/.test(hintFn.slice(0, hintFn.indexOf('\n}'))),
-  '4e: подсказка инвентаря помечает холст как испачканный');
+// Мёртвая система не должна вернуться незаметно: на канвасе подсказок инвентаря больше
+// нет, они живут в DOM (INVENTORY_TOOLTIP_TEXT_BY_TYPE) и холста не касаются.
+assert(!/drawInventoryHintOnHud|inventoryHintState/.test(source),
+  '4e: канвасной подсказки инвентаря больше нет — она ничего не рисовала');
 assert(/if\(endTextCtx === hudCtx\) markHudCanvasOverlayDrawn\(\);/.test(source),
   '4f: текст конца матча помечает холст как испачканный');
 
