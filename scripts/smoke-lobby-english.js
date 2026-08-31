@@ -28,7 +28,7 @@ const markup = fs.readFileSync('index.html', 'utf8');
 function extractBlock(text, marker){
   const start = text.indexOf(marker);
   if(start === -1) throw new Error(`Не найдено в script.js: ${marker}`);
-  const bodyStart = text.indexOf('{', start);
+  const bodyStart = text.indexOf('{', text.indexOf(')', start));
   let depth = 0;
   for(let i = bodyStart; i < text.length; i += 1){
     if(text[i] === '{') depth += 1;
