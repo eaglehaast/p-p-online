@@ -176,6 +176,51 @@ const random = () => {
   }
 }
 
+// === 3a. Карта меняется прямо во время партии ===
+//
+// Кирпичи взрываются динамитом: removeBrickSpriteForDynamite вырезает спрайт, собирает
+// colliders заново и зовёт rebuildCollisionSurfaces. Значит набор поверхностей за партию
+// меняется, и габариты обязаны меняться вместе с ним. Если бы их считали один раз и
+// держали при себе, отсев начал бы прятать стены, которых уже нет, — или, наоборот,
+// пропускать появившиеся.
+//
+// Здесь это проверяется в лоб: убираем часть стен, добавляем новую на свободное место и
+// сверяем ответы заново.
+{
+  const full = buildSurfaces().map(context.annotateSurfaceBounds);
+
+  // Взрыв: убрали каждую третью стену.
+  context.colliderSurfaces = full.filter((_, index) => index % 3 !== 0);
+  for(let i = 0; i < 400; i += 1){
+    const p0 = { x: random() * 360, y: random() * 640 };
+    const p1 = { x: random() * 360, y: random() * 640 };
+    const radius = 2 + random() * 18;
+    assert(snapshot(context.findFirstSurfaceHit(p0, p1, radius)) === snapshot(bruteForceFirstHit(p0, p1, radius)),
+      `3a: после «взрыва» ответ разошёлся, бросок ${i}`);
+  }
+
+  // Новая стена там, где раньше было пусто: её обязаны увидеть.
+  const fresh = context.annotateSurfaceBounds({
+    p1: { x: 5, y: 300 }, p2: { x: 355, y: 300 },
+    normal: { x: 0, y: -1 }, kind: 'H', type: 'brick', id: 'fresh-wall',
+  });
+  context.colliderSurfaces = [...context.colliderSurfaces, fresh];
+  const across = context.findFirstSurfaceHit({ x: 180, y: 260 }, { x: 180, y: 340 }, 6);
+  assert(across && across.surface.id === 'fresh-wall',
+    '3b: стена, появившаяся после перестройки, участвует в поиске');
+
+  // И без габаритов — тоже: отсев обязан уметь посчитать их на месте, а не пропустить
+  // поверхность мимо только потому, что её забыли разметить.
+  const unmarked = { p1: { x: 5, y: 500 }, p2: { x: 355, y: 500 },
+                     normal: { x: 0, y: -1 }, kind: 'H', type: 'brick', id: 'unmarked-wall' };
+  context.colliderSurfaces = [unmarked];
+  const hitUnmarked = context.findFirstSurfaceHit({ x: 180, y: 460 }, { x: 180, y: 540 }, 6);
+  assert(hitUnmarked && hitUnmarked.surface.id === 'unmarked-wall',
+    '3c: поверхность без проставленных габаритов не теряется');
+
+  context.colliderSurfaces = full;
+}
+
 // === 4. Отсев вообще работает ===
 //
 // Без этой проверки предыдущие прошли бы и на «фильтре», который никого не отсеивает:
