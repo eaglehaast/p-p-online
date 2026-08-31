@@ -16591,6 +16591,10 @@ if(typeof window !== "undefined"){
   window.AI_EXPLAIN_LAST_PATH_DECISION = explainLatestPathDecision;
   window.AI_EXPLAIN_LAST_FALLBACK_DECISION = explainLatestFallbackDecision;
   window.AI_DOWNLOAD_LAST_FIVE_MOTIVATIONS = downloadLastFivePathMotivations;
+  // Отчёт «человек против ИИ» был написан целиком, но наружу не выставлен: вызвать его из
+  // консоли было нельзя, а другого способа им воспользоваться нет. Инструмент, которого
+  // не достать, ничем не отличается от ненаписанного.
+  window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
 }
 
 
