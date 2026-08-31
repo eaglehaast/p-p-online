@@ -63,6 +63,7 @@ function makeSide(seat){
     } },
     sendRematchAnswer: (answer) => { sent.push(answer); return true; },
     resetGame: (opts) => log.push(['resetGame', opts?.forceMenu === true]),
+    showOnlineLobby: () => log.push(['showOnlineLobby']),
     startRematchRound: () => log.push(['startRematchRound']),
   };
   // Панель в стенде — не настоящий DOM. Делаем её экземпляром подставного HTMLElement,
@@ -151,8 +152,33 @@ function makeTable(){
     assert(side.log.some(([name, forceMenu]) => name === 'resetGame' && forceMenu === true),
       `3c: «${side.seat}» ушёл в меню и когда отказ пришёл первым`);
   }
-  assert(second.blue.log.length === 1,
+  assert(second.blue.log.filter(([name]) => name === 'resetGame').length === 1,
     '3d: отказ решает сразу, ждать второго ответа незачем');
+
+  // Комната переживает отказ: провод жив, соперник за столом, «Play» снова работает.
+  // Раньше об этом не говорилось ничего — оба оказывались в голом меню, и понять, что вы
+  // всё ещё вместе, можно было только нажав «Play» наугад. Лобби и есть то место, где
+  // ждут соперника, поэтому после матча оно возвращается.
+  for(const side of [second.blue, second.green]){
+    assert(side.log.some(([name]) => name === 'showOnlineLobby'),
+      `3e: «${side.seat}» видит лобби после отказа, а не пустое меню`);
+    const menuAt = side.log.findIndex(([name]) => name === 'resetGame');
+    const lobbyAt = side.log.findIndex(([name]) => name === 'showOnlineLobby');
+    assert(menuAt !== -1 && lobbyAt > menuAt,
+      `3f: у «${side.seat}» лобби показывается ПОСЛЕ ухода в меню, иначе его тут же спрячут`);
+  }
+
+  // А вот при согласии на реванш лобби показывать нельзя: игроки идут В партию, и панель
+  // «ждём соперника» поверх начавшегося матча — это не подсказка, а помеха.
+  const agreed = makeTable();
+  agreed.answer(agreed.blue, 'yes');
+  agreed.answer(agreed.green, 'yes');
+  for(const side of [agreed.blue, agreed.green]){
+    assert(side.log.some(([name]) => name === 'startRematchRound'),
+      `3g: «${side.seat}» начал реванш`);
+    assert(!side.log.some(([name]) => name === 'showOnlineLobby'),
+      `3h: «${side.seat}» уходит в матч без лобби поверх него`);
+  }
 }
 
 // === 4. Передумать нельзя ===
