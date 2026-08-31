@@ -14,7 +14,7 @@
       <img
         src="preload_animation.gif"
         class="loading-overlay__image"
-        alt="Загрузка"
+        alt="Loading"
         width="240"
         height="240"
       />
@@ -23,7 +23,7 @@
       <div id="uiFrame" class="uiFrame--framed">
       <div id="uiFrameInner">
       <div id="menuLayer" class="layer layer--menu" aria-hidden="false">
-        <div id="modeMenu" class="stage-460x800" aria-label="Главное меню">
+        <div id="modeMenu" class="stage-460x800" aria-label="Main menu">
           <div class="mode-menu__layer" aria-hidden="false">
             <button id="hotSeatBtn" class="mode-menu__btn mode-menu__btn--hotseat" type="button" aria-label="Hot Seat">
               <span class="visually-hidden">Hot Seat</span>
@@ -375,7 +375,7 @@
             </div>
 
             <!-- Рабочий блок для приложения: изменения в .cp-adds сначала вносить здесь, затем синхронизировать settings.html -->
-            <div class="cp-adds" role="group" aria-label="Дополнительные настройки">
+            <div class="cp-adds" role="group" aria-label="Extras">
               <div id="frame_adds_1_cargo" class="cp-adds__preview" aria-hidden="true">
                 <img
                   id="cargo_preview_off"
@@ -426,9 +426,9 @@
                 class="cp-adds__btn"
                 type="button"
                 aria-pressed="false"
-                aria-label="Переключить острые края"
+                aria-label="Toggle cargo"
               >
-                <span class="visually-hidden">Переключить острые края</span>
+                <span class="visually-hidden">Toggle cargo</span>
               </button>
 
               <button
@@ -436,9 +436,9 @@
                 class="cp-adds__btn"
                 type="button"
                 aria-pressed="false"
-                aria-label="Переключить ПВО"
+                aria-label="Toggle flags"
               >
-                <span class="visually-hidden">Переключить ПВО</span>
+                <span class="visually-hidden">Toggle flags</span>
               </button>
 
               <button
@@ -446,13 +446,13 @@
                 class="cp-adds__btn"
                 type="button"
                 aria-pressed="false"
-                aria-label="Переключить груз"
+                aria-label="Toggle arcade mode"
               >
-                <span class="visually-hidden">Переключить груз</span>
+                <span class="visually-hidden">Toggle arcade mode</span>
               </button>
             </div>
 
-            <div class="cp-aiming-accuracy" role="group" aria-label="Настройка точности прицеливания">
+            <div class="cp-aiming-accuracy" role="group" aria-label="Aiming accuracy">
               <div id="frame_accuracy_1_visual" aria-hidden="true">
                 <div class="pendulum-hook"></div>
                 <div class="pendulum">
@@ -488,21 +488,21 @@
                 id="instance_accuracy_left"
                 class="cp-aiming-accuracy__btn cp-aiming-accuracy__btn--left"
                 type="button"
-                aria-label="Уменьшить амплитуду прицеливания"
+                aria-label="Decrease aiming amplitude"
               >
-                <span class="visually-hidden">Уменьшить амплитуду прицеливания</span>
+                <span class="visually-hidden">Decrease aiming amplitude</span>
               </button>
               <button
                 id="instance_accuracy_right"
                 class="cp-aiming-accuracy__btn cp-aiming-accuracy__btn--right"
                 type="button"
-                aria-label="Увеличить амплитуду прицеливания"
+                aria-label="Increase aiming amplitude"
               >
-                <span class="visually-hidden">Увеличить амплитуду прицеливания</span>
+                <span class="visually-hidden">Increase aiming amplitude</span>
               </button>
             </div>
 
-            <div class="cp-range" role="group" aria-label="Настройка дальности полёта">
+            <div class="cp-range" role="group" aria-label="Flight range">
               <div id="rangeIndicator" class="cp-range__indicator">
                 <div id="range_frame_visual" aria-hidden="true">
                   <div class="range-visual">
@@ -563,21 +563,21 @@
                 id="rangeBtnLeft"
                 class="cp-range__btn cp-range__btn--left"
                 type="button"
-                aria-label="Уменьшить дальность полёта"
+                aria-label="Decrease flight range"
               >
-                <span class="visually-hidden">Уменьшить дальность полёта</span>
+                <span class="visually-hidden">Decrease flight range</span>
               </button>
               <button
                 id="rangeBtnRight"
                 class="cp-range__btn cp-range__btn--right"
                 type="button"
-                aria-label="Увеличить дальность полёта"
+                aria-label="Increase flight range"
               >
-                <span class="visually-hidden">Увеличить дальность полёта</span>
+                <span class="visually-hidden">Increase flight range</span>
               </button>
             </div>
 
-            <div class="cp-field-selector" role="group" aria-label="Выбор карты">
+            <div class="cp-field-selector" role="group" aria-label="Selected map">
               <div class="cp-field-selector__indicator" aria-hidden="true">
                 <div id="frame_field_1_visual">
                   <div id="mapPreview" class="cp-field-selector__preview"></div>
@@ -614,39 +614,39 @@
                 id="instance_field_left"
                 class="cp-field-selector__btn cp-field-selector__btn--left"
                 type="button"
-                aria-label="Предыдущая карта"
+                aria-label="Previous map"
               >
-                <span class="visually-hidden">Предыдущая карта</span>
+                <span class="visually-hidden">Previous map</span>
               </button>
               <button
                 id="instance_field_right"
                 class="cp-field-selector__btn cp-field-selector__btn--right"
                 type="button"
-                aria-label="Следующая карта"
+                aria-label="Next map"
               >
-                <span class="visually-hidden">Следующая карта</span>
+                <span class="visually-hidden">Next map</span>
               </button>
             </div>
 
-            <div class="cp-actions" role="group" aria-label="Управление настройками">
+            <div class="cp-actions" role="group" aria-label="Settings actions">
               <div class="cp-actions__frame" aria-hidden="true"></div>
 
               <button
                 id="instance_reset"
                 class="cp-actions__btn cp-actions__btn--reset"
                 type="button"
-                aria-label="Сбросить настройки"
+                aria-label="Reset settings"
               >
-                <span class="visually-hidden">Сбросить настройки</span>
+                <span class="visually-hidden">Reset settings</span>
               </button>
 
               <button
                 id="instance_exit"
                 class="cp-actions__btn cp-actions__btn--exit"
                 type="button"
-                aria-label="Вернуться в главное меню"
+                aria-label="Back to main menu"
               >
-                <span class="visually-hidden">Вернуться в главное меню</span>
+                <span class="visually-hidden">Back to main menu</span>
               </button>
             </div>
           </div>
