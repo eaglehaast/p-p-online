@@ -45596,11 +45596,22 @@ function buildFieldBorderSurfaces(){
   ];
 }
 
+// Габариты поверхности считаются один раз, при постройке карты: между перестройками
+// поверхности не двигаются. Нужны они для быстрого отсева в findFirstSurfaceHit.
+function annotateSurfaceBounds(surface){
+  if(!surface || !surface.p1 || !surface.p2) return surface;
+  surface.minX = Math.min(surface.p1.x, surface.p2.x);
+  surface.maxX = Math.max(surface.p1.x, surface.p2.x);
+  surface.minY = Math.min(surface.p1.y, surface.p2.y);
+  surface.maxY = Math.max(surface.p1.y, surface.p2.y);
+  return surface;
+}
+
 function rebuildCollisionSurfaces(){
   colliderSurfaces = [
     ...buildColliderSurfaces(colliders),
     ...buildFieldBorderSurfaces()
-  ];
+  ].map(annotateSurfaceBounds);
 }
 
 // isPathClear is on the AI hot path (called ~1500-2000 times per AI turn before this cache).
@@ -45750,23 +45761,54 @@ function findFirstColliderHit(prevX, prevY, currX, currY){
   return closest;
 }
 
+// Разбор ничьей между одновременными касаниями. Раньше эти три штуки создавались заново
+// на каждый вызов, а вызывают функцию сотни тысяч раз за ход ИИ.
+const SURFACE_PRIORITY = { DIAG: 3, V: 2, H: 1 };
+
+function getSurfaceKindForPriority(surface){
+  if(surface?.kind) return surface.kind;
+  if(surface?.type === "diag") return "DIAG";
+  const nx = Math.abs(surface?.normal?.x ?? 0);
+  const ny = Math.abs(surface?.normal?.y ?? 0);
+  if(nx > ny) return "V";
+  return "H";
+}
+
 function findFirstSurfaceHit(p0, p1, radius){
   let best = null;
   const moveX = p1.x - p0.x;
   const moveY = p1.y - p0.y;
   const EPS_T = 1e-4;
   const EPS_DOT = 1e-6;
-  const surfacePriority = { DIAG: 3, V: 2, H: 1 };
-  const getSurfaceKind = surface => {
-    if(surface?.kind) return surface.kind;
-    if(surface?.type === "diag") return "DIAG";
-    const nx = Math.abs(surface?.normal?.x ?? 0);
-    const ny = Math.abs(surface?.normal?.y ?? 0);
-    if(nx > ny) return "V";
-    return "H";
-  };
+  const surfacePriority = SURFACE_PRIORITY;
+  const getSurfaceKind = getSurfaceKindForPriority;
   const getAbsDot = entry => Math.abs(moveX * entry.normal.x + moveY * entry.normal.y);
+
+  // Грубый отсев по габаритам, прежде чем считать точное касание.
+  //
+  // Точное касание возможно только если поверхность лежит не дальше radius от отрезка
+  // движения: при касании гранью точка касания лежит НА поверхности, при касании концом —
+  // это сам её конец, и в обоих случаях она в пределах radius от центра, а центр — внутри
+  // отрезка. Значит габариты поверхности обязаны пересекаться с габаритами отрезка,
+  // расширенными на radius. Если не пересекаются — считать нечего.
+  //
+  // Замер до отсева: 244 поверхности на карте, 81.9 млн вызовов точного расчёта за три
+  // хода ИИ, и лишь 2.18% из них кончались попаданием. Остальное было перебором впустую.
+  const sweptMinX = Math.min(p0.x, p1.x) - radius;
+  const sweptMaxX = Math.max(p0.x, p1.x) + radius;
+  const sweptMinY = Math.min(p0.y, p1.y) - radius;
+  const sweptMaxY = Math.max(p0.y, p1.y) + radius;
+
   for(const surface of colliderSurfaces){
+    const sMinX = surface.minX !== undefined ? surface.minX : Math.min(surface.p1.x, surface.p2.x);
+    if(sMinX > sweptMaxX) continue;
+    const sMaxX = surface.maxX !== undefined ? surface.maxX : Math.max(surface.p1.x, surface.p2.x);
+    if(sMaxX < sweptMinX) continue;
+    const sMinY = surface.minY !== undefined ? surface.minY : Math.min(surface.p1.y, surface.p2.y);
+    if(sMinY > sweptMaxY) continue;
+    const sMaxY = surface.maxY !== undefined ? surface.maxY : Math.max(surface.p1.y, surface.p2.y);
+    if(sMaxY < sweptMinY) continue;
+
     const hit = getSurfaceHit(p0, p1, radius, surface);
     if(!hit) continue;
     if(!best){
