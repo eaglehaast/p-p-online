@@ -27373,10 +27373,17 @@ function evaluateDynamiteAugmentedAcceptance(altStats, altAdjustedScore, current
   const sameCollectsButSafer = altPickups === currentPickups
     && (altStats?.threatsNearLanding || 0) < (currentStats?.threatsNearLanding || 0);
   const scoreSignificantlyBetter = currentScore > 0 && altAdjustedScore > currentScore * acceptanceThreshold;
-  // Adding a KILL the current plan misses is worth a dynamite when we have a surplus to spend
-  // — the exact "он мог взорвать кирпичи и убить" case. Only when aggressive (plenty of stock)
-  // so a scarce charge is never spent to swap a fat cargo sweep for a lone kill.
+  // Сбитие, которого текущий план не даёт. Раньше этот повод работал ТОЛЬКО при избытке
+  // зарядов (aggressive, то есть от пяти штук), и обычный запас в один-два динамита не
+  // тратился на сбитие никогда — при том что размен «заряд за самолёт» выгоден почти
+  // всегда. Теперь достаточно, чтобы посадка была не опаснее той, куда сел бы текущий
+  // план: это и есть «сбить самолёт БЕЗОПАСНО с динамитом».
   const addsKill = altKills > currentKills;
+  const landingNotMoreExposed = (altStats?.threatsNearLanding || 0) <= (currentStats?.threatsNearLanding || 0);
+  const addsSafeKill = addsKill && landingNotMoreExposed;
+  // Сбить НЕСКОЛЬКО без динамита лучше, чем одного с динамитом: если коридор теряет
+  // сбитие, которое текущий план уже даёт, он отвергается любой ценой — это жёсткое вето,
+  // а не один из поводов.
   const dropsAKill = altKills < currentKills;
   // Прорыв из блокады: текущий план — топтание, коридор ничего не собирает в этот ход,
   // но выводит к цели. Без этого критерия запертый ИИ не потратит динамит НИКОГДА:
@@ -27387,8 +27394,10 @@ function evaluateDynamiteAugmentedAcceptance(altStats, altAdjustedScore, current
     minProgressPx: options ? options.minProgressPx : null,
   });
   const accepted = !dropsAKill
-    && (collectsMore || sameCollectsButSafer || scoreSignificantlyBetter || (aggressive && addsKill) || breakout);
-  return { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter, addsKill, dropsAKill, breakout };
+    && (collectsMore || sameCollectsButSafer || scoreSignificantlyBetter
+      || addsSafeKill || (aggressive && addsKill) || breakout);
+  return { accepted, collectsMore, sameCollectsButSafer, scoreSignificantlyBetter,
+    addsKill, addsSafeKill, dropsAKill, breakout };
 }
 
 async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context, currentPlan, dynamiteCharges){
@@ -27554,7 +27563,13 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     // Flag-safety guard. Flag-grab into enemy retaliation range loses the
     // plane next turn for one pickup. Allow only if landing is clear, OR
     // if AI has FUEL in inventory (return-trip plausible).
-    if(target.kind === "flag" && typeof getImmediateResponseThreatMeta === "function"){
+    //
+    // Оговорка: запрет касается размена «самолёт за один флаг». Если по дороге коридор
+    // ещё и сбивает кого-то или собирает груз, размен уже не тот — ход окупается не
+    // флагом. Раньше такие трассы отбрасывались вместе с пустыми, и это был самый частый
+    // отказ во всей воронке динамита.
+    const flagIsTheOnlyPayoff = (altStats?.totalPickups || 0) === 0;
+    if(target.kind === "flag" && flagIsTheOnlyPayoff && typeof getImmediateResponseThreatMeta === "function"){
       const respondThreats = getImmediateResponseThreatMeta(context, altLandingX, altLandingY, null);
       const threatCount = Number.isFinite(respondThreats?.count) ? respondThreats.count : 0;
       if(threatCount > 0){
@@ -46054,23 +46069,24 @@ function isPointOnSegment(px, py, p1, p2){
   return Math.hypot(px - closestX, py - closestY) <= 1e-4;
 }
 
-function distancePointToSegment(px, py, p1, p2){
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-  const len2 = dx * dx + dy * dy;
-  if(len2 === 0){
-    return Math.hypot(px - p1.x, py - p1.y);
-  }
-  const t = ((px - p1.x) * dx + (py - p1.y) * dy) / len2;
-  const clamped = Math.max(0, Math.min(1, t));
-  const closestX = p1.x + dx * clamped;
-  const closestY = p1.y + dy * clamped;
-  return Math.hypot(px - closestX, py - closestY);
+// Тот же расчёт, что и distancePointToSegment выше, только отрезок задан двумя точками.
+// ИМЯ ДОЛЖНО ОТЛИЧАТЬСЯ. Раньше обе функции назывались одинаково; объявления функций
+// поднимаются, и позднее затирало раннее — то есть ВСЕ вызовы вида
+// distancePointToSegment(px, py, ax, ay, bx, by) попадали сюда, получали p1 = число,
+// читали p1.x → undefined → NaN. Тихо, без единой ошибки в консоли.
+//
+// Ломало это ровно тринадцать мест в мозгах ИИ, и главное — countTargetsAndSafetyOnSegment:
+// расстояние до отрезка полёта всегда выходило NaN, проверка Number.isFinite(d) не
+// проходила, и любая трасса отчитывалась «целей ноль». Поэтому динамит и не ставился:
+// критерии «собирает больше» и «добавляет сбитие» сравнивали ноль с нулём.
+function distancePointToSegmentPts(px, py, p1, p2){
+  if(!p1 || !p2) return Number.POSITIVE_INFINITY;
+  return distancePointToSegment(px, py, p1.x, p1.y, p2.x, p2.y);
 }
 
 function isPointIntersectingSurface(point, radius, surface){
   if(!surface?.p1 || !surface?.p2) return false;
-  const distance = distancePointToSegment(point.x, point.y, surface.p1, surface.p2);
+  const distance = distancePointToSegmentPts(point.x, point.y, surface.p1, surface.p2);
   return distance < radius - 1e-4;
 }
 
