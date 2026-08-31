@@ -8,7 +8,7 @@ function extractFunctionSource(source, fnName){
   const signature = `function ${fnName}(`;
   const start = source.indexOf(signature);
   if(start === -1) throw new Error(`Function not found in script.js: ${fnName}`);
-  const bodyStart = source.indexOf('{', start);
+  const bodyStart = source.indexOf('{', source.indexOf(')', start));
   if(bodyStart === -1) throw new Error(`Function body start not found for: ${fnName}`);
   let depth = 0;
   for(let i = bodyStart; i < source.length; i += 1){
@@ -25,10 +25,29 @@ function assert(condition, message){
 }
 
 const source = fs.readFileSync('script.js', 'utf8');
+// Значения берём из игры, а не переписываем: переписанное число живёт своей жизнью и
+// однажды разойдётся с настоящим, а тест этого не заметит.
+function extractConstSource(source, name){
+  const match = new RegExp(`^const ${name}\\s*=\\s*[^;]+;`, 'm').exec(source);
+  if(!match) throw new Error(`Константа не найдена в script.js: ${name}`);
+  return match[0];
+}
+
+const mineRuntime = [
+  'PLANE_DRAW_W',
+  'MINE_SIZE_DEFAULTS',
+  'mineSizeRuntime',
+  'MINE_TRIGGER_WING_HALF_SPAN_DEFAULT',
+  'mineTriggerRuntime',
+].map((name) => extractConstSource(source, name)).join('\n');
 const extracted = [
   'getPlaneActiveTurnBuffs',
   'planeHasActiveTurnBuff',
   'getPlaneDangerGeometry',
+  'getDistanceFromPointToSegment',
+  'getMineEffectiveTriggerRadius',
+  'getMineThreatMetaForSegment',
+  'dropActiveFlagFromPlane',
   'handleMineForPlane',
   'planeBuildingCollision',
 ].map((name) => extractFunctionSource(source, name)).join('\n\n');
@@ -60,7 +79,7 @@ const context = {
 };
 
 vm.createContext(context);
-vm.runInContext(extracted, context);
+vm.runInContext(`${mineRuntime}\n\n${extracted}`, context);
 
 const planeWithWings = { x: 0, y: 0, color: 'green', activeTurnBuffs: { wings: true } };
 assert(context.handleMineForPlane(planeWithWings, null) === false,

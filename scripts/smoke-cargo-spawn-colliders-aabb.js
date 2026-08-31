@@ -8,7 +8,7 @@ function extractFunctionSource(source, fnName){
   const signature = `function ${fnName}(`;
   const start = source.indexOf(signature);
   if(start === -1) throw new Error(`Function not found in script.js: ${fnName}`);
-  const bodyStart = source.indexOf('{', start);
+  const bodyStart = source.indexOf('{', source.indexOf(')', start));
   if(bodyStart === -1) throw new Error(`Function body start not found for: ${fnName}`);
   let depth = 0;
   for(let i = bodyStart; i < source.length; i += 1){
@@ -49,7 +49,24 @@ function intersectsRectAabb(a, b){
   );
 }
 
+// Константы берём из игры, а не переписываем числом: переписанное число живёт своей
+// жизнью и однажды разойдётся с настоящим, а тест этого не заметит.
+function extractConstSource(source, name){
+  const match = new RegExp(`^const ${name} = [^;]+;`, 'm').exec(source);
+  if(!match) throw new Error(`Константа не найдена в script.js: ${name}`);
+  return match[0];
+}
+
 const source = fs.readFileSync('script.js', 'utf8');
+const cargoConstants = [
+  'CARGO_FALLBACK_SIZE_PX',
+  'CARGO_SAFE_MAX_DIM_PX',
+].map((name) => extractConstSource(source, name)).join('\n');
+
+// Место ящика бросается ОБЩИМИ костями (иначе в онлайне он падает у игроков в разных
+// местах). Берём настоящую функцию жребия и даём ей имя комнаты — тогда бросок
+// повторяем, и тест проверяет размещение, а не везение.
+const sharedDice = extractFunctionSource(source, 'getSharedRandomFraction');
 const extracted = [
   'getCargoSpriteSize',
   'findCargoSpawnTarget',
@@ -66,6 +83,9 @@ for(let i = 0; i < 4000; i += 1){
 let randomIndex = 0;
 
 const context = {
+  onlineSession: { room: 'smoke-cargo' },
+  roundNumber: 1,
+  turnAdvanceCount: 0,
   Number,
   Set,
   FIELD_LEFT: 0,
@@ -94,7 +114,11 @@ context.Math.random = () => {
 };
 
 vm.createContext(context);
-vm.runInContext(extracted, context);
+vm.runInContext(`${cargoConstants}
+
+${sharedDice}
+
+${extracted}`, context);
 
 const cargoSize = context.getCargoSpriteSize();
 const playableRect = {
@@ -105,6 +129,10 @@ const playableRect = {
 };
 
 for(let i = 0; i < 500; i += 1){
+  // Повод жребия — раунд и номер хода. Держать их неподвижными значит бросать одни и те
+  // же кости пятьсот раз подряд: цикл выглядит перебором, а проверяет одну-единственную
+  // точку. Двигаем номер хода — и получаем пятьсот РАЗНЫХ мест, как в настоящей партии.
+  context.turnAdvanceCount = i;
   const spawn = context.findCargoSpawnTarget();
   assert(spawn, `Expected spawn candidate at iteration ${i}`);
 

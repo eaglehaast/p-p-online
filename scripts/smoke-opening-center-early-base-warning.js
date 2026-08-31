@@ -8,7 +8,7 @@ function extractFunctionSource(source, fnName){
   const signature = `function ${fnName}(`;
   const start = source.indexOf(signature);
   if(start === -1) throw new Error(`Function not found in script.js: ${fnName}`);
-  const bodyStart = source.indexOf('{', start);
+  const bodyStart = source.indexOf('{', source.indexOf(')', start));
   if(bodyStart === -1) throw new Error(`Function body start not found for: ${fnName}`);
   let depth = 0;
   for(let i = bodyStart; i < source.length; i += 1){
@@ -25,6 +25,15 @@ function assert(condition, message){
 }
 
 const source = fs.readFileSync('script.js', 'utf8');
+// Константу берём из игры, а не переписываем числом: переписанное число живёт своей
+// жизнью и однажды разойдётся с настоящим, а тест этого не заметит.
+function extractConstSource(source, name){
+  const match = new RegExp(`^const ${name}\\s*=\\s*[^;]+;`, 'm').exec(source);
+  if(!match) throw new Error(`Константа не найдена в script.js: ${name}`);
+  return match[0];
+}
+
+const dragConstant = extractConstSource(source, 'MAX_DRAG_DISTANCE');
 const extracted = [
   'getCriticalBlueBaseThreat',
   'getEarlyBaseWarningThreat',
@@ -41,7 +50,7 @@ const context = {
 };
 
 vm.createContext(context);
-vm.runInContext(extracted, context);
+vm.runInContext(`${dragConstant}\n\n${extracted}`, context);
 
 const warningEnemy = { id: 'enemy-warning', x: 150, y: 0 };
 const scenario = { enemies: [warningEnemy] };

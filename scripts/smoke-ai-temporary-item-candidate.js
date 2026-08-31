@@ -25,10 +25,32 @@ function assert(condition, message){
 }
 
 const source = fs.readFileSync('script.js', 'utf8');
+// Пороговые числа ИИ берём из игры, а не переписываем: переписанное число живёт своей
+// жизнью и однажды разойдётся с настоящим, а тест этого не заметит.
+function extractConstSource(source, name){
+  const match = new RegExp(`^const ${name}\\s*=\\s*[^;]+;`, 'm').exec(source);
+  if(!match) throw new Error(`Константа не найдена в script.js: ${name}`);
+  return match[0];
+}
+
+const aiThresholds = [
+  'AI_WINGS_MIN_PICKUPS',
+  'AI_FUEL_MIN_REACH_RATIO',
+  'AI_CROSSHAIR_BOLD_RATIO_FLOOR',
+  'AI_CROSSHAIR_MIN_DISTANCE_RATIO',
+  'AI_CROSSHAIR_ABUNDANCE_RELAX',
+  'AI_WINGS_BOLD_RATIO_FLOOR',
+  'AI_WINGS_LONG_SHOT_RATIO',
+  'AI_WINGS_ABUNDANCE_RELAX',
+  'AI_WINGS_BOLD_SINGLE_TARGET_COUNT',
+].map((name) => extractConstSource(source, name)).join('\n');
+
 const buildFnSource = extractFunctionSource(source, 'buildAiSelectedPlanInventoryEnhancements');
 assert(!buildFnSource.includes('buildBestPlanForPlane('), 'buildAiSelectedPlanInventoryEnhancements must not call buildBestPlanForPlane.');
 
 const snippets = [
+  extractFunctionSource(source, 'findAiDynamitePathOpeningOpportunity'),
+  extractFunctionSource(source, 'pickAiBuffsForSelectedPlan'),
   extractFunctionSource(source, 'getAiSelectedPlanIntentText'),
   extractFunctionSource(source, 'shouldAiUseCrosshairForSelectedPlan'),
   extractFunctionSource(source, 'shouldAiUseWingsForSelectedPlan'),
@@ -90,7 +112,7 @@ const context = {
 };
 
 vm.createContext(context);
-vm.runInContext(snippets.join('\n'), context);
+vm.runInContext(`${aiThresholds}\n${snippets.join('\n')}`, context);
 
 const basePlane = { id: 'blue-1', color: 'blue', x: 0, y: 0, activeTurnBuffs: {} };
 

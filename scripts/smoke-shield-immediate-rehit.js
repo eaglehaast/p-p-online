@@ -8,7 +8,7 @@ function extractFunctionSource(source, fnName){
   const signature = `function ${fnName}(`;
   const start = source.indexOf(signature);
   if(start === -1) throw new Error(`Function not found in script.js: ${fnName}`);
-  const bodyStart = source.indexOf('{', start);
+  const bodyStart = source.indexOf('{', source.indexOf(')', start));
   if(bodyStart === -1) throw new Error(`Function body start not found for: ${fnName}`);
   let depth = 0;
   for(let i = bodyStart; i < source.length; i += 1){
@@ -31,6 +31,7 @@ const extracted = [
   'getPlaneDangerGeometry',
   'getPlaneBeneficialGeometry',
   'resolveFlightSurfaceCollision',
+  'dropActiveFlagFromPlane',
   'checkPlaneHits',
 ].map((name) => extractFunctionSource(gameSource, name)).join('\n\n');
 

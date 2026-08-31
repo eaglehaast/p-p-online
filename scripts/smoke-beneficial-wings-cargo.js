@@ -8,7 +8,7 @@ function extractFunctionSource(source, fnName){
   const signature = `function ${fnName}(`;
   const start = source.indexOf(signature);
   if(start === -1) throw new Error(`Function not found in script.js: ${fnName}`);
-  const bodyStart = source.indexOf('{', start);
+  const bodyStart = source.indexOf('{', source.indexOf(')', start));
   if(bodyStart === -1) throw new Error(`Function body start not found for: ${fnName}`);
   let depth = 0;
   for(let i = bodyStart; i < source.length; i += 1){
@@ -24,7 +24,19 @@ function assert(condition, message){
   if(!condition) throw new Error(message);
 }
 
+// Константы берём из игры, а не переписываем числом: переписанное число живёт своей
+// жизнью и однажды разойдётся с настоящим, а тест этого не заметит.
+function extractConstSource(source, name){
+  const match = new RegExp(`^const ${name} = [^;]+;`, 'm').exec(source);
+  if(!match) throw new Error(`Константа не найдена в script.js: ${name}`);
+  return match[0];
+}
+
 const source = fs.readFileSync('script.js', 'utf8');
+const constants = [
+  'CARGO_FALLBACK_SIZE_PX',
+  'CARGO_SAFE_MAX_DIM_PX',
+].map((name) => extractConstSource(source, name)).join('\n');
 const extracted = [
   'getPlaneActiveTurnBuffs',
   'planeHasActiveTurnBuff',
@@ -48,7 +60,7 @@ const context = {
 };
 
 vm.createContext(context);
-vm.runInContext(extracted, context);
+vm.runInContext(`${constants}\n\n${extracted}`, context);
 
 const cargo = { x: 30, y: -10 };
 const planeNoWings = { x: 0, y: 0, activeTurnBuffs: {} };

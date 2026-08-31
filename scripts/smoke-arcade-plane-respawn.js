@@ -10,7 +10,7 @@ function extractFunctionSource(source, fnName){
   if(start === -1){
     throw new Error(`Function not found in script.js: ${fnName}`);
   }
-  const bodyStart = source.indexOf('{', start);
+  const bodyStart = source.indexOf('{', source.indexOf(')', start));
   if(bodyStart === -1){
     throw new Error(`Function body start not found for: ${fnName}`);
   }
@@ -44,12 +44,35 @@ const functionNames = [
   'isPlaneTargetable',
   'setPlaneReadyAtBase',
   'markPlaneLaunchedFromBase',
+  'notifyTurnAdvanced',
+  'getPlaneLifeState',
   'advanceTurn',
 ];
 
+
+// Набор состояний берём из игры, а не переписываем: переписанный список живёт своей
+// жизнью и однажды разойдётся с настоящим, а тест этого не заметит.
+function extractConstSource(source, name){
+  const match = new RegExp(`^const ${name} = [^;]+;`, 'm').exec(source);
+  if(!match) throw new Error(`Константа не найдена в script.js: ${name}`);
+  return match[0];
+}
+const planeLifeStates = extractConstSource(gameSource, 'PLANE_LIFE_STATES');
 const extracted = functionNames.map((name) => extractFunctionSource(gameSource, name)).join('\n\n');
 
 const context = {
+  // Слушателей смены хода в стенде нет: проверяем возрождение, а не рассылку.
+  turnAdvanceListeners: new Set(),
+  // Учёт ходов для самоанализа ИИ к возрождению отношения не имеет.
+  recordAiSelfAnalyzerTurnAdvance: () => {},
+  syncAiRoundStateTurnNumber: () => {},
+  aiRoundState: { turnNumber: 0 },
+  resetPlaneKillPointAwardMarker: () => {},
+  isAiControlledTurn: () => false,
+  publishOnlineStateAfterTurn: () => {},
+  invalidateAiPlanningState: () => {},
+  turnCommitSequence: 0,
+  performance: { now: () => 0 },
   settings: { arcadeMode: false },
   selectedRuleset: 'classic',
   isAdvancedLikeRuleset: (ruleset) => ruleset === 'advanced',
@@ -70,7 +93,7 @@ const context = {
 };
 
 vm.createContext(context);
-vm.runInContext(extracted, context);
+vm.runInContext(`${planeLifeStates}\n\n${extracted}`, context);
 
 // REGRESSION SHIELD:
 // Единый источник истины по «неуязвимости» — только наблюдаемое поведение через respawnState/respawnStage.

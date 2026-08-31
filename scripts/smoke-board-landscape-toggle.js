@@ -501,6 +501,8 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
   const ruleBody = (selector) => {
     const start = styles.indexOf(selector);
     assert(start !== -1, `12: в стилях нет правила ${selector}`);
+    // Здесь разбирается CSS-правило, а не функция: тело начинается сразу за селектором,
+    // и никаких круглых скобок перед ним искать не надо.
     return styles.slice(styles.indexOf('{', start) + 1, styles.indexOf('}', start));
   };
   const px = (body, prop) => {
