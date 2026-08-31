@@ -31875,32 +31875,77 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan, options = {}){
   return isLongShot;
 }
 
+// Невидимость прячет ВСЕ самолёты цвета на время следующего хода противника
+// (shouldHidePlaneByInvisibility), а не один выбранный. Поэтому и решение принимается не
+// про самолёт, а про положение своих на поле.
+//
+// Правило: прятать стоит тех, кого могут сбить и кто не стоит на базе. Самолёт на своём
+// стартовом месте укрывать незачем — соперник и так помнит, где он стоит, и место это не
+// меняется. А вышедший в поле — цель, и его стоит спрятать на чужой ход.
+//
+// Отдельно считается тот, кто прямо сейчас собирается взлететь: ход ещё не сделан, но
+// место посадки уже известно, и опасность меряется по нему. Иначе решение всегда
+// опаздывало бы ровно на ход — прятались бы после того, как сбили.
+//
+// Прежнее условие требовало одного из трёх поводов, и два из них не работали никогда:
+// «несу цель» читало поля hasCargo/hasFlag/carryingCargo/carryingFlag, которых у самолёта
+// нет (настоящее — carriedFlagId), а «впереди по очкам» читало context.scoreState,
+// которого в контексте не бывает. Оставался единственный повод — враг ближе 90 пикселей,
+// — и невидимость почти не применялась: за шесть ходов решение спрашивали четыре раза и
+// четыре раза отвечали «нет». Повод «я впереди по очкам» не возвращён намеренно: к тому,
+// собьют самолёт или нет, счёт отношения не имеет.
 function shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan){
   const plane = selectedPlan?.plane || null;
   const runtimeTurnColors = typeof turnColors !== "undefined" ? turnColors : null;
   const runtimeTurnIndex = typeof turnIndex !== "undefined" ? turnIndex : 0;
   const aiColor = selectedPlan?.color || plane?.color || context?.color || runtimeTurnColors?.[runtimeTurnIndex] || "blue";
   if(!plane || !aiColor) return false;
+
+  // Уже невидимы — второй заряд ничего не добавит.
   if(typeof isPlayerInvisibilityActive === "function" && isPlayerInvisibilityActive(aiColor)) return false;
 
-  const runtimePoints = typeof points !== "undefined" ? points : null;
-  const allyPlanes = Array.isArray(runtimePoints)
-    ? runtimePoints.filter((entry) => entry?.color === aiColor)
-    : [];
-  const survivingAllies = allyPlanes.filter((entry) => entry?.active !== false).length;
-  if(survivingAllies <= 0) return false;
+  // «Могут сбить» меряется досягаемостью врага, а не близостью.
+  //
+  // Готовая getImmediateResponseThreatMeta для этого не годится: она считает опасным
+  // радиус ATTACK_RANGE_PX * 0.95 = 285 px и только по чистой прямой. А долетают самолёты
+  // на 600 px (30 клеток по 20) и вовсю отражаются от стен — то есть достают вдвое дальше
+  // и не по линейке. С той меркой ответ был «безопасно» даже там, где до самолёта
+  // спокойно дотягиваются: за двенадцать ходов ни одного «под угрозой».
+  const canBeShotAt = (x, y) => {
+    if(!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+    return enemies.some((enemy) => {
+      if(!enemy || enemy.isAlive !== true || enemy.burning) return false;
+      if(!Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) return false;
+      const reachCells = typeof getEffectiveFlightRangeCells === "function"
+        ? getEffectiveFlightRangeCells(enemy)
+        : 0;
+      const reachPx = Number(reachCells) * CELL_SIZE;
+      if(!(reachPx > 0)) return false;
+      return Math.hypot(enemy.x - x, enemy.y - y) <= reachPx;
+    });
+  };
 
-  const nearbyEnemyThreat = Array.isArray(context?.enemies)
-    ? context.enemies.some((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y) && dist(plane, enemy) <= CELL_SIZE * 4.5)
-    : false;
-  const carryingObjective = Boolean(plane?.hasCargo || plane?.hasFlag || plane?.carryingCargo || plane?.carryingFlag);
-  const scoreState = context?.scoreState || context?.scores || null;
-  const enemyColor = aiColor === "blue" ? "green" : "blue";
-  const isAheadByScore = scoreState
-    ? Number(scoreState?.[aiColor] ?? 0) > Number(scoreState?.[enemyColor] ?? 0)
-    : false;
+  // «На базе» — это про место, а не про режим: respawnState вне аркады так и остаётся
+  // «at_base» у всех навсегда, и судить по нему нельзя. Судим по расстоянию до своей
+  // стартовой точки, она у самолёта записана с рождения.
+  const isStandingAtHome = (entry, x, y) => {
+    if(!Number.isFinite(entry?.homeX) || !Number.isFinite(entry?.homeY)) return false;
+    return Math.hypot(x - entry.homeX, y - entry.homeY) <= POINT_RADIUS;
+  };
 
-  return survivingAllies >= 2 && (carryingObjective || nearbyEnemyThreat || isAheadByScore);
+  const landingX = Number.isFinite(selectedPlan?.landingX) ? selectedPlan.landingX : plane.x;
+  const landingY = Number.isFinite(selectedPlan?.landingY) ? selectedPlan.landingY : plane.y;
+  if(!isStandingAtHome(plane, landingX, landingY) && canBeShotAt(landingX, landingY)) return true;
+
+  const runtimePoints = typeof points !== "undefined" && Array.isArray(points) ? points : [];
+  return runtimePoints.some((entry) => {
+    if(!entry || entry === plane) return false;
+    if(entry.color !== aiColor) return false;
+    if(entry.isAlive !== true || entry.burning) return false;
+    if(isStandingAtHome(entry, entry.x, entry.y)) return false;
+    return canBeShotAt(entry.x, entry.y);
+  });
 }
 
 function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options = {}){
