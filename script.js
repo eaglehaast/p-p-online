@@ -8934,14 +8934,14 @@ function hideOnlineLobby(){
 function getOnlineLobbyStatusText(){
   if(!onlineSession) return "";
   const connection = onlineSession.transport.status?.() ?? "online";
-  if(connection === "rejected") return "Комната не приняла. Обнови страницу.";
-  if(connection === "connecting") return "Подключаемся…";
-  if(connection !== "online") return "Связь потеряна, пробуем снова…";
-  if(!onlinePresence) return "Комната создана. Подключаемся…";
-  if(!isOnlineTableFull()) return "Ждём соперника. Отправь ему ссылку.";
-  if(onlineReady.mine) return "Ты готов. Ждём соперника.";
-  if(onlineReady.theirs) return "Соперник готов и ждёт тебя. Жми Play.";
-  return "Соперник на месте. Жми Play.";
+  if(connection === "rejected") return "Room refused the connection. Reload the page.";
+  if(connection === "connecting") return "Connecting…";
+  if(connection !== "online") return "Connection lost. Retrying…";
+  if(!onlinePresence) return "Room created. Connecting…";
+  if(!isOnlineTableFull()) return "Waiting for an opponent. Send them the link.";
+  if(onlineReady.mine) return "You’re ready. Waiting for your opponent.";
+  if(onlineReady.theirs) return "Your opponent is ready. Hit Play.";
+  return "Opponent is here. Hit Play.";
 }
 
 function refreshOnlineLobbyUi(){
@@ -20619,11 +20619,11 @@ if(onlineLobbyCopyBtn instanceof HTMLElement){
     // путь: выделить текст, чтобы человек скопировал сам.
     try {
       await navigator.clipboard.writeText(link);
-      onlineLobbyCopyBtn.textContent = "Скопировано";
-      setTimeout(() => { onlineLobbyCopyBtn.textContent = "Скопировать ссылку"; }, 1500);
+      onlineLobbyCopyBtn.textContent = "Copied";
+      setTimeout(() => { onlineLobbyCopyBtn.textContent = "Copy link"; }, 1500);
     } catch(_error){
       onlineLobbyLinkInput?.select?.();
-      onlineLobbyCopyBtn.textContent = "Скопируй вручную";
+      onlineLobbyCopyBtn.textContent = "Copy it manually";
     }
   });
 }
@@ -20637,12 +20637,12 @@ if(onlineLobbyJoinBtn instanceof HTMLElement){
       // другого места сказать ему у нас нет.
       if(onlineLobbyStatusEl instanceof HTMLElement){
         onlineLobbyStatusEl.textContent =
-          `Не разобрал код. ${ONLINE_ROOM_ID_LENGTH} букв и цифр, без пробелов.`;
+          `Can’t read that code. ${ONLINE_ROOM_ID_LENGTH} letters and digits, no spaces.`;
       }
       return;
     }
     if(!joinOnlineRoomByCode(code) && onlineLobbyStatusEl instanceof HTMLElement){
-      onlineLobbyStatusEl.textContent = "Войти не вышло. Проверь код.";
+      onlineLobbyStatusEl.textContent = "Couldn’t join. Check the code.";
     }
   };
   onlineLobbyJoinBtn.addEventListener("click", join);
@@ -54214,8 +54214,8 @@ if(onlineBtn instanceof HTMLElement){
   const available = isOnlineAvailable();
   onlineBtn.disabled = !available;
   onlineBtn.title = available
-    ? "Игра по ссылке с другом"
-    : "Онлайн не настроен: нужен адрес ретранслятора (worker/README.md)";
+    ? "Play online with a friend"
+    : "Online is not set up — it needs a relay address (worker/README.md)";
 }
 
 // Пришли по ссылке — сразу показываем лобби: ждать соперника надо в нём, а не гадать,
