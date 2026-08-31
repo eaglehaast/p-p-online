@@ -21271,7 +21271,7 @@ function showAiLaunchPreparationNotice(){
   clearAiLaunchStallNotice();
 }
 
-function showAiLaunchStallNotice(message = "Игра была приостановлена отладчиком или выполнение было задержано"){
+function showAiLaunchStallNotice(message = "The game was paused by the debugger or execution was delayed"){
   showAiLaunchNotice(message, {
     persistent: false,
     kind: "stall",
@@ -47550,7 +47550,7 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
   const recoveryMode = isHardAnomaly
     ? (canScheduleSafeWindowRelease ? "safe_window_release" : "emergency_release")
     : "soft_degradation_continue";
-  const noticeMessage = "Игра была приостановлена отладчиком или выполнение было задержано";
+  const noticeMessage = "The game was paused by the debugger or execution was delayed";
 
   if(isHardAnomaly){
     showAiLaunchStallNotice(noticeMessage);
@@ -49210,7 +49210,7 @@ function gameDraw(){
       });
     } else if(isDrawGame){
       endTextCtx.fillStyle = "#ffffff";
-      const text = "Игра окончена. Ничья.";
+      const text = "Game over. It's a draw.";
       const metrics = endTextCtx.measureText(text);
       const w = metrics.width;
       const textX = (textAreaWidth - w) / 2;
