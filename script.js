@@ -12538,7 +12538,19 @@ function loadSettings(){
 }
 
 function loadSettingsForRuleset(ruleset = selectedRuleset){
+  // Карта, которая уже на поле, переживает перечитывание настроек.
+  //
+  // Эту функцию зовут в начале КАЖДОГО раунда, а loadSettings() достаёт из хранилища
+  // выбор игрока — и затирал им карту, только что выпавшую по жребию. Прежде это было
+  // незаметно, потому что жребий сам себя в хранилище и записывал: «что выбрал человек» и
+  // «на чём играем сейчас» делили один ключ. Побеждало последнее, и выбор игрока не
+  // переживал ни одного случайного раунда.
+  //
+  // Теперь ключ хранит только выбор игрока, а раунд играет тем, что ему выпало. Ниже
+  // редактор и тестер карт ставят свою карту сами — их строки идут после и перекрывают.
+  const mapIndexInPlay = settings.mapIndex;
   loadSettings();
+  settingsBridge.setMapIndex(mapIndexInPlay, { persist: false });
   if(ruleset === "mapeditor"){
     const reworkIndex = getMapEditorReworkMapIndex();
     settingsBridge.setMapIndex(Number.isInteger(reworkIndex) ? reworkIndex : 0, { persist: false });
@@ -20360,7 +20372,7 @@ function resetGame(options = {}){
   flyingPoints= [];
   if(shouldAutoRandomizeMap()){
     if(settings.mapIndex !== getRandomMapSentinelIndex()){
-      setMapIndexAndPersist(getRandomPlayableMapIndex());
+      setCurrentMapIndex(getRandomPlayableMapIndex());
     }
   }
   const mapApplyResult = applyCurrentMap();
@@ -20546,7 +20558,7 @@ if(classicRulesBtn){
     const upcomingRoundNumber = roundNumber + 1;
     randomMapPairSequenceNumber = null;
     randomMapPairIndex = null;
-    setMapIndexAndPersist(getRandomPlayableMapIndex(upcomingRoundNumber));
+    setCurrentMapIndex(getRandomPlayableMapIndex(upcomingRoundNumber));
     settings.randomizeMapEachRound = true;
     settings.flameStyle = 'random';
     onFlameStyleChanged();
@@ -20586,7 +20598,10 @@ if(editorBtn){
     mapEditorControlMode = "bricks";
     syncMapEditorResetButtonVisibility();
     loadSettingsForRuleset(selectedRuleset);
-    settingsBridge.setMapIndex(0, { persist: true });
+    // Редактор открывается на пустой карте — но это его рабочее состояние, а не выбор
+    // игрока. В хранилище оно не уезжает, иначе заход в редактор стирал бы выбранную
+    // человеком карту так же, как это делал случайный бросок.
+    settingsBridge.setMapIndex(0, { persist: false });
     settings.randomizeMapEachRound = false;
     applyCurrentMap();
     syncRulesButtonSkins(selectedRuleset);
@@ -52002,7 +52017,7 @@ function startRematchRound(){
     resetInventoryInteractionState();
     if(shouldAutoRandomizeMap()){
       if(settings.mapIndex !== getRandomMapSentinelIndex()){
-        setMapIndexAndPersist(getRandomPlayableMapIndex());
+        setCurrentMapIndex(getRandomPlayableMapIndex());
       }
     }
     applyCurrentMap();
@@ -52045,7 +52060,7 @@ if(mapEditorResetMapBtn instanceof HTMLElement){
   mapEditorResetMapBtn.addEventListener("click", () => {
     const clearSkyIndex = MAPS.findIndex((map) => isClearSkyMapMeta(map));
     const targetMapIndex = clearSkyIndex >= 0 ? clearSkyIndex : 0;
-    setMapIndexAndPersist(targetMapIndex);
+    setCurrentMapIndex(targetMapIndex);
     applyCurrentMap();
     seedMapEditorInventory();
     mapEditorControlMode = "bricks";
@@ -52172,7 +52187,7 @@ function startNewRound(){
   const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
   if(shouldRandomize){
     if(settings.mapIndex !== getRandomMapSentinelIndex()){
-      setMapIndexAndPersist(getRandomPlayableMapIndex());
+      setCurrentMapIndex(getRandomPlayableMapIndex());
     }
   }
   applyCurrentMap();
@@ -52323,9 +52338,19 @@ function getRandomPlayableMapIndex(upcomingRoundNumber = roundNumber + 1){
   return randomMapPairIndex;
 }
 
-function setMapIndexAndPersist(nextIndex){
-  const shouldPersist = !settingsBridge?.isActive;
-  settingsBridge.setMapIndex(nextIndex, { persist: shouldPersist });
+// Карта, на которой играем ПРЯМО СЕЙЧАС. В хранилище она не уезжает — и в этом вся суть.
+//
+// Раньше уезжала, и выбор игрока жил ровно до первого случайного броска. Все, кто зовёт
+// эту функцию, бросают кости: сброс партии, классические правила, начало каждого раунда,
+// сброс карты в редакторе. Ни один из них не выражает желания игрока — а писали они в тот
+// же самый ключ, куда панель настроек кладёт выбранную карту. Один слот на две разные
+// вещи: «что человек выбрал» и «что сейчас на поле». Побеждала последняя.
+//
+// Выглядело это так: выбрал карту в Advanced, нажал Classic Rules — и выбор уже стёрт,
+// ещё до начала партии. Своё предпочтение игрок сохраняет только сам, через панель
+// настроек (saveSettings), и только оно должно переживать перезагрузку.
+function setCurrentMapIndex(nextIndex){
+  settingsBridge.setMapIndex(nextIndex, { persist: false });
 }
 
 function resetPlanePositionsForCurrentMap(){
