@@ -3745,15 +3745,32 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
   const totalDurationMs = stepDurationMs * stepCount;
   const startIndex = currentIndex;
   let crossedSteps = 0;
+  let previewSteps = 0;
 
-  // Переставить подписи на k-й пройденный шаг. Вызывается только при смене k.
-  const applyCrossing = (k) => {
+  // Переклейка подписей — по ЦЕЛОЙ части пройденного пути. Это геометрия: слот уходит из
+  // окошка, его текст переставляется на следующий. Момент задан жёстко, полшага сюда не
+  // годятся.
+  const applyRecycle = (k) => {
     const clamped = Math.max(0, Math.min(stepCount, k));
     if(clamped === crossedSteps) return;
     crossedSteps = clamped;
     currentIndex = normalizeMapIndex(startIndex + stepDelta * crossedSteps);
     syncFieldLabelSlots(currentIndex, token);
-    updateMapPreviewIndex(currentIndex);
+  };
+
+  // Превью — по БЛИЖАЙШЕМУ шагу, то есть по той подписи, что стоит по центру окошка.
+  //
+  // Раньше превью шло по той же целой части, что и переклейка, и отставало на полшага:
+  // подпись уже в центре, а картинка ещё прежняя. Замер — 53% кадров показывали в превью
+  // не ту карту, что по центру. На пологом хвосте кривой это отставание растягивалось:
+  // серии расхождения шли 2, 2, 3, 3, 3, 3, 4, 5, 8 и наконец 36 кадров — около 600 мс,
+  // когда имя конечной карты уже стоит по центру, а картинка держит предыдущую и затем
+  // резко переключается. Именно это и читалось как «последний переход всё портит».
+  const applyPreview = (k) => {
+    const clamped = Math.max(0, Math.min(stepCount, k));
+    if(clamped === previewSteps) return;
+    previewSteps = clamped;
+    updateMapPreviewIndex(normalizeMapIndex(startIndex + stepDelta * previewSteps));
   };
 
   const finishAnimation = () => {
@@ -3792,7 +3809,8 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
 
     // Целые пройденные шаги — это и есть момент переклейки подписей. При овершуте
     // travelled ненадолго уходит за stepCount, поэтому ограничиваем сверху.
-    applyCrossing(Math.floor(travelled));
+    applyRecycle(Math.floor(travelled));
+    applyPreview(Math.round(travelled));
 
     const offsetPx = stepOffsetPx * (travelled - crossedSteps);
     setFieldSelectorStylesAuthorized(token, track, {
