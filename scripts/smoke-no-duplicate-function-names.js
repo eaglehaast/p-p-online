@@ -25,8 +25,8 @@
 // независимые копии, каждая обслуживает свой экран. Долг по сопровождению — да,
 // починишь в одной, забудешь в другой. Но не тихая подмена.
 //
-// А защищает от подмены ровно одно: обёртка. Уберёшь её у settings.js — и 27 имён
-// столкнутся в тот же миг. Поэтому обёртка проверяется здесь наравне с дублями.
+// А защищает от подмены ровно одно: обёртка. Уберёшь её у settings.js — и все общие
+// имена столкнутся в тот же миг. Поэтому обёртка проверяется здесь наравне с дублями.
 
 const fs = require('fs');
 
@@ -69,8 +69,8 @@ for(const file of GLOBAL_SCRIPTS) byFile.set(file, declaredNames(file));
 // === 2. ГЛАВНОЕ: settings.js и maps.js остаются завёрнутыми в IIFE ===
 //
 // Вот что на самом деле держит совпадающие имена порознь. Пока файл завёрнут, его
-// функции живут в своей области и на window не попадают. Развернёшь — и 27 имён,
-// перечисленных ниже, столкнутся с одноимёнными из script.js в тот же миг, причём молча:
+// функции живут в своей области и на window не попадают. Развернёшь — и все имена,
+// перечисленные ниже, столкнутся с одноимёнными из script.js в тот же миг, причём молча:
 // побеждать начнёт script.js, потому что он грузится последним.
 //
 // Проверяется не «первая строка похожа на обёртку», а то, что внешняя скобка
@@ -159,16 +159,15 @@ function outermostBracketClosesAtEnd(src){
 //
 // Замерено, чтобы не пугать друг друга догадками: прицельная математика у копий сходится
 // до последнего знака на всех 101 значении точности и на мусорных входах. Расходятся
-// только недостижимые запасные ветки. Реальная разница — в системе щипкового зума, и она
-// разобрана в docs/SETTINGS_SCRIPT_DUPLICATES_MEASURED_2026-09-03.md.
+// только недостижимые запасные ветки. Реальная разница была в системе щипкового зума —
+// её свели в одну (script.js), и десять имён из списка ниже уже ушли. Разбор:
+// docs/SETTINGS_SCRIPT_DUPLICATES_MEASURED_2026-09-03.md.
 //
 // Список заморожен: он не даёт появиться НОВЫМ совпадениям. Уменьшать можно и нужно;
 // увеличивать — нет.
 const KNOWN_CROSS_FILE_DUPLICATES = new Set([
-  'applyPinchTransform',
   'clamp',
   'clampAimingPercent',
-  'clearPinchResetAnimation',
   'ensureAimingDebuggerBridge',
   'getActiveAimingTuning',
   'getAimingOscillationSpeed',
@@ -176,20 +175,12 @@ const KNOWN_CROSS_FILE_DUPLICATES = new Set([
   'getPointerClientCoords',
   'getPointerDesignCoords',
   'getSpreadAngleDegByAccuracy',
-  'getTouchCenterClient',
-  'getTouchCenterInPercents',
-  'getTouchDistance',
   'getVisualViewportState',
   'installImageWatch',
-  'installPinchExitOnGameplayInput',
-  'installTouchPinchZoom',
   'isPinchActive',
   'isSpriteReady',
-  'isZoomExitTarget',
   'logCanvasCreation',
   'normalizeAimingTuning',
-  'pinchResetEaseOutBack',
-  'resetPinchState',
   'toDesignCoords',
   'updateUiFrameScale',
 ]);
