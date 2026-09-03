@@ -3410,11 +3410,106 @@ function updateMapPreview(){
   lastPreviewMapIndex = sharedSettings.mapIndex;
 }
 
+// Кроссфейд превью при смене карты.
+//
+// Подписи теперь едут непрерывно, а картинка менялась встык: за одну протяжку пальцем на
+// 240 px превью пересобиралось ДЕСЯТЬ раз, и каждый раз — резкой подменой. Замер показал,
+// что дело не в цене: кадры не проседают (за весь прокат один кадр длиннее 24 мс). Дело
+// ровно в том, что смена видна стыком на фоне плавной ленты.
+//
+// Отдельно проверено, ЧТО именно меняется при смене карты: из десяти объектов превью
+// (самолёты и флаги — это divы, а не пиксели) не сдвигается ни один. Меняется только холст
+// с кирпичами. Поэтому растворять достаточно его, и городить копию всего превью не нужно —
+// а это важно, потому что стили превью привязаны к id, и клон с вырезанными id потерял бы
+// вид.
+//
+// Делается так: снимок уходящего холста кладётся поверх живого и гаснет, пока живой уже
+// рисует новую карту.
+const MAP_PREVIEW_CROSSFADE_MS = 110;
+
+let mapPreviewGhostCanvas = null;
+let mapPreviewGhostTimer = null;
+
+function ensureMapPreviewGhostCanvas(){
+  if(!mapPreview) return null;
+  if(mapPreviewGhostCanvas && mapPreviewGhostCanvas.parentNode === mapPreview){
+    return mapPreviewGhostCanvas;
+  }
+  mapPreviewGhostCanvas = document.createElement('canvas');
+  // Тот же класс — та же геометрия (inset: 0, во всю ширину). Второй класс поднимает
+  // копию над живым холстом и задаёт плавность.
+  mapPreviewGhostCanvas.className = 'map-preview-bricks map-preview-bricks--ghost';
+  mapPreviewGhostCanvas.setAttribute('aria-hidden', 'true');
+  mapPreview.appendChild(mapPreviewGhostCanvas);
+  return mapPreviewGhostCanvas;
+}
+
+function hideMapPreviewGhost(){
+  if(mapPreviewGhostTimer){
+    clearTimeout(mapPreviewGhostTimer);
+    mapPreviewGhostTimer = null;
+  }
+  if(mapPreviewGhostCanvas){
+    mapPreviewGhostCanvas.style.transition = 'none';
+    mapPreviewGhostCanvas.style.opacity = '0';
+  }
+}
+
+function crossfadeMapPreviewBricks(durationMs = MAP_PREVIEW_CROSSFADE_MS){
+  const live = mapPreviewBricksCanvas;
+  if(!(live instanceof HTMLCanvasElement)) return;
+  if(!(live.width > 0) || !(live.height > 0)) return;
+  const fade = Math.max(0, Math.min(MAP_PREVIEW_CROSSFADE_MS, durationMs));
+  if(fade <= 0) return;
+
+  const ghost = ensureMapPreviewGhostCanvas();
+  if(!ghost) return;
+
+  // Предыдущая копия могла ещё гаснуть: при быстрой прокрутке смены идут чаще, чем
+  // длится растворение. Копия одна и та же, поэтому просто перерисовываем её заново —
+  // накопления слоёв не бывает.
+  if(mapPreviewGhostTimer){
+    clearTimeout(mapPreviewGhostTimer);
+    mapPreviewGhostTimer = null;
+  }
+
+  ghost.width = live.width;
+  ghost.height = live.height;
+  ghost.style.width = live.style.width;
+  ghost.style.height = live.style.height;
+
+  const ctx = ghost.getContext('2d');
+  if(!ctx) return;
+  ctx.clearRect(0, 0, ghost.width, ghost.height);
+  try {
+    ctx.drawImage(live, 0, 0);
+  } catch(_err){
+    // Холст мог оказаться «запачканным» сторонней картинкой — тогда просто без снимка.
+    return;
+  }
+
+  ghost.style.transition = 'none';
+  ghost.style.opacity = '1';
+  // Гасить начинаем со следующего кадра, иначе браузер склеит установку и переход в одно
+  // изменение стиля и растворения не будет.
+  requestAnimationFrame(() => {
+    if(!mapPreviewGhostCanvas) return;
+    mapPreviewGhostCanvas.style.transition = `opacity ${fade}ms linear`;
+    mapPreviewGhostCanvas.style.opacity = '0';
+  });
+  mapPreviewGhostTimer = setTimeout(hideMapPreviewGhost, fade + 60);
+}
+
 function updateMapPreviewIndex(nextIndex, { force = false } = {}){
   const resolvedIndex = normalizeMapIndex(nextIndex);
   sharedSettings.mapIndex = resolvedIndex;
   if(!force && lastPreviewMapIndex === resolvedIndex){
     return;
+  }
+  // Растворяем только настоящую СМЕНУ карты. При force с той же картой это перерисовка
+  // раскладки, а не переход, и мигать там незачем.
+  if(lastPreviewMapIndex !== resolvedIndex){
+    crossfadeMapPreviewBricks();
   }
   startPreviewSimulation();
   updateMapPreview();

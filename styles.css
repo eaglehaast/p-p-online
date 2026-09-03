@@ -1879,6 +1879,13 @@ body, button {
     z-index: 1;
   }
 
+  /* Копия уходящего кадра превью: лежит поверх живого холста и гаснет при смене карты.
+     Геометрию берёт из .map-preview-bricks, здесь только слой и начальная прозрачность. */
+  #settingsLayer #mapPreview .map-preview-bricks--ghost {
+    z-index: 2;
+    opacity: 0;
+  }
+
   #settingsLayer #mapPreview.map-preview--random {
     background-size: cover;
     background-position: center;
