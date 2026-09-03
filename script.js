@@ -32179,6 +32179,11 @@ const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 2.5;
 const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 3.5;
 const AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 2.5;
 const AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS = MINE_TRIGGER_RADIUS * 3.0;
+// Штраф к счёту минного места за попадание на ПРЕДПОЛАГАЕМЫЙ путь своего самолёта
+// (ownFutureSegments / ownApproachCorridors). Это догадка о чужом ходе, поэтому она
+// понижает место в очереди, но не запрещает его: счета мест 2.3–2.5 при пороге 1.85,
+// значит даже оба штрафа сразу оставляют место допустимым.
+const AI_DEFENSIVE_MINE_OWN_PATH_PENALTY = 0.25;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
 const AI_OWN_MINE_PATH_PENALTY = 900;
 const AI_OWN_MINE_LANDING_PENALTY = 1100;
@@ -33006,15 +33011,25 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         // sizing the safe zone for buffed planes → self-detonation.
         const effRadius = (typeof getMineEffectiveTriggerRadius === "function")
           ? getMineEffectiveTriggerRadius(plane) : MINE_TRIGGER_RADIUS;
-        // v3.3 multi-turn safety: buffers raised because self-detonation still
-        // observed after PR #2795/#2797/#2798/#2799. Cause: AI plane that's
-        // *not yet flying* this turn lands within trigger radius of a
-        // freshly-placed mine on a later turn. Wider exclusion now reserves
-        // landing-zone slack for the next 1-2 turns.
-        const landingSafe = Math.max(AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS, effRadius * 3.0); // was 2.0×
-        const trajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER, effRadius * 3.0); // was 2.5×
-        const ownSafe = Math.max(AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS, effRadius * 3.5); // was 2.5×
-        const futureTrajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER, effRadius * 3.0); // was 2.5×
+        // Буферы самобезопасности. Их дважды расширяли (2.0×→3.0×, 2.5×→3.0×, 2.5×→3.5×)
+        // потому что самоподрывы продолжались и после четырёх PR подряд. Причина была не
+        // в ширине: расстояние здесь считала distancePointToSegment, у которой имя было
+        // занято дважды, и она возвращала NaN. Сравнение `d < буфер` с NaN всегда ложно —
+        // фильтры не отсеивали НИЧЕГО, сколько их ни расширяй.
+        //
+        // Имя расшито, фильтры заработали, и с раздутыми буферами не проходило уже ни
+        // одно место: 378 проб за партию, принято ноль, мин ИИ не ставил вовсе. Поэтому
+        // множители возвращены к тем, что стояли до компенсаций.
+        //
+        // Настоящая проверка безопасности — не эти буферы, а симуляция ниже: кандидат
+        // кладётся в живой массив мин и прогоняется через ту же getMineThreatMetaForSegment,
+        // что и пусковой контроль. Буферы здесь — грубый дешёвый отсев ПЕРЕД ней, чтобы не
+        // гонять физику на каждой пробе. Их дело — не пропустить очевидно гиблое, а не
+        // подменять собой точную проверку.
+        const landingSafe = Math.max(AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS, effRadius * 2.0);
+        const trajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER, effRadius * 2.5);
+        const ownSafe = Math.max(AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS, effRadius * 2.5);
+        const futureTrajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER, effRadius * 2.5);
         const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
         if(landingDist < landingSafe) { rejects.landing_too_close += 1; continue; }
         if(aiBase && Number.isFinite(aiBase.x)
@@ -33038,28 +33053,42 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           }
         }
         if(blocksOwn) { rejects.other_own_too_close += 1; continue; }
+        // ДОГАДКА, а не факт: куда союзник полетит в следующий ход, никто не знает.
+        // ownFutureSegments — предположение «полетит к ближайшему врагу или ближайшему
+        // грузу», причём строится оно по ВСЕМ живым самолётам, включая те, что в этот ход
+        // уже отлетали. Вето по догадке стоит слишком дорого: замер показал, что вместе с
+        // соседним коридорным фильтром оно отсеивало все пробы до единой, и ИИ не ставил
+        // мин вообще. Поэтому теперь это не запрет, а штраф к счёту места (ниже): при
+        // прочих равных выбирается точка в стороне от вероятных путей своих.
+        //
+        // Настоящую проверку по союзникам делает симуляция ниже — она гоняет реальную
+        // физику по двум ближайшим коридорам каждого своего самолёта, а не по догадке.
         let blocksFutureTraj = false;
         for(const segment of ownFutureSegments){
           const d = distancePointToSegment(px, py, segment.sx, segment.sy, segment.ex, segment.ey);
           if(d < futureTrajBuf){ blocksFutureTraj = true; break; }
         }
-        if(blocksFutureTraj) { rejects.future_traj_too_close += 1; continue; }
+        if(blocksFutureTraj) { rejects.future_traj_too_close += 1; }
         // Own approach-corridor gate: defensive-mine projection's objectives
         // (cargo / our base / our flag / our allies) are symmetric — *we*
         // also fly to them. If this placement lies within trigger-radius of
         // any of our in-range corridors to those objectives, we'd be putting
         // a mine on our own approach line for the next turn.
         let blocksOwnCorridor = false;
-        const approachBuf = MINE_TRIGGER_RADIUS * 3.5; // was 2.0× — diagnostics showed
-        // the corridor gate never fired with 2.0× because enemy probes (on
-        // enemy→objective line) and our corridors (plane→objective line) only
-        // touch at the endpoint. 3.5× widens the corridor enough to catch the
-        // convergence zone near the shared objective.
+        // Тот же случай, что и с буферами выше. Множитель подняли с 2.0× до 3.5×, потому
+        // что «gate never fired with 2.0×» — и объяснили это геометрией: мол, пробы врага
+        // и наши коридоры сходятся только в конечной точке. На самом деле фильтр молчал
+        // из-за NaN и не сработал бы ни при какой ширине. Возвращено к 2.0×; зону схождения
+        // у самой цели закрывает отдельный якорный фильтр own_objective_vicinity ниже,
+        // который считает по Math.hypot и потому работал всё это время.
+        const approachBuf = MINE_TRIGGER_RADIUS * 2.0;
         for(const c of ownApproachCorridors){
           const d = distancePointToSegment(px, py, c.sx, c.sy, c.ex, c.ey);
           if(d < approachBuf){ blocksOwnCorridor = true; break; }
         }
-        if(blocksOwnCorridor) { rejects.own_approach_corridor += 1; continue; }
+        // Тоже догадка: коридор строится к КАЖДОЙ достижимой цели каждого своего
+        // самолёта, а полетит он за ход по одному. Штраф вместо вето — по той же причине.
+        if(blocksOwnCorridor) { rejects.own_approach_corridor += 1; }
         // Own objective vicinity gate: probes from the enemy projection cluster
         // *near our objectives* (cargo, our base, our flag, enemy base when we
         // raid). Our own planes also converge there. Block any placement within
@@ -33166,10 +33195,17 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         // stricter than before, while placements on key vectors pass slightly
         // more easily.
         const prior = computeStrategicPrior(placement.x, placement.y);
-        const finalScore = Math.min(2.5, scoreRes.score * prior);
+        // Штраф за догадки о своих: место на вероятном пути союзника не запрещено, но
+        // проигрывает равному месту в стороне. Величина подобрана так, чтобы решать
+        // порядок, а не проходимость: счета мест лежат в 2.3–2.5 при пороге 1.85, так что
+        // даже оба штрафа сразу оставляют место допустимым.
+        const ownPathPenalty = (blocksFutureTraj ? AI_DEFENSIVE_MINE_OWN_PATH_PENALTY : 0)
+          + (blocksOwnCorridor ? AI_DEFENSIVE_MINE_OWN_PATH_PENALTY : 0);
+        const finalScore = Math.min(2.5, scoreRes.score * prior) - ownPathPenalty;
         if(finalScore < AI_DEFENSIVE_MINE_MIN_SCORE) { rejects.score_below_floor += 1; continue; }
         allCandidates.push({
           placement,
+          ownPathPenalty,
           score: finalScore,
           rawScore: scoreRes.score,
           prior,
