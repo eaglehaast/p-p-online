@@ -82,10 +82,6 @@ function isPinchActive() {
   return pinchActive === true;
 }
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function applyPinchTransform() {
   if (!(uiFrameInner instanceof HTMLElement)) return;
   uiFrameInner.style.transform = `translate(${pinchPanX}px, ${pinchPanY}px) scale(${pinchScale})`;
