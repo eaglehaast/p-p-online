@@ -8568,7 +8568,7 @@ function receiveOnlineEnvelope(envelope){
 // смотрит на свой огонь.
 const ONLINE_ROOM_SETTING_KEYS = Object.freeze([
   "flightRangeCells",
-  "aimingAmplitude",
+  "accuracyPercent",
   "addAA",
   "sharpEdges",
   "flagsEnabled",
@@ -8577,6 +8577,13 @@ const ONLINE_ROOM_SETTING_KEYS = Object.freeze([
   "mapIndex",
   "randomizeMapEachRound",
 ]);
+
+// Прежние имена тех же настроек — принимаются на чтение из чужого пакета, но никогда не
+// отправляются. accuracyPercent когда-то звался aimingAmplitude, потому что задавал
+// амплитуду отклонения в градусах; смысл давно сменили на проценты точности, а имя нет.
+const ONLINE_ROOM_SETTING_LEGACY_KEYS = Object.freeze({
+  accuracyPercent: "aimingAmplitude",
+});
 
 // Раскладка карт по тирам, навязанная комнатой. Живёт только на время партии и в
 // localStorage не попадает: чужие настройки не должны пережить выход из комнаты.
@@ -8620,10 +8627,18 @@ function applyOnlineRoomSettings(roomSettings){
 
   const incoming = roomSettings.settings ?? {};
   for(const key of ONLINE_ROOM_SETTING_KEYS){
-    if(incoming[key] === undefined) continue;
+    // Прежнее имя ключа принимается на чтение. Отправляем мы только нынешнее, но пакет из
+    // комнаты — чужой ввод: если в нём придёт старое имя, а мы его молча пропустим, гость
+    // доиграет партию со СВОЕЙ точностью вместо правил комнаты. Тихое расхождение вместо
+    // отказа — ровно та беда, которую тут уже ловили.
+    const legacyKey = ONLINE_ROOM_SETTING_LEGACY_KEYS[key];
+    const value = incoming[key] !== undefined
+      ? incoming[key]
+      : (legacyKey ? incoming[legacyKey] : undefined);
+    if(value === undefined) continue;
     // Присваиваем прямо в настройки, минуя сохранение: это правила ЭТОЙ партии, а не
     // новый выбор игрока. Вышел из комнаты — вернулись свои.
-    settings[key] = incoming[key];
+    settings[key] = value;
   }
 
   onlineRoomPlacements = (roomSettings.placements && typeof roomSettings.placements === "object")
@@ -11655,8 +11670,8 @@ function ensureAimingDebuggerBridge(){
   };
   bridge.setAccuracy = function(percent){
     const clamped = clampAimingPercent(percent);
-    settings.aimingAmplitude = clamped;
-    setStoredSetting('settings.aimingAmplitude', clamped);
+    settings.accuracyPercent = clamped;
+    setStoredSetting('settings.accuracyPercent', clamped);
     return this.snapshot();
   };
   bridge.setTuning = function(nextTuning = {}){
@@ -11688,9 +11703,9 @@ function ensureAimingDebuggerBridge(){
   bridge.snapshot = function(){
     return {
       enabled: this.state.enabled,
-      accuracyPercent: clampAimingPercent(settings.aimingAmplitude),
+      accuracyPercent: clampAimingPercent(settings.accuracyPercent),
       tuning: { ...this.state.tuning },
-      currentSpreadDeg: Number(getSpreadAngleDegByAccuracy(settings.aimingAmplitude).toFixed(4)),
+      currentSpreadDeg: Number(getSpreadAngleDegByAccuracy(settings.accuracyPercent).toFixed(4)),
       currentOscillationSpeed: Number(getAimingOscillationSpeed().toFixed(5))
     };
   };
@@ -11728,7 +11743,7 @@ function getAimingSpreadScale(accuracyPercent, tuning = AIMING_TUNING_DEFAULTS){
 function getAimingOscillationSpeed(){
   const tuning = getActiveAimingTuning();
   const referenceAccuracy = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent);
-  const currentAccuracy = clampAimingPercent(settings.aimingAmplitude, referenceAccuracy);
+  const currentAccuracy = clampAimingPercent(settings.accuracyPercent, referenceAccuracy);
   const normalizedRef = Math.max(referenceAccuracy, 1e-6);
   const belowReferenceRatio = clamp((referenceAccuracy - currentAccuracy) / normalizedRef, 0, 1);
   const speedPenaltyScale = 1
@@ -12391,7 +12406,7 @@ function normalizeFlameStyleKey(key) {
 const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings = {});
 const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   flightRangeCells: 30,
-  aimingAmplitude: 80,
+  accuracyPercent: 80,
   addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
@@ -12403,8 +12418,8 @@ const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
 if(!Number.isFinite(sharedSettings.flightRangeCells)){
   sharedSettings.flightRangeCells = 30;
 }
-if(!Number.isFinite(sharedSettings.aimingAmplitude)){
-  sharedSettings.aimingAmplitude = 80;
+if(!Number.isFinite(sharedSettings.accuracyPercent)){
+  sharedSettings.accuracyPercent = 80;
 }
 if(typeof sharedSettings.addAA !== 'boolean'){
   sharedSettings.addAA = true;
@@ -12522,8 +12537,8 @@ function loadSettings(){
   const previousFlameStyle = settings.flameStyle;
   const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
   settings.flightRangeCells = Number.isNaN(fr) ? 30 : fr;
-  if(!Number.isFinite(settings.aimingAmplitude)){
-    settings.aimingAmplitude = 80;
+  if(!Number.isFinite(settings.accuracyPercent)){
+    settings.accuracyPercent = 80;
   }
   const storedAddAA = getStoredSetting('settings.addAA');
   settings.addAA = storedAddAA === null ? true : storedAddAA === 'true';
@@ -12550,8 +12565,8 @@ function loadSettings(){
   // don't break the game on startup
   settings.flightRangeCells = Math.min(MAX_FLIGHT_RANGE_CELLS,
     Math.max(MIN_FLIGHT_RANGE_CELLS, settings.flightRangeCells));
-  if(!Number.isFinite(settings.aimingAmplitude)){
-    settings.aimingAmplitude = 80;
+  if(!Number.isFinite(settings.accuracyPercent)){
+    settings.accuracyPercent = 80;
   }
 
   if(previousFlameStyle !== settings.flameStyle){
@@ -20577,7 +20592,7 @@ if(onlineLobbyCloseBtn instanceof HTMLElement){
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     settings.flightRangeCells = 30;
-    settings.aimingAmplitude = 80;
+    settings.accuracyPercent = 80;
     settings.addAA = false;
     settings.addCargo = true;
     settings.sharpEdges = true;
@@ -46685,7 +46700,7 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
   const predictedHasCrosshair = getPlaneActiveTurnBuffs(plane).includes(INVENTORY_ITEM_TYPES.CROSSHAIR);
   const predictedAccuracyPercent = predictedHasCrosshair
     ? 100
-    : (Number.isFinite(settings?.aimingAmplitude) ? settings.aimingAmplitude : 80);
+    : (Number.isFinite(settings?.accuracyPercent) ? settings.accuracyPercent : 80);
   const predictedVisibleAmplitudeDeg =
     getSpreadAngleDegByAccuracy(predictedAccuracyPercent) * predictedDragScale;
   const shouldShortenForLowAmplitude =
@@ -48113,7 +48128,7 @@ function gameDraw(){
     // use a constant aiming amplitude (in degrees) independent of drag distance
     const aimingAccuracyPercent = hasCrosshairBuff
       ? 100
-      : settings.aimingAmplitude;
+      : settings.accuracyPercent;
     const dragScale = MAX_DRAG_DISTANCE > 0 ? (clampedDist / MAX_DRAG_DISTANCE) : 0;
     const isFallbackLaunch = (
       aimSession.controllerType === "computer"
@@ -51604,7 +51619,7 @@ function startNewRound(){
   }
   console.log('[settings] load at match start', {
     flightRangeCells: settings.flightRangeCells,
-    aimingAmplitude: settings.aimingAmplitude,
+    accuracyPercent: settings.accuracyPercent,
     addAA: settings.addAA,
     sharpEdges: settings.sharpEdges,
     flagsEnabled: settings.flagsEnabled,

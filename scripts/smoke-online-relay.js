@@ -81,7 +81,7 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
     // Настройки этого устройства.
     selectedRuleset: ruleset,
     settings: settings || {
-      flightRangeCells: 30, aimingAmplitude: 80, addAA: false, sharpEdges: true,
+      flightRangeCells: 30, accuracyPercent: 80, addAA: false, sharpEdges: true,
       flagsEnabled: true, addCargo: true, arcadeMode: false, mapIndex: 0,
       randomizeMapEachRound: false, flameStyle: 'icy',
     },
@@ -120,6 +120,7 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
     source.match(/const ONLINE_RELAY_URL = "[^"]*";/)[0],
     source.match(/const ONLINE_HOST_SEAT = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_SETTING_KEYS = Object\.freeze\(\[[\s\S]*?\]\);/)[0],
+    source.match(/const ONLINE_ROOM_SETTING_LEGACY_KEYS = Object\.freeze\(\{[\s\S]*?\}\);/)[0],
     'let onlineSession = null; let onlineInbox = []; let onlineTurnDraft = null;',
     'let onlineRoomPlacements = null;',
     // Настоящая loadMapTesterPlacements: именно её подмена раскладкой комнаты и
@@ -292,14 +293,14 @@ const relay = await import('../worker/room.js');
   // общий жребий выбрал бы разные карты.
   const host = makeClient('blue', {
     placements: { cells: 'hard', turtle: 'easy' },
-    settings: { flightRangeCells: 44, aimingAmplitude: 60, addAA: false, sharpEdges: false,
+    settings: { flightRangeCells: 44, accuracyPercent: 60, addAA: false, sharpEdges: false,
                 flagsEnabled: false, addCargo: false, arcadeMode: true, mapIndex: 5,
                 randomizeMapEachRound: true, flameStyle: 'icy' },
   });
   const guest = makeClient('green', {
     placements: { hallways: 'archive' },
     ruleset: 'advanced',
-    settings: { flightRangeCells: 12, aimingAmplitude: 99, addAA: true, sharpEdges: true,
+    settings: { flightRangeCells: 12, accuracyPercent: 99, addAA: true, sharpEdges: true,
                 flagsEnabled: true, addCargo: true, arcadeMode: false, mapIndex: 1,
                 randomizeMapEachRound: false, flameStyle: 'inferno' },
   });

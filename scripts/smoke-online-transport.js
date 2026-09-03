@@ -68,7 +68,7 @@ function buildTable(){
       // Настройки комнаты (шаг 4) — их подробная проверка в smoke-online-relay.js,
       // здесь они нужны лишь для того, чтобы стенд поднялся целиком.
       selectedRuleset: 'classic',
-      settings: { flightRangeCells: 30, aimingAmplitude: 80, addAA: false, sharpEdges: true,
+      settings: { flightRangeCells: 30, accuracyPercent: 80, addAA: false, sharpEdges: true,
                   flagsEnabled: true, addCargo: true, arcadeMode: false, mapIndex: 0,
                   randomizeMapEachRound: false },
       loadMapTesterPlacements: () => ({}),
