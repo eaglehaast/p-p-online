@@ -3455,19 +3455,20 @@ function hideMapPreviewGhost(){
   }
 }
 
-function crossfadeMapPreviewBricks(durationMs = MAP_PREVIEW_CROSSFADE_MS){
+// Снять копию уходящего кадра и показать её поверх живого холста. Гасить НЕ начинаем —
+// этим распоряжается вызывающий: либо переходом по времени (startMapPreviewGhostFade),
+// либо покадрово по ходу ленты (setMapPreviewGhostOpacity).
+function captureMapPreviewGhost(){
   const live = mapPreviewBricksCanvas;
-  if(!(live instanceof HTMLCanvasElement)) return;
-  if(!(live.width > 0) || !(live.height > 0)) return;
-  const fade = Math.max(0, Math.min(MAP_PREVIEW_CROSSFADE_MS, durationMs));
-  if(fade <= 0) return;
+  if(!(live instanceof HTMLCanvasElement)) return false;
+  if(!(live.width > 0) || !(live.height > 0)) return false;
 
   const ghost = ensureMapPreviewGhostCanvas();
-  if(!ghost) return;
+  if(!ghost) return false;
 
-  // Предыдущая копия могла ещё гаснуть: при быстрой прокрутке смены идут чаще, чем
-  // длится растворение. Копия одна и та же, поэтому просто перерисовываем её заново —
-  // накопления слоёв не бывает.
+  // Предыдущая копия могла ещё гаснуть: при быстрой прокрутке смены идут чаще, чем длится
+  // растворение. Копия одна и та же, поэтому просто перерисовываем её заново — накопления
+  // слоёв не бывает.
   if(mapPreviewGhostTimer){
     clearTimeout(mapPreviewGhostTimer);
     mapPreviewGhostTimer = null;
@@ -3479,28 +3480,55 @@ function crossfadeMapPreviewBricks(durationMs = MAP_PREVIEW_CROSSFADE_MS){
   ghost.style.height = live.style.height;
 
   const ctx = ghost.getContext('2d');
-  if(!ctx) return;
+  if(!ctx) return false;
   ctx.clearRect(0, 0, ghost.width, ghost.height);
   try {
     ctx.drawImage(live, 0, 0);
   } catch(_err){
     // Холст мог оказаться «запачканным» сторонней картинкой — тогда просто без снимка.
-    return;
+    return false;
   }
 
   ghost.style.transition = 'none';
   ghost.style.opacity = '1';
+  return true;
+}
+
+// Покадровое управление прозрачностью копии. Нужно, когда растворение ведёт не время, а
+// само движение ленты.
+function setMapPreviewGhostOpacity(value){
+  if(!mapPreviewGhostCanvas) return;
+  const clamped = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+  mapPreviewGhostCanvas.style.transition = 'none';
+  mapPreviewGhostCanvas.style.opacity = `${clamped}`;
+}
+
+// Растворение по времени — для случаев вне проката ленты (одиночная стрелка при
+// отключённой анимации, восстановление состояния).
+function startMapPreviewGhostFade(durationMs = MAP_PREVIEW_CROSSFADE_MS){
+  const ghost = mapPreviewGhostCanvas;
+  if(!ghost) return;
+  const fade = Math.max(0, Math.min(MAP_PREVIEW_CROSSFADE_MS, durationMs));
+  if(fade <= 0){
+    hideMapPreviewGhost();
+    return;
+  }
   // Гасить начинаем со следующего кадра, иначе браузер склеит установку и переход в одно
   // изменение стиля и растворения не будет.
   requestAnimationFrame(() => {
-    if(!mapPreviewGhostCanvas) return;
-    mapPreviewGhostCanvas.style.transition = `opacity ${fade}ms linear`;
-    mapPreviewGhostCanvas.style.opacity = '0';
+    if(mapPreviewGhostCanvas !== ghost) return;
+    ghost.style.transition = `opacity ${fade}ms linear`;
+    ghost.style.opacity = '0';
   });
   mapPreviewGhostTimer = setTimeout(hideMapPreviewGhost, fade + 60);
 }
 
-function updateMapPreviewIndex(nextIndex, { force = false } = {}){
+function crossfadeMapPreviewBricks(durationMs = MAP_PREVIEW_CROSSFADE_MS){
+  if(!captureMapPreviewGhost()) return;
+  startMapPreviewGhostFade(durationMs);
+}
+
+function updateMapPreviewIndex(nextIndex, { force = false, holdGhost = false } = {}){
   const resolvedIndex = normalizeMapIndex(nextIndex);
   sharedSettings.mapIndex = resolvedIndex;
   if(!force && lastPreviewMapIndex === resolvedIndex){
@@ -3508,8 +3536,12 @@ function updateMapPreviewIndex(nextIndex, { force = false } = {}){
   }
   // Растворяем только настоящую СМЕНУ карты. При force с той же картой это перерисовка
   // раскладки, а не переход, и мигать там незачем.
+  //
+  // holdGhost — прокат ленты: копию снимаем, но гасить её будет само движение, покадрово.
+  // По времени там гасить нельзя, см. комментарий в animateFieldLabelChange.
   if(lastPreviewMapIndex !== resolvedIndex){
-    crossfadeMapPreviewBricks();
+    if(holdGhost) captureMapPreviewGhost();
+    else crossfadeMapPreviewBricks();
   }
   startPreviewSimulation();
   updateMapPreview();
@@ -3770,7 +3802,7 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
     const clamped = Math.max(0, Math.min(stepCount, k));
     if(clamped === previewSteps) return;
     previewSteps = clamped;
-    updateMapPreviewIndex(normalizeMapIndex(startIndex + stepDelta * previewSteps));
+    updateMapPreviewIndex(normalizeMapIndex(startIndex + stepDelta * previewSteps), { holdGhost: true });
   };
 
   const finishAnimation = () => {
@@ -3784,6 +3816,9 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
       transition: 'none',
       transform: baseTransform
     });
+    // Движение кончилось — значит кончилось и растворение. Без этого копия осталась бы
+    // висеть, если анимацию оборвали на полпути.
+    hideMapPreviewGhost();
     isAnimating = false;
     markFieldAnimationEnd(animationToken);
     removeIncomingFieldValue(token);
@@ -3811,6 +3846,22 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
     // travelled ненадолго уходит за stepCount, поэтому ограничиваем сверху.
     applyRecycle(Math.floor(travelled));
     applyPreview(Math.round(travelled));
+
+    // Растворение ведёт ДВИЖЕНИЕ, а не таймер.
+    //
+    // Раньше копия гасла переходом на 110 мс, и на последнем шаге это выглядело вспышкой
+    // посреди тишины: замер — последняя карта появилась в t=2254, копия догасла в t=2420,
+    // а лента встала только в t=2854. Картинка заканчивала проявляться на 434 мс раньше,
+    // чем прекращалось движение, да ещё первые ~50 мс копия висела непрозрачной, пока
+    // браузер заводил переход.
+    //
+    // Теперь прозрачность — функция положения ленты. Превью переключается на середине
+    // шага (Math.round), а полностью проявляется к моменту, когда его подпись встаёт по
+    // центру. На последнем шаге лента как раз там и останавливается, поэтому картинка и
+    // движение заканчиваются ОДНОВРЕМЕННО. На быстрых шагах та же половина занимает
+    // считаные миллисекунды, и растворение само собой становится коротким.
+    const fromSwitch = previewSteps - travelled; // 0.5 в момент смены → 0 когда подпись по центру
+    setMapPreviewGhostOpacity(fromSwitch * 2);
 
     const offsetPx = stepOffsetPx * (travelled - crossedSteps);
     setFieldSelectorStylesAuthorized(token, track, {
