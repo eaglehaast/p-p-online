@@ -47369,8 +47369,6 @@ function destroyAllPlanesWithNukeScoring(){
   return scoreDeltas;
 }
 
-function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
-
 let failSafeAdvanceTurnInProgress = false;
 function tryRecoverAiFailSafeWithEmergencyLaunch(details = {}){
   const failSafeReason = details?.reason || "unspecified";
