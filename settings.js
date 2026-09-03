@@ -3627,97 +3627,103 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
 
   isAnimating = true;
   markFieldAnimationStart(animationToken);
-  console.log(`[map selector] ${currentIndex} -> ${resolvedTarget}`, {
-    direction,
-    isAnimating,
-    steps: stepCount
+  if(debugMotion){
+    console.log(`[map selector] ${currentIndex} -> ${resolvedTarget}`, {
+      direction,
+      isAnimating,
+      steps: stepCount
+    });
+  }
+
+  // ОДИН проход на всю дистанцию — как у дальности и точности.
+  //
+  // Раньше здесь была цепочка: каждый шаг анимировался отдельно, в конце трансформа
+  // жёстко возвращалась в базовую, слоты переклеивались, и следующий шаг начинался с
+  // места. На замере это выглядело так: шаг тормозит до нуля, потом скачок на целую
+  // ширину слота за один кадр, потом снова разгон. За протяжку пальцем — десять таких
+  // скачков и 2319 мс против 905 мс у дальности.
+  //
+  // Теперь позиция едет непрерывно, а замена подписей происходит НА ЛЕТУ, когда
+  // непрерывная позиция пересекает целый шаг. Лента бесконечная, поэтому «настоящей»
+  // длинной ленты нет: три слота (prev/current/next) переклеиваются по мере прохода —
+  // этого хватает, так как между двумя соседними пересечениями видно не больше трёх.
+  const totalDurationMs = stepDurationMs * stepCount;
+  const startIndex = currentIndex;
+  let crossedSteps = 0;
+
+  // Переставить подписи на k-й пройденный шаг. Вызывается только при смене k.
+  const applyCrossing = (k) => {
+    const clamped = Math.max(0, Math.min(stepCount, k));
+    if(clamped === crossedSteps) return;
+    crossedSteps = clamped;
+    currentIndex = normalizeMapIndex(startIndex + stepDelta * crossedSteps);
+    syncFieldLabelSlots(currentIndex, token);
+    updateMapPreviewIndex(currentIndex);
+  };
+
+  const finishAnimation = () => {
+    if(animationToken !== fieldAnimationToken) return;
+    fieldLabelRafId = null;
+    cancelFieldLabelAnimation();
+    currentIndex = resolvedTarget;
+    syncFieldLabelSlots(currentIndex, token);
+    updateMapPreviewIndex(resolvedTarget);
+    setFieldSelectorStylesAuthorized(token, track, {
+      transition: 'none',
+      transform: baseTransform
+    });
+    isAnimating = false;
+    markFieldAnimationEnd(animationToken);
+    removeIncomingFieldValue(token);
+    if(FIELD_EXCLUSIVE_MODE){
+      finalizeFieldExclusiveSession(token);
+    }
+  };
+
+  setFieldSelectorStylesAuthorized(token, track, {
+    transition: 'none',
+    transform: baseTransform
   });
 
-  let remainingSteps = stepCount;
-
-  const finalizeStep = () => {
+  const startTime = performance.now();
+  const tick = (now) => {
     if(animationToken !== fieldAnimationToken) return;
-    cancelFieldLabelAnimation();
+    const elapsed = now - startTime;
+    const progress = totalDurationMs > 0 ? Math.min(1, elapsed / totalDurationMs) : 1;
+    // Овершут считается от ВСЕЙ дистанции, а не от каждого шага: длинная протяжка едет
+    // ровно и мягко тормозит в конце, короткая — с заметной отдачей, как у дальности.
+    const easedProgress = easeOutBack(progress, overshootStrength);
+    const travelled = stepCount * easedProgress;
+
+    // Целые пройденные шаги — это и есть момент переклейки подписей. При овершуте
+    // travelled ненадолго уходит за stepCount, поэтому ограничиваем сверху.
+    applyCrossing(Math.floor(travelled));
+
+    const offsetPx = stepOffsetPx * (travelled - crossedSteps);
     setFieldSelectorStylesAuthorized(token, track, {
       transition: 'none',
-      transform: baseTransform
-    });
-    const isFinalStep = remainingSteps === 1;
-    const intermediateIndex = normalizeMapIndex(currentIndex + stepDelta);
-    updateMapPreviewIndex(intermediateIndex);
-    currentIndex = intermediateIndex;
-    syncFieldLabelSlots(currentIndex, token);
-    remainingSteps -= 1;
-
-    if(remainingSteps > 0){
-      requestAnimationFrame(runStep);
-      return;
-    }
-
-    const finalizeAnimation = () => {
-      if(animationToken !== fieldAnimationToken) return;
-      currentIndex = resolvedTarget;
-      syncFieldLabelSlots(currentIndex, token);
-      updateMapPreviewIndex(resolvedTarget);
-      isAnimating = false;
-      markFieldAnimationEnd(animationToken);
-      removeIncomingFieldValue(token);
-      if(FIELD_EXCLUSIVE_MODE){
-        finalizeFieldExclusiveSession(token);
-      }
-    };
-
-    if(isFinalStep){
-      window.setTimeout(() => {
-        requestAnimationFrame(finalizeAnimation);
-      }, 60);
-      return;
-    }
-
-    finalizeAnimation();
-  };
-
-  const runStep = () => {
-    if(animationToken !== fieldAnimationToken) return;
-    setFieldSelectorStylesAuthorized(token, track, {
-      transition: 'none',
-      transform: baseTransform
+      transform: getFieldOffsetTransform(offsetPx)
     });
 
-    const start = performance.now();
-    const tick = (now) => {
-      if(animationToken !== fieldAnimationToken) return;
-      const elapsed = now - start;
-      const progress = stepDurationMs > 0 ? Math.min(1, elapsed / stepDurationMs) : 1;
-      const easedProgress = easeOutBack(progress, overshootStrength);
-      const offsetPx = stepOffsetPx * easedProgress;
-      setFieldSelectorStylesAuthorized(token, track, {
-        transition: 'none',
-        transform: getFieldOffsetTransform(offsetPx)
+    if(debugMotion){
+      console.log('[field motion]', {
+        elapsed: Math.round(elapsed),
+        progress: Number(progress.toFixed(3)),
+        travelled: Number(travelled.toFixed(3)),
+        crossed: crossedSteps,
+        offsetPx: Number(offsetPx.toFixed(2))
       });
+    }
 
-      if(debugMotion){
-        console.log('[field motion]', {
-          elapsed: Math.round(elapsed),
-          progress: Number(progress.toFixed(3)),
-          easedProgress: Number(easedProgress.toFixed(3)),
-          offsetPx: Number(offsetPx.toFixed(2))
-        });
-      }
+    if(progress < 1){
+      fieldLabelRafId = requestAnimationFrame(tick);
+      return;
+    }
 
-      if(progress < 1){
-        fieldLabelRafId = requestAnimationFrame(tick);
-        return;
-      }
-
-      fieldLabelRafId = null;
-      finalizeStep();
-    };
-
-    fieldLabelRafId = requestAnimationFrame(tick);
+    finishAnimation();
   };
 
-  runStep();
+  fieldLabelRafId = requestAnimationFrame(tick);
 }
 
 function updateMapNameDisplay(options = {}){
