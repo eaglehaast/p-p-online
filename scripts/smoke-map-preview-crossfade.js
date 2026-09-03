@@ -12,9 +12,18 @@
 // кирпичами. Поэтому растворяется он один, а копия всего превью не делается — и это
 // важно: стили превью привязаны к id, и клон с вырезанными id потерял бы вид.
 //
-// Замер после правки: прозрачность копии идёт 1 → 0.85 → 0.70 → 0.55 → 0.39 → 0.24 →
-// 0.09 → 0; копия на странице ровно одна даже при быстрой прокрутке; кадров длиннее
-// 24 мс — ноль (до правки был один, 50 мс).
+// Замер после первой правки: копия на странице ровно одна даже при быстрой прокрутке,
+// кадров длиннее 24 мс — ноль (до правки был один, 50 мс).
+//
+// ВТОРАЯ правка — про то, ЧЕМ ведётся растворение. Переход по времени (110 мс) на
+// последнем шаге выглядел вспышкой посреди тишины: последняя карта появлялась в t=2254,
+// копия догасала в t=2420, а лента вставала только в t=2854. Картинка заканчивала
+// проявляться на 434 мс раньше, чем прекращалось движение.
+//
+// Теперь на прокате ленты прозрачность — функция ПОЛОЖЕНИЯ: копия снимается, но гаснет
+// покадрово, по мере того как подпись новой карты идёт к центру. Замер после:
+// растворение длится 550 мс вместо 110 и заканчивается за 50 мс до остановки ленты.
+// Вне проката (когда анимации нет) остаётся переход по времени.
 
 const fs = require('fs');
 
@@ -73,22 +82,22 @@ const styles = fs.readFileSync('styles.css', 'utf8');
   assert(/createElement\('canvas'\)/.test(fn),
     '2b: копия — это холст, на него переносятся пиксели уходящего кадра');
 
-  const fade = extractFn(settings, 'crossfadeMapPreviewBricks');
-  assert(/clearTimeout\(mapPreviewGhostTimer\)/.test(fade),
-    '2c: таймер прошлого растворения снимается, иначе он погасит уже новую копию');
+  const capture = extractFn(settings, 'captureMapPreviewGhost');
+  assert(/clearTimeout\(mapPreviewGhostTimer\)/.test(capture),
+    '2c: таймер прошлого растворения снимается при снятии новой копии, иначе он погасит её');
 }
 
 // === 3. Снимок берётся с живого холста ===
 {
-  const fade = extractFn(settings, 'crossfadeMapPreviewBricks');
-  assert(/const live = mapPreviewBricksCanvas;/.test(fade),
+  const capture = extractFn(settings, 'captureMapPreviewGhost');
+  assert(/const live = mapPreviewBricksCanvas;/.test(capture),
     '3: источник снимка — живой холст кирпичей');
-  assert(/ctx\.drawImage\(live, 0, 0\)/.test(fade),
+  assert(/ctx\.drawImage\(live, 0, 0\)/.test(capture),
     '3b: пиксели переносятся честно; клонирование узла холст НЕ копирует');
-  assert(/try \{[\s\S]*?ctx\.drawImage\(live, 0, 0\);[\s\S]*?\} catch/.test(fade),
+  assert(/try \{[\s\S]*?ctx\.drawImage\(live, 0, 0\);[\s\S]*?\} catch/.test(capture),
     '3c: перенос обёрнут — «запачканный» холст бросает исключение, и оно не должно '
     + 'ронять смену карты');
-  assert(/ghost\.width = live\.width;/.test(fade) && /ghost\.height = live\.height;/.test(fade),
+  assert(/ghost\.width = live\.width;/.test(capture) && /ghost\.height = live\.height;/.test(capture),
     '3d: размеры копии берутся у живого холста, иначе снимок растянет');
 }
 
@@ -97,13 +106,15 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 // Установить непрозрачность и тут же перевести её в ноль в одном кадре — значит не
 // получить перехода вовсе: браузер склеит два изменения в одно.
 {
-  const fade = extractFn(settings, 'crossfadeMapPreviewBricks');
-  assert(/ghost\.style\.transition = 'none';[\s\S]*?ghost\.style\.opacity = '1';/.test(fade),
+  const capture = extractFn(settings, 'captureMapPreviewGhost');
+  assert(/ghost\.style\.transition = 'none';[\s\S]*?ghost\.style\.opacity = '1';/.test(capture),
     '4: копия сначала показывается целиком и без перехода');
-  assert(/requestAnimationFrame\(\(\) => \{[\s\S]*?opacity = '0';/.test(fade),
-    '4b: гасить начинаем со СЛЕДУЮЩЕГО кадра, иначе перехода не будет');
-  assert(/transition = `opacity \$\{fade\}ms/.test(fade),
-    '4c: гашение идёт переходом по прозрачности');
+
+  const timed = extractFn(settings, 'startMapPreviewGhostFade');
+  assert(/requestAnimationFrame\(\(\) => \{[\s\S]*?opacity = '0';/.test(timed),
+    '4b: гасить переходом начинаем со СЛЕДУЮЩЕГО кадра, иначе перехода не будет');
+  assert(/transition = `opacity \$\{fade\}ms/.test(timed),
+    '4c: гашение по времени идёт переходом по прозрачности');
 }
 
 // === 5. Длительность ограничена ===
@@ -117,8 +128,8 @@ const styles = fs.readFileSync('styles.css', 'utf8');
     `5b: растворение ${ms} мс — на шаг приходится около 200 мс, длиннее нельзя, `
     + 'иначе карты будут накладываться друг на друга');
 
-  const fade = extractFn(settings, 'crossfadeMapPreviewBricks');
-  assert(/Math\.min\(MAP_PREVIEW_CROSSFADE_MS, durationMs\)/.test(fade),
+  const timed = extractFn(settings, 'startMapPreviewGhostFade');
+  assert(/Math\.min\(MAP_PREVIEW_CROSSFADE_MS, durationMs\)/.test(timed),
     '5c: переданная длительность ограничивается сверху тем же пределом');
 }
 
@@ -135,6 +146,48 @@ const styles = fs.readFileSync('styles.css', 'utf8');
   const ensure = extractFn(settings, 'ensureMapPreviewGhostCanvas');
   assert(/className = 'map-preview-bricks map-preview-bricks--ghost'/.test(ensure),
     '6d: копия несёт оба класса — геометрию берёт от общего, слой от своего');
+}
+
+// === 7. ГЛАВНОЕ: на прокате ленты растворением управляет ДВИЖЕНИЕ, а не таймер ===
+//
+// Переход по времени не знает, сколько ещё ехать ленте. На последнем шаге, где кривая
+// пологая, он успевал отработать и оставить 434 мс тишины — картинка появлялась вспышкой
+// и дальше ничего не менялось. Привязка к положению делает растворение ровно таким же
+// длинным, как остаток движения.
+{
+  const animate = extractFn(settings, 'animateFieldLabelChange');
+  const code = animate.replace(/\/\/.*$/gm, '');
+
+  // Вложенная скобка в аргументе: [^)]* через неё не перешагнёт.
+  assert(/updateMapPreviewIndex\([\s\S]*?\{ holdGhost: true \}\)/.test(code),
+    '7: на прокате копия ПРИДЕРЖИВАЕТСЯ — гасить её будет движение, а не переход');
+
+  assert(/const fromSwitch = previewSteps - travelled;/.test(code),
+    '7b: прозрачность считается от того, сколько осталось до центра');
+  assert(/setMapPreviewGhostOpacity\(fromSwitch \* 2\);/.test(code),
+    '7c: полшага пути — это весь путь растворения: 0.5 → полностью видна, 0 → прозрачна');
+
+  // Гасится покадрово, значит вызов обязан стоять внутри кадрового цикла.
+  const tick = code.slice(code.indexOf('const tick ='));
+  assert(/setMapPreviewGhostOpacity/.test(tick),
+    '7d: прозрачность выставляется каждый кадр, иначе это снова переход по времени');
+
+  assert(/hideMapPreviewGhost\(\);/.test(code),
+    '7e: в конце копия обязательно снимается — иначе оборванная анимация оставит её висеть');
+}
+
+// === 8. Вне проката остаётся переход по времени ===
+//
+// Без этого пункт 7 прошёл бы и на варианте, где растворение вообще выкинули.
+{
+  const cross = extractFn(settings, 'crossfadeMapPreviewBricks');
+  assert(/captureMapPreviewGhost\(\)/.test(cross) && /startMapPreviewGhostFade\(durationMs\)/.test(cross),
+    '8: обычный путь — снять копию и погасить её переходом по времени');
+
+  const update = extractFn(settings, 'updateMapPreviewIndex');
+  assert(/if\(holdGhost\) captureMapPreviewGhost\(\);/.test(update)
+    && /else crossfadeMapPreviewBricks\(\);/.test(update),
+    '8b: режим выбирается вызывающим: прокат придерживает копию, всё остальное гасит по времени');
 }
 
 console.log('smoke-map-preview-crossfade: OK');
