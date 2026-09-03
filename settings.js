@@ -381,9 +381,14 @@ function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
   return selectable[randomIndex];
 }
 
+// Ключ хранения точности прицеливания. Прежний оставлен только для чтения старых
+// сохранений — писать в него больше не нужно.
+const ACCURACY_STORAGE_KEY = 'settings.accuracyPercent';
+const ACCURACY_STORAGE_KEY_LEGACY = 'settings.aimingAmplitude';
+
 const DEFAULT_SETTINGS = {
   rangeCells: 30,
-  aimingAmplitude: 80,
+  accuracyPercent: 80,
   addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
@@ -395,7 +400,7 @@ const DEFAULT_SETTINGS = {
 const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings = {});
 const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   flightRangeCells: DEFAULT_SETTINGS.rangeCells,
-  aimingAmplitude: DEFAULT_SETTINGS.aimingAmplitude,
+  accuracyPercent: DEFAULT_SETTINGS.accuracyPercent,
   addAA: DEFAULT_SETTINGS.addAA,
   sharpEdges: DEFAULT_SETTINGS.sharpEdges,
   flagsEnabled: DEFAULT_SETTINGS.flagsEnabled,
@@ -427,7 +432,7 @@ const AIMING_TUNING_DEFAULTS = {
   curveExponent: 2
 };
 
-function clampAimingPercent(value, fallback = DEFAULT_SETTINGS.aimingAmplitude){
+function clampAimingPercent(value, fallback = DEFAULT_SETTINGS.accuracyPercent){
   const n = Number(value);
   const safe = Number.isFinite(n) ? n : fallback;
   return clamp(safe, 0, 100);
@@ -491,7 +496,7 @@ function ensureAimingDebuggerBridge(){
     },
     setAccuracy(percent){
       const clamped = clampAimingPercent(percent);
-      sharedSettings.aimingAmplitude = clamped;
+      sharedSettings.accuracyPercent = clamped;
       return this.snapshot();
     },
     setTuning(nextTuning = {}){
@@ -506,7 +511,7 @@ function ensureAimingDebuggerBridge(){
     snapshot(){
       return {
         enabled: this.state.enabled,
-        accuracyPercent: clampAimingPercent(sharedSettings.aimingAmplitude),
+        accuracyPercent: clampAimingPercent(sharedSettings.accuracyPercent),
         tuning: { ...this.state.tuning }
       };
     }
@@ -526,7 +531,7 @@ function getActiveAimingTuning(){
 function getAimingOscillationSpeed(){
   const tuning = getActiveAimingTuning();
   const referenceAccuracy = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent);
-  const currentAccuracy = clampAimingPercent(sharedSettings.aimingAmplitude, referenceAccuracy);
+  const currentAccuracy = clampAimingPercent(sharedSettings.accuracyPercent, referenceAccuracy);
   const normalizedRef = Math.max(referenceAccuracy, 1e-6);
   const belowReferenceRatio = clamp((referenceAccuracy - currentAccuracy) / normalizedRef, 0, 1);
   const speedPenaltyScale = 1
@@ -705,11 +710,26 @@ let rangeStep = getRangeStepForValue(sharedSettings.flightRangeCells);
 let rangeCommittedValue = getRangeValue(rangeStep);
 let rangePreviewValue = rangeCommittedValue;
 sharedSettings.flightRangeCells = rangeCommittedValue;
-sharedSettings.aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
-if(Number.isNaN(sharedSettings.aimingAmplitude)){
-  sharedSettings.aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
-} else if(sharedSettings.aimingAmplitude <= 20){
-  sharedSettings.aimingAmplitude *= 5;
+// Точность прицеливания в процентах. Хранится под ключом ACCURACY_STORAGE_KEY, но у
+// сохранений игроков ключей может быть два, и оба надо принять:
+//
+//   settings.accuracyPercent   — нынешний;
+//   settings.aimingAmplitude   — прежний. Имя досталось от ещё более старой настройки,
+//                                которая задавала АМПЛИТУДУ отклонения в градусах, то есть
+//                                шкалу, противоположную нынешней. Когда смысл поменяли на
+//                                проценты точности, имя менять не стали — отсюда и путаница.
+//
+// Правило `<= 20` — та самая давняя миграция градусов в проценты: значение из старой шкалы
+// (до 20 градусов) домножается на 5. Она остаётся, потому что сохранения тех времён ещё
+// могут лежать у игроков.
+sharedSettings.accuracyPercent = parseFloat(getStoredItem(ACCURACY_STORAGE_KEY));
+if(Number.isNaN(sharedSettings.accuracyPercent)){
+  sharedSettings.accuracyPercent = parseFloat(getStoredItem(ACCURACY_STORAGE_KEY_LEGACY));
+}
+if(Number.isNaN(sharedSettings.accuracyPercent)){
+  sharedSettings.accuracyPercent = DEFAULT_SETTINGS.accuracyPercent;
+} else if(sharedSettings.accuracyPercent <= 20){
+  sharedSettings.accuracyPercent *= 5;
 }
 const storedAddAA = getStoredItem('settings.addAA');
 sharedSettings.addAA = storedAddAA === null
@@ -743,7 +763,7 @@ let rangeOvershootTimer = null;
 let rangeTrackTransform = '';
 let rangeTrackTransition = '';
 let isRangeBumping = false;
-let accuracyDisplayIdx = getAccuracyDisplayIndex(sharedSettings.aimingAmplitude);
+let accuracyDisplayIdx = getAccuracyDisplayIndex(sharedSettings.accuracyPercent);
 let accuracyScrollPos = accuracyDisplayIdx;
 let accuracyScrollRafId = null;
 let accuracyTrackTransform = '';
@@ -793,8 +813,8 @@ function clampAccuracyIndex(index){
   return Math.max(0, Math.min(ACCURACY_DISPLAY_VALUES.length - 1, index));
 }
 
-function getAccuracyDisplayIndex(amplitude){
-  const clampedAccuracy = Math.min(MAX_ACCURACY_PERCENT, Math.max(MIN_ACCURACY_PERCENT, amplitude));
+function getAccuracyDisplayIndex(accuracyPercent){
+  const clampedAccuracy = Math.min(MAX_ACCURACY_PERCENT, Math.max(MIN_ACCURACY_PERCENT, accuracyPercent));
   return clampAccuracyIndex(Math.round((clampedAccuracy - MIN_ACCURACY_PERCENT) / 5));
 }
 
@@ -1662,7 +1682,7 @@ function finishAccuracyScroll(targetIndex, dir, onFinish){
   const currentValue = ACCURACY_DISPLAY_VALUES[targetIndex];
   accuracyScrollPos = targetIndex;
   accuracyDisplayIdx = targetIndex;
-  sharedSettings.aimingAmplitude = MIN_ACCURACY_PERCENT + targetIndex * 5;
+  sharedSettings.accuracyPercent = MIN_ACCURACY_PERCENT + targetIndex * 5;
   setAccuracyDisplayValue(currentValue);
   updateAccuracyTapePosition(accuracyDisplayIdx);
   updateAmplitudeIndicator();
@@ -1822,7 +1842,7 @@ function updateAccuracyDisplay(stepOverride, options = {}){
 
   accuracyDisplayIdx = displayIdx;
   accuracyScrollPos = displayIdx;
-  sharedSettings.aimingAmplitude = MIN_ACCURACY_PERCENT + displayIdx * 5;
+  sharedSettings.accuracyPercent = MIN_ACCURACY_PERCENT + displayIdx * 5;
   setAccuracyDisplayValue(displayedAngle);
   updateAccuracyTapePosition(displayIdx);
   updateAmplitudeIndicator();
@@ -2828,7 +2848,7 @@ function changeAccuracyStep(delta, options = {}){
   const dir = getRangeDirFromDelta(delta);
   const animateDirection = getRangeDirectionLabel(dir);
 
-  sharedSettings.aimingAmplitude = MIN_ACCURACY_PERCENT + nextIndex * 5;
+  sharedSettings.accuracyPercent = MIN_ACCURACY_PERCENT + nextIndex * 5;
   updateAmplitudeIndicator();
 
   if(commitImmediately){
@@ -2936,7 +2956,7 @@ function changeFieldStep(delta, options = {}){
 }
 
 function updateAmplitudeDisplay(){
-  const displayIdx = getAccuracyDisplayIndex(sharedSettings.aimingAmplitude);
+  const displayIdx = getAccuracyDisplayIndex(sharedSettings.accuracyPercent);
   const displayedAngle = ACCURACY_DISPLAY_VALUES[displayIdx];
   accuracyDisplayIdx = displayIdx;
   accuracyScrollPos = displayIdx;
@@ -3010,8 +3030,8 @@ function updateAmplitudeIndicator(){
 
   if(pendulumHost){
     const currentAccuracy = clampAimingPercent(
-      Number.isFinite(sharedSettings.aimingAmplitude) ? sharedSettings.aimingAmplitude : DEFAULT_SETTINGS.aimingAmplitude,
-      DEFAULT_SETTINGS.aimingAmplitude
+      Number.isFinite(sharedSettings.accuracyPercent) ? sharedSettings.accuracyPercent : DEFAULT_SETTINGS.accuracyPercent,
+      DEFAULT_SETTINGS.accuracyPercent
     );
     const maxVisualAngle = MAX_ACCURACY_PERCENT;
     const visualAngle = maxVisualAngle - currentAccuracy;
@@ -3091,7 +3111,7 @@ function setupAccuracyCrackWatcher(){
   let running = false;
   let rafId = null;
 
-  const shouldRunForAmplitude = (accuracyPercent) => accuracyPercent <= TARGET_ACCURACY + EPSILON;
+  const shouldRunForAccuracy = (accuracyPercent) => accuracyPercent <= TARGET_ACCURACY + EPSILON;
 
   const appendCrack = (side) => {
     if(side === 'left' && leftIndex < LEFT_CRACK_STEPS.length){
@@ -3106,7 +3126,7 @@ function setupAccuracyCrackWatcher(){
       return;
     }
 
-    if(!shouldRunForAmplitude(sharedSettings.aimingAmplitude)){
+    if(!shouldRunForAccuracy(sharedSettings.accuracyPercent)){
       running = false;
       rafId = null;
       lockedSide = null;
@@ -3132,7 +3152,7 @@ function setupAccuracyCrackWatcher(){
   };
 
   const start = () => {
-    if(running || !shouldRunForAmplitude(sharedSettings.aimingAmplitude)){
+    if(running || !shouldRunForAccuracy(sharedSettings.accuracyPercent)){
       return;
     }
 
@@ -3162,7 +3182,7 @@ function setupAccuracyCrackWatcher(){
     rafId = null;
   };
 
-  return { start, stop, reset, shouldRunForAmplitude };
+  return { start, stop, reset, shouldRunForAccuracy };
 }
 
 const accuracyCrackWatcher = setupAccuracyCrackWatcher();
@@ -3177,7 +3197,7 @@ function syncAccuracyCrackWatcher(){
     return;
   }
 
-  if(accuracyCrackWatcher.shouldRunForAmplitude(sharedSettings.aimingAmplitude)){
+  if(accuracyCrackWatcher.shouldRunForAccuracy(sharedSettings.accuracyPercent)){
     accuracyCrackWatcher.start();
   } else {
     accuracyCrackWatcher.stop();
@@ -3187,7 +3207,7 @@ function syncAccuracyCrackWatcher(){
 function saveSettings(){
   sharedSettings.addCargo = addCargo;
   setStoredItem('settings.flightRangeCells', sharedSettings.flightRangeCells);
-  setStoredItem('settings.aimingAmplitude', sharedSettings.aimingAmplitude);
+  setStoredItem(ACCURACY_STORAGE_KEY, sharedSettings.accuracyPercent);
   setStoredItem('settings.addAA', sharedSettings.addAA);
   setStoredItem('settings.sharpEdges', sharedSettings.sharpEdges);
   setStoredItem('settings.flagsEnabled', sharedSettings.flagsEnabled);
@@ -3201,7 +3221,7 @@ function saveSettings(){
   }
   console.log('[settings] save', {
     flightRangeCells: sharedSettings.flightRangeCells,
-    aimingAmplitude: sharedSettings.aimingAmplitude,
+    accuracyPercent: sharedSettings.accuracyPercent,
     addAA: sharedSettings.addAA,
     sharpEdges: sharedSettings.sharpEdges,
     flagsEnabled: sharedSettings.flagsEnabled,
@@ -4002,7 +4022,7 @@ function updatePreviewHandle(delta){
   const dy = previewHandle.baseY - plane.y;
   const dist = Math.hypot(dx, dy);
   const clampedDist = Math.min(dist, PREVIEW_MAX_DRAG_DISTANCE);
-  const maxAngleDeg = getSpreadAngleDegByAccuracy(sharedSettings.aimingAmplitude);
+  const maxAngleDeg = getSpreadAngleDegByAccuracy(sharedSettings.accuracyPercent);
   const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
   previewOscillationAngle += getAimingOscillationSpeed() * delta * previewOscillationDir;
@@ -4383,7 +4403,7 @@ function resetSettingsToDefaults(){
   cancelFieldScrollForReset();
   sharedSettings.flightRangeCells = DEFAULT_SETTINGS.rangeCells;
   syncRangeStepFromValue(sharedSettings.flightRangeCells);
-  sharedSettings.aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
+  sharedSettings.accuracyPercent = DEFAULT_SETTINGS.accuracyPercent;
   sharedSettings.addAA = DEFAULT_SETTINGS.addAA;
   sharedSettings.sharpEdges = DEFAULT_SETTINGS.sharpEdges;
   addCargo = DEFAULT_SETTINGS.addCargo;
