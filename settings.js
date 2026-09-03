@@ -62,289 +62,27 @@ const selectInSettings = (selector) => settingsRoot.querySelector(selector);
 const DEBUG_FIELD_AUDIT = false;
 const DEBUG_FIELD_MARKER = false;
 const FIELD_DEBUG_MARKER_QUERY_FLAG = 'field_debug_marker';
-let pinchActive = false;
-let pinchScale = 1;
-let pinchPanX = 0;
-let pinchPanY = 0;
-let pinchResetTimer = null;
-let pinchResetAnimationFrame = null;
-let pinchResetAnimationToken = 0;
-const PINCH_RESET_MS = 4000;
-const PINCH_MIN = 1;
-const PINCH_MAX = 8;
-const PINCH_RESET_ANIMATION_MS = 460;
-const PINCH_RESET_OVERSHOOT = 1.1;
-if (typeof window !== 'undefined') {
-  window.PINCH_ACTIVE = pinchActive;
-}
-
+// Щипковый и колёсный зум живут в script.js — там одна система на всю игру.
+// Здесь была вторая, полная копия: своё состояние (pinchActive, pinchScale, панорама),
+// свои обработчики touch/wheel/gesture на window с capture, свой applyPinchTransform.
+//
+// Мешала она молча и по-настоящему. settings.js грузится раньше, поэтому его слушатели
+// стояли первыми в очереди, а onTouchMove вызывал stopImmediatePropagation() — и
+// обработчики script.js не выполнялись вовсе. Трансформу накладывала эта копия, а
+// pinchScale в script.js оставался единицей. Измерено: при видимом scale(2.5)
+// getUiFrameScales() докладывал pinchScale: 1, то есть игра считала координаты указателя
+// без учёта зума — мимо на весь множитель.
+//
+// Теперь копия убрана. Обработчики script.js получают события беспрепятственно и ведут
+// зум для обоих экранов: слушают они window, а трансформу кладут на общий #uiFrameInner.
+//
+// Состояние зума спрашиваем у той единственной системы, а не храним своё.
 function isPinchActive() {
-  return pinchActive === true;
-}
-
-function applyPinchTransform() {
-  if (!(uiFrameInner instanceof HTMLElement)) return;
-  uiFrameInner.style.transform = `translate(${pinchPanX}px, ${pinchPanY}px) scale(${pinchScale})`;
-}
-
-function clearPinchResetAnimation() {
-  pinchResetAnimationToken += 1;
-  if (pinchResetAnimationFrame) {
-    cancelAnimationFrame(pinchResetAnimationFrame);
-    pinchResetAnimationFrame = null;
+  if (typeof window === 'undefined') {
+    return false;
   }
+  return window.PINCH_ACTIVE === true;
 }
-
-function pinchResetEaseOutBack(t, overshoot = PINCH_RESET_OVERSHOOT) {
-  const clamped = clamp(t, 0, 1);
-  const inv = clamped - 1;
-  return 1 + (overshoot + 1) * inv * inv * inv + overshoot * inv * inv;
-}
-
-function resetPinchState({ animated = true } = {}) {
-  clearPinchResetAnimation();
-  pinchActive = false;
-  if (typeof window !== 'undefined') {
-    window.PINCH_ACTIVE = false;
-  }
-  if (pinchResetTimer) {
-    clearTimeout(pinchResetTimer);
-    pinchResetTimer = null;
-  }
-  const startScale = pinchScale;
-  const startPanX = pinchPanX;
-  const startPanY = pinchPanY;
-  const isNearNeutral = Math.abs(startScale - 1) < 0.001
-    && Math.abs(startPanX) < 0.1
-    && Math.abs(startPanY) < 0.1;
-  if (!animated || isNearNeutral || !(uiFrameInner instanceof HTMLElement)) {
-    pinchScale = 1;
-    pinchPanX = 0;
-    pinchPanY = 0;
-    applyPinchTransform();
-    if (uiFrameInner instanceof HTMLElement) {
-      uiFrameInner.style.transformOrigin = '50% 50%';
-    }
-    return;
-  }
-
-  const token = ++pinchResetAnimationToken;
-  const startTime = performance.now();
-  const animateStep = (now) => {
-    if (token !== pinchResetAnimationToken) {
-      return;
-    }
-    const elapsed = now - startTime;
-    const t = clamp(elapsed / PINCH_RESET_ANIMATION_MS, 0, 1);
-    const eased = pinchResetEaseOutBack(t);
-    pinchScale = startScale + (1 - startScale) * eased;
-    pinchPanX = startPanX + (0 - startPanX) * eased;
-    pinchPanY = startPanY + (0 - startPanY) * eased;
-    applyPinchTransform();
-
-    if (t >= 1) {
-      pinchScale = 1;
-      pinchPanX = 0;
-      pinchPanY = 0;
-      applyPinchTransform();
-      if (uiFrameInner instanceof HTMLElement) {
-        uiFrameInner.style.transformOrigin = '50% 50%';
-      }
-      pinchResetAnimationFrame = null;
-      return;
-    }
-    pinchResetAnimationFrame = requestAnimationFrame(animateStep);
-  };
-  pinchResetAnimationFrame = requestAnimationFrame(animateStep);
-}
-
-function schedulePinchReset() {
-  if (pinchResetTimer) {
-    clearTimeout(pinchResetTimer);
-  }
-  pinchResetTimer = window.setTimeout(() => {
-    resetPinchState();
-  }, PINCH_RESET_MS);
-}
-
-window.addEventListener('gesturestart', () => {
-  clearPinchResetAnimation();
-  pinchActive = true;
-  window.PINCH_ACTIVE = true;
-}, { capture: true });
-
-window.addEventListener('gestureend', () => schedulePinchReset(), { capture: true });
-
-window.addEventListener('wheel', (event) => {
-  if (pinchActive && event.ctrlKey !== true) {
-    if (pinchScale > PINCH_MIN) {
-      clearPinchResetAnimation();
-      pinchPanX = pinchPanX - event.deltaX;
-      pinchPanY = pinchPanY - event.deltaY;
-      applyPinchTransform();
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      return;
-    }
-    resetPinchState();
-  }
-}, { capture: true });
-
-
-function isZoomExitTarget(target) {
-  if (!(target instanceof Element)) return false;
-  if (uiFrameEl instanceof HTMLElement && uiFrameEl.contains(target)) return true;
-  if (uiFrameInner instanceof HTMLElement && uiFrameInner.contains(target)) return true;
-  if (target.closest?.('#gameCanvas, #aimCanvas, #planeCanvas, #hudCanvas, #uiFrame')) return true;
-  return false;
-}
-
-function installPinchExitOnGameplayInput() {
-  const exitZoom = (event) => {
-    if (!isPinchActive()) return;
-    if ((event.touches?.length || 0) >= 2) return;
-    if (!isZoomExitTarget(event.target)) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    resetPinchState();
-  };
-
-  window.addEventListener('pointerdown', exitZoom, { capture: true, passive: false });
-  window.addEventListener('touchstart', exitZoom, { capture: true, passive: false });
-  window.addEventListener('mousedown', exitZoom, { capture: true, passive: false });
-}
-
-installPinchExitOnGameplayInput();
-
-const touchPinchState = {
-  active: false,
-  startDistance: 0,
-  startScale: 1,
-  startCenterX: 0,
-  startCenterY: 0,
-  startPanX: 0,
-  startPanY: 0
-};
-
-function getTouchDistance(touchA, touchB) {
-  return Math.hypot((touchB.clientX - touchA.clientX), (touchB.clientY - touchA.clientY));
-}
-
-function getTouchCenterInPercents(touchA, touchB, rect) {
-  const centerX = (touchA.clientX + touchB.clientX) / 2;
-  const centerY = (touchA.clientY + touchB.clientY) / 2;
-  let originX = 50;
-  let originY = 50;
-  if (rect.width > 0 && rect.height > 0) {
-    originX = clamp(((centerX - rect.left) / rect.width) * 100, 0, 100);
-    originY = clamp(((centerY - rect.top) / rect.height) * 100, 0, 100);
-  }
-  return { originX, originY };
-}
-
-function getTouchCenterClient(touchA, touchB) {
-  return {
-    x: (touchA.clientX + touchB.clientX) / 2,
-    y: (touchA.clientY + touchB.clientY) / 2
-  };
-}
-
-function installTouchPinchZoom() {
-  const onTouchStart = (event) => {
-    if (!(uiFrameEl instanceof HTMLElement) || !(uiFrameInner instanceof HTMLElement)) return;
-    if (!isZoomExitTarget(event.target)) return;
-    clearPinchResetAnimation();
-    if (event.touches.length < 2) return;
-    const touchA = event.touches[0];
-    const touchB = event.touches[1];
-    const startDistance = getTouchDistance(touchA, touchB);
-    if (!(startDistance > 0)) return;
-    touchPinchState.active = true;
-    touchPinchState.startDistance = startDistance;
-    touchPinchState.startScale = pinchScale;
-    const center = getTouchCenterClient(touchA, touchB);
-    touchPinchState.startCenterX = center.x;
-    touchPinchState.startCenterY = center.y;
-    touchPinchState.startPanX = pinchPanX;
-    touchPinchState.startPanY = pinchPanY;
-    pinchActive = true;
-    window.PINCH_ACTIVE = true;
-  };
-
-  const onTouchMove = (event) => {
-    if (!(uiFrameEl instanceof HTMLElement) || !(uiFrameInner instanceof HTMLElement)) return;
-    if (!touchPinchState.active) return;
-    if (event.touches.length < 2) return;
-    const touchA = event.touches[0];
-    const touchB = event.touches[1];
-    const distance = getTouchDistance(touchA, touchB);
-    if (!(distance > 0) || !(touchPinchState.startDistance > 0)) return;
-    const rect = uiFrameEl.getBoundingClientRect();
-    const { originX, originY } = getTouchCenterInPercents(touchA, touchB, rect);
-    uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
-    const ratio = distance / touchPinchState.startDistance;
-    pinchScale = clamp(touchPinchState.startScale * ratio, PINCH_MIN, PINCH_MAX);
-    const center = getTouchCenterClient(touchA, touchB);
-    if (pinchScale > PINCH_MIN) {
-      pinchPanX = touchPinchState.startPanX + (center.x - touchPinchState.startCenterX);
-      pinchPanY = touchPinchState.startPanY + (center.y - touchPinchState.startCenterY);
-    } else {
-      pinchPanX = 0;
-      pinchPanY = 0;
-    }
-    applyPinchTransform();
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  };
-
-  const onTouchEnd = (event) => {
-    if (event.touches.length >= 2) return;
-    touchPinchState.active = false;
-    touchPinchState.startDistance = 0;
-    touchPinchState.startScale = pinchScale;
-    if (isPinchActive()) {
-      schedulePinchReset();
-    }
-  };
-
-  window.addEventListener('touchstart', onTouchStart, { passive: false, capture: true });
-  window.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
-  window.addEventListener('touchend', onTouchEnd, { passive: false, capture: true });
-  window.addEventListener('touchcancel', onTouchEnd, { passive: false, capture: true });
-}
-
-installTouchPinchZoom();
-
-window.addEventListener('wheel', (event) => {
-  if (event.ctrlKey !== true) return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  if (!(uiFrameEl instanceof HTMLElement) || !(uiFrameInner instanceof HTMLElement)) return;
-  if (!pinchActive) {
-    pinchActive = true;
-    if (typeof window !== 'undefined') {
-      window.PINCH_ACTIVE = true;
-    }
-  }
-  const rect = uiFrameEl.getBoundingClientRect();
-  let originX = 50;
-  let originY = 50;
-  if (rect.width > 0 && rect.height > 0) {
-    originX = ((event.clientX - rect.left) / rect.width) * 100;
-    originY = ((event.clientY - rect.top) / rect.height) * 100;
-    originX = clamp(originX, 0, 100);
-    originY = clamp(originY, 0, 100);
-  }
-  uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
-  const step = Math.exp(-event.deltaY * 0.01);
-  clearPinchResetAnimation();
-  pinchScale = clamp(pinchScale * step, PINCH_MIN, PINCH_MAX);
-  if (pinchScale <= PINCH_MIN) {
-    pinchPanX = 0;
-    pinchPanY = 0;
-  }
-  applyPinchTransform();
-}, { passive: false, capture: true });
 
 function getVisualViewportState() {
   const viewport = typeof window !== 'undefined' ? window.visualViewport : null;
@@ -419,17 +157,43 @@ function updateUiFrameScale() {
   document.documentElement.style.setProperty('--ui-scale', safeScale);
 }
 
-function toDesignCoords(clientX, clientY) {
-  const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
+// Перевод клиентских координат в проектные. Делить надо на ОБА масштаба: --ui-scale
+// (подгонка рамки под экран) и масштаб щипка. Трансформа щипка висит на #uiFrameInner, а
+// прямоугольник мы берём у родителя #uiFrame — значит зум в него не входит и обязан
+// учитываться отдельно. Раньше здесь делили только на --ui-scale, и при зуме ползунки
+// настроек считали позицию пальца мимо на весь множитель.
+//
+// Масштаб щипка спрашиваем у единственной системы зума (она в script.js): getUiFrameScales
+// объявлена там на верхнем уровне, то есть доступна на window к моменту любого нажатия.
+// На всякий случай — запасной путь через сам transform, если функции почему-то нет.
+function getSharedUiFrameScales() {
+  if (typeof window !== 'undefined' && typeof window.getUiFrameScales === 'function') {
+    const scales = window.getUiFrameScales();
+    if (scales && Number.isFinite(scales.effectiveScale) && scales.effectiveScale > 0) {
+      return scales;
+    }
+  }
   const rootStyle = window.getComputedStyle(document.documentElement);
   const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
   const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
   const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
+  const transform = document.getElementById('uiFrameInner')?.style?.transform || '';
+  const scaleMatch = /scale\(([\d.]+)\)/.exec(transform);
+  const parsed = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+  const pinchScale = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+  return { uiScale, pinchScale, effectiveScale: uiScale * pinchScale };
+}
+
+function toDesignCoords(clientX, clientY) {
+  const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
+  const { uiScale, pinchScale, effectiveScale } = getSharedUiFrameScales();
   return {
-    x: (clientX - rect.left) / uiScale,
-    y: (clientY - rect.top) / uiScale,
+    x: (clientX - rect.left) / effectiveScale,
+    y: (clientY - rect.top) / effectiveScale,
     rect,
-    uiScale
+    uiScale,
+    pinchScale,
+    effectiveScale
   };
 }
 
