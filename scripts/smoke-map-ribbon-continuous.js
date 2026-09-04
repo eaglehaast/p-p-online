@@ -20,6 +20,21 @@
 // может: три слота (prev/current/next) переклеиваются НА ЛЕТУ, когда непрерывная позиция
 // пересекает целый шаг. Трек при этом обязан прыгнуть на слот назад — это и гасит сдвиг
 // подписей, глаз видит непрерывный ход.
+//
+// ВТОРАЯ правка — про РИТМ конца. Непрерывность одной кривой easeOutBack дала гладкий
+// ход, но всё торможение свалила в один последний шаг. Замер той же протяжки:
+//
+//   было:  100 67 67 83 100 100 133 150 233 767 мс   последний / предпоследний = 3.3
+//   стало: 100 83 67 83 67 117 167 250 383 567 мс    последний / предпоследний = 1.5
+//
+// Разница на глаз: у любой кривой вида easeOut скорость гаснет асимптотически, поэтому
+// последняя карта не приезжала, а бесконечно замедляясь вползала в центр — 600 мс уже
+// после того, как её картинка появилась в превью. «Приездом» глаз читал ПРЕДпоследнюю
+// подпись: она вставала по центру, замирала и уезжала.
+//
+// Теперь время раздаётся по шагам явно: каждый шаг в полтора раза длиннее следующего за
+// ним, пока не упрётся в пол мелькания. Последний шаг проходится с живой скоростью и
+// кончается настоящей остановкой с отдачей меньше двух пикселей.
 
 const fs = require('fs');
 const vm = require('vm');
@@ -43,33 +58,53 @@ function extractFn(source, name){
 }
 
 
-// easeOutBack — стрелочная константа, а не объявление функции: достаём отдельно.
-// Объявленная через const внутри vm-контекста, она НЕ становится его свойством, поэтому
-// при запуске её приходится явно класть в globalThis (та же ловушка уже ловила нас раньше).
-function extractEaseOutBack(source){
-  const start = source.indexOf('const easeOutBack = (t, s = 1.1) => {');
-  if(start === -1) throw new Error('easeOutBack не найдена');
-  const open = source.indexOf('{', source.indexOf('=>', start));
-  let d = 0;
-  for(let i = open; i < source.length; i += 1){
-    if(source[i] === '{') d += 1;
-    if(source[i] === '}'){ d -= 1; if(d === 0) return source.slice(start, i + 2); }
-  }
-  throw new Error('easeOutBack не закрыта');
-}
-
 const settings = fs.readFileSync('settings.js', 'utf8');
 const animate = extractFn(settings, 'animateFieldLabelChange');
 const code = animate.replace(/\/\/.*$/gm, '');
+
+// Настоящий расчёт хода из settings.js — константы плюс четыре функции. Константы,
+// объявленные через const внутри vm-контекста, НЕ становятся его свойствами, поэтому
+// нужное кладём в globalThis явно (эта ловушка уже ловила нас дважды).
+function loadTravelMath(){
+  const constants = /const FIELD_LAST_STEP_WEIGHT[\s\S]*?const FIELD_LANDING_SETTLE_MAX_SHARE = [\d.]+;/
+    .exec(settings);
+  if(!constants) throw new Error('не найден блок констант ритма');
+  const context = { Math };
+  vm.createContext(context);
+  vm.runInContext([
+    constants[0],
+    extractFn(settings, 'getFieldLandingSettleShare'),
+    extractFn(settings, 'buildFieldStepSchedule'),
+    extractFn(settings, 'getFieldScheduleSlope'),
+    extractFn(settings, 'easeFieldRibbonTravel'),
+    'globalThis.math = { getFieldLandingSettleShare, buildFieldStepSchedule, easeFieldRibbonTravel };'
+  ].join('\n'), context);
+  return context.math;
+}
+
+const travelMath = loadTravelMath();
+
+// Длительности шагов в миллисекундах — ровно то, что видит глаз как ритм.
+function stepDurations(stepCount, totalDurationMs){
+  const settleShare = travelMath.getFieldLandingSettleShare(totalDurationMs);
+  const times = travelMath.buildFieldStepSchedule(stepCount, settleShare);
+  const out = [];
+  for(let k = 1; k < times.length; k += 1) out.push((times[k] - times[k - 1]) * totalDurationMs);
+  return out;
+}
 
 // === 1. ГЛАВНОЕ: один проход на всю дистанцию, а не цепочка шагов ===
 {
   assert(/const totalDurationMs = stepDurationMs \* stepCount;/.test(code),
     '1: длительность считается на ВСЮ дистанцию — иначе это снова анимация по шагу');
-  assert(/const travelled = stepCount \* easedProgress;/.test(code),
-    '1b: пройденное расстояние — дробь от общего числа шагов, а не от одного');
-  assert(/easeOutBack\(progress, overshootStrength\)/.test(code),
-    '1c: сглаживание применяется к общему прогрессу');
+  assert(/const travelled = easeFieldRibbonTravel\(progress, stepSchedule, settleShare\);/.test(code),
+    '1b: пройденное расстояние берётся из общего расчёта хода, а не считается по шагу');
+
+  // Расписание строится ОДИН раз на прокат. Внутри кадрового цикла оно означало бы, что
+  // ритм пересчитывается на каждом кадре — и достаточно любой мелочи, чтобы он поехал.
+  const beforeTick = code.slice(0, code.indexOf('const tick ='));
+  assert(/const stepSchedule = buildFieldStepSchedule\(stepCount, settleShare\);/.test(beforeTick),
+    '1c: расписание шагов строится один раз до начала анимации');
 
   // Цепочка узнаётся по перезапуску шага из самого себя.
   assert(!/requestAnimationFrame\(runStep\)/.test(code),
@@ -131,22 +166,18 @@ const code = animate.replace(/\/\/.*$/gm, '');
 // Главная опасность такой ленты — рассинхрон: подписи ушли на шаг, а трек нет (или
 // наоборот). Тогда лента дёрнется ровно на слот. Проверяем счётом.
 {
-  const context = { Math };
-  vm.createContext(context);
-  // Настоящий easeOutBack из settings.js.
-  vm.runInContext(extractEaseOutBack(settings) + '\nglobalThis.easeOutBack = easeOutBack;', context);
-
   const SLOT = 58;
   const simulate = (stepCount) => {
-    const overshootStrength = 0.9 * Math.min(1, 1 / stepCount);
+    const totalDurationMs = 180 * stepCount;
+    const settleShare = travelMath.getFieldLandingSettleShare(totalDurationMs);
+    const times = travelMath.buildFieldStepSchedule(stepCount, settleShare);
     const stepOffsetPx = -SLOT;
     let crossed = 0;
     const visible = [];
     let prevVisible = 0;
     for(let frame = 0; frame <= 60; frame += 1){
       const progress = Math.min(1, frame / 60);
-      const eased = context.easeOutBack(progress, overshootStrength);
-      const travelled = stepCount * eased;
+      const travelled = travelMath.easeFieldRibbonTravel(progress, times, settleShare);
       const nextCrossed = Math.max(0, Math.min(stepCount, Math.floor(travelled)));
       crossed = nextCrossed;
       const offsetPx = stepOffsetPx * (travelled - crossed);
@@ -171,30 +202,125 @@ const code = animate.replace(/\/\/.*$/gm, '');
   }
 }
 
-// === 4. Сглаживание: отдача есть на коротком ходе и почти нет на длинном ===
+// === 4. ГЛАВНОЕ: ритм конца — торможение начинается ЗАРАНЕЕ, а не в последнем шаге ===
 //
-// Та же формула, что у дальности. Без этого «плавность» была бы просто линейной.
+// Это и есть суть второй правки. Числа взяты не с потолка: на замере старая кривая давала
+// последний шаг в 3.3 раза длиннее предпоследнего, и именно этот провал читался как
+// «предпоследнюю карту показали и убрали».
 {
-  const context = { Math };
-  vm.createContext(context);
-  vm.runInContext(extractEaseOutBack(settings) + '\nglobalThis.easeOutBack = easeOutBack;', context);
+  const long = stepDurations(10, 1800);
+  const lastRatio = long[9] / long[8];
+  assert(lastRatio < 2,
+    `4: последний шаг длиннее предпоследнего в ${lastRatio.toFixed(2)} раза — торможение снова `
+    + 'свалено в один шаг, последняя карта будет вползать в центр вместо приезда');
 
-  const overshootOf = (stepCount) => {
-    const strength = 0.9 * Math.min(1, 1 / stepCount);
-    let maxOver = 0;
-    for(let i = 0; i <= 100; i += 1){
-      const v = context.easeOutBack(i / 100, strength);
-      if(v > 1) maxOver = Math.max(maxOver, v - 1);
+  // Три последние доли обязаны РАЗЛИЧАТЬСЯ: без этого конец сливается в одну паузу.
+  assert(long[9] / long[8] > 1.25 && long[8] / long[7] > 1.25,
+    `4b: хвост ${long.slice(-3).map(v => Math.round(v)).join(' → ')} мс — доли слишком близки, `
+    + 'ритма «предпред — пред — последний» не получится');
+
+  // И торможение обязано начинаться РАНЬШЕ последнего шага: предпредпоследний уже заметно
+  // длиннее мелькания.
+  assert(long[7] > long[0] * 2,
+    `4c: предпредпоследний шаг ${Math.round(long[7])} мс против ${Math.round(long[0])} мс `
+    + 'в мелькании — замедление начинается слишком поздно');
+
+  // Мелькание при этом остаётся мельканием: голова идёт ровно, без разнобоя.
+  const head = long.slice(0, 5);
+  assert(Math.max(...head) - Math.min(...head) < 1,
+    `4d: голова ${head.map(v => Math.round(v)).join(' ')} мс идёт неровно — мелькание должно быть ровным`);
+  assert(head[0] < 100,
+    `4e: шаг мелькания ${Math.round(head[0])} мс — это уже не мелькание`);
+
+  // Общая длительность не изменилась: ритм перераспределяет время, а не добавляет его.
+  const total = long.reduce((sum, v) => sum + v, 0);
+  const settleShare = travelMath.getFieldLandingSettleShare(1800);
+  assert(Math.abs(total + settleShare * 1800 - 1800) < 1,
+    `4f: шаги плюс приземление дают ${Math.round(total + settleShare * 1800)} мс вместо 1800 — `
+    + 'ход стал длиннее или короче, а должен был только перераспределиться');
+
+  // Короткий ход берёт хвост с конца и остаётся осмысленным.
+  const two = stepDurations(2, 360);
+  assert(two[1] / two[0] > 1.25,
+    `4g: на двух шагах ${two.map(v => Math.round(v)).join(' → ')} мс — второй шаг обязан быть длиннее`);
+}
+
+// === 4bis. Приземление: лента ОСТАНАВЛИВАЕТСЯ, а не затухает ===
+//
+// У любой кривой easeOut скорость на финише стремится к нулю — приезда не видно. Здесь
+// последний шаг проходится с живой скоростью, лента по инерции проскакивает на волосок
+// и возвращается точно в центр.
+{
+  const SLOT = 58;
+  const probe = (stepCount, totalDurationMs) => {
+    const settleShare = travelMath.getFieldLandingSettleShare(totalDurationMs);
+    const times = travelMath.buildFieldStepSchedule(stepCount, settleShare);
+    const at = (p) => travelMath.easeFieldRibbonTravel(p, times, settleShare);
+    const arriveAt = times[stepCount];
+    let overshoot = 0;
+    let backwards = 0;
+    let prev = 0;
+    const frames = Math.max(4, Math.round(totalDurationMs / 16.7));
+    for(let f = 0; f <= frames; f += 1){
+      const v = at(f / frames);
+      if(v > stepCount) overshoot = Math.max(overshoot, v - stepCount);
+      // Назад лента отыгрывает ТОЛЬКО на приземлении, возвращаясь из отдачи.
+      if(v < prev - 1e-9 && f / frames < arriveAt) backwards += 1;
+      prev = v;
     }
-    return maxOver;
+    // Скорость на подходе к центру: сколько остаётся пройти за 40 мс до приезда.
+    const lead = at(arriveAt) - at(Math.max(0, arriveAt - 40 / totalDurationMs));
+
+    // Отдача — это пружина, а не отскок: уходит в неё лента с полной скоростью, а
+    // возвращается заметно мягче и в самом конце уже почти стоит.
+    const settle = 1 - arriveAt;
+    const eps = settle / 4000;
+    const speedAt = (p) => (at(p + eps) - at(p - eps)) / (2 * eps);
+    const enter = speedAt(arriveAt + eps * 2);
+    let back = 0;
+    for(let i = 1; i < 200; i += 1){
+      back = Math.max(back, -speedAt(arriveAt + settle * (i / 200)));
+    }
+    return { overshoot, backwards, lead, end: at(1), arriveAt, enter, back };
   };
 
-  assert(overshootOf(1) > 0.02,
-    '4: на одном шаге отдача обязана быть заметной — так ведут себя дальность и точность');
-  assert(overshootOf(10) < overshootOf(1) / 4,
-    '4b: на длинной протяжке отдача почти исчезает, иначе лента будет качаться в конце');
-  assert(/const overshootStrength = 0\.9 \* Math\.min\(1, 1 \/ stepCount\);/.test(settings),
-    '4c: сила отдачи считается от ЧИСЛА ШАГОВ по той же формуле, что у дальности');
+  for(const [stepCount, totalDurationMs] of [[1, 180], [2, 360], [5, 900], [10, 1800]]){
+    const r = probe(stepCount, totalDurationMs);
+    assert(r.backwards === 0,
+      `4bis: при ${stepCount} шагах лента отыгрывает назад до приезда — ход обязан быть монотонным`);
+    assert(Math.abs(r.end - stepCount) < 1e-9,
+      `4bis-b: при ${stepCount} шагах ход заканчивается на ${r.end}, а обязан ровно на ${stepCount} — `
+      + 'иначе подпись встанет мимо центра');
+    assert(r.overshoot * SLOT > 0.3 && r.overshoot * SLOT < 4,
+      `4bis-c: отдача ${(r.overshoot * SLOT).toFixed(2)} px при ${stepCount} шагах — `
+      + 'должна быть заметна глазу, но не превращаться в качание');
+    // Вот это и отличает приезд от вползания: за последние 40 мс лента проходит
+    // осязаемое расстояние, а не микрон.
+    assert(r.lead * SLOT > 2,
+      `4bis-d: за 40 мс до остановки лента проходит ${(r.lead * SLOT).toFixed(2)} px при `
+      + `${stepCount} шагах — это затухание, последняя карта не «приедет», а вползёт`);
+    assert(r.back < r.enter * 0.5,
+      `4bis-e: из отдачи лента возвращается со скоростью ${r.back.toFixed(1)} против `
+      + `${r.enter.toFixed(1)} на входе (${stepCount} шагов) — это отскок с ударом в конце, `
+      + 'а не мягкая посадка');
+  }
+
+  // На СТЫКАХ шагов лента тормозить не должна вовсе. Ноль скорости в этих точках — это
+  // ровно та пошаговая дёрганость, ради устранения которой писалась первая правка:
+  // расписание с ней осталось бы прежним, а ход снова стал бы рваным.
+  {
+    const settleShare = travelMath.getFieldLandingSettleShare(1800);
+    const times = travelMath.buildFieldStepSchedule(10, settleShare);
+    const eps = 1e-4;
+    for(let k = 1; k < 10; k += 1){
+      const speed = (travelMath.easeFieldRibbonTravel(times[k] + eps, times, settleShare)
+        - travelMath.easeFieldRibbonTravel(times[k] - eps, times, settleShare)) / (2 * eps);
+      const slower = Math.min(1 / (times[k] - times[k - 1]), 1 / (times[k + 1] - times[k]));
+      assert(speed > slower * 0.9,
+        `4bis-e: на стыке шага ${k} скорость ${speed.toFixed(1)} против ${slower.toFixed(1)} — `
+        + 'лента притормаживает на каждой подписи, это и есть рывки по шагу');
+    }
+  }
 }
 
 // === 5. Служебная обвязка не потеряна ===

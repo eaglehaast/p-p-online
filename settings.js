@@ -1080,6 +1080,40 @@ const FIELD_LABEL_SLOT_WIDTH = 58;
 const FIELD_LABEL_BASE_TRANSFORM = 'translateX(-50%)';
 const FIELD_MOTION_DEBUG_QUERY_FLAG = 'field_motion_debug';
 
+// РИТМ ПРОКАТА. Числа — во сколько раз шаг длиннее самого быстрого шага «мелькания».
+//
+// Раньше ход считался одной кривой easeOutBack на всю дистанцию. У любой такой кривой
+// скорость гаснет к нулю асимптотически, и весь запас торможения сваливается в один
+// последний шаг. Замер протяжки на 240 px (десять шагов, 1800 мс):
+//
+//   100 67 67 83 100 100 133 150 233 767 мс   — последний шаг в 3.3 раза длиннее пред-
+//                                               последнего, и в 5 раз длиннее восьмого
+//
+// Глаз читает «приезд» как «подпись остановилась по центру». Предпоследняя подпись
+// вставала по центру, замирала — и уезжала, а последняя не приезжала вовсе: она
+// вползала в центр бесконечно замедляясь. Отсюда ощущение, что после мелькания
+// показали предпоследнюю карту и убрали.
+//
+// Теперь время распределяется по шагам ЯВНО, одним законом: КАЖДЫЙ шаг в полтора раза
+// длиннее следующего за ним, считая от конца, — пока не упрётся в пол мелькания. Пол и
+// последний шаг отличаются в 7.5 раза, то есть замедление начинает читаться за пять
+// шагов до конца, а последние три идут отчётливыми долями:
+//
+//   70 70 70 70 70 103 155 | 232 348 523 мс   — вместо ... 150 233 767
+//
+// Веса безразмерны: реальные миллисекунды получаются нормировкой на общую длительность,
+// поэтому ход в целом остаётся ровно таким же по времени, как был.
+const FIELD_LAST_STEP_WEIGHT = 4.5;
+const FIELD_STEP_SLOWDOWN_RATIO = 1.5;
+const FIELD_FLICKER_STEP_WEIGHT = 0.6;
+// Последний шаг ещё и сам тормозит, но НЕ до нуля: доля от своей средней скорости,
+// с которой лента доезжает до центра. Ноль вернул бы прежнее вползание.
+const FIELD_LANDING_SPEED_KEEP = 0.6;
+// Приземление: лента по инерции проскакивает на волосок дальше и возвращается.
+const FIELD_LANDING_SETTLE_MS = 90;
+const FIELD_LANDING_SETTLE_MIN_SHARE = 0.04;
+const FIELD_LANDING_SETTLE_MAX_SHARE = 0.18;
+
 function isFieldMotionDebugEnabled(){
   if(typeof window === 'undefined') return false;
   if(window.FIELD_MOTION_DEBUG === true) return true;
@@ -3714,6 +3748,90 @@ function normalizeFieldLabelsControlled({ cancelAnimation = false, resetFieldAni
   return fieldLabelCurrent;
 }
 
+// Доля длительности, отданная приземлению. Задана в миллисекундах, чтобы отдача не
+// зависела от длины протяжки, но на очень коротком ходе её приходится ограничивать.
+function getFieldLandingSettleShare(totalDurationMs){
+  if(!(totalDurationMs > 0)) return FIELD_LANDING_SETTLE_MAX_SHARE;
+  return Math.max(
+    FIELD_LANDING_SETTLE_MIN_SHARE,
+    Math.min(FIELD_LANDING_SETTLE_MAX_SHARE, FIELD_LANDING_SETTLE_MS / totalDurationMs)
+  );
+}
+
+// Расписание: моменты (в долях длительности), когда очередная подпись встаёт ровно по
+// центру. times[0] = 0, times[stepCount] = 1 - settleShare — дальше идёт приземление.
+function buildFieldStepSchedule(stepCount, settleShare){
+  const weights = [];
+  for(let step = 1; step <= stepCount; step += 1){
+    // Сколько шагов остаётся ПОСЛЕ этого: у последнего — ноль.
+    const remaining = stepCount - step;
+    weights.push(Math.max(
+      FIELD_FLICKER_STEP_WEIGHT,
+      FIELD_LAST_STEP_WEIGHT / Math.pow(FIELD_STEP_SLOWDOWN_RATIO, remaining)
+    ));
+  }
+  const total = weights.reduce((sum, w) => sum + w, 0) || 1;
+  const span = Math.max(0, 1 - settleShare);
+  const times = [0];
+  let acc = 0;
+  for(const weight of weights){
+    acc += weight;
+    times.push((acc / total) * span);
+  }
+  return times;
+}
+
+// Скорость на участке между двумя соседними подписями, в шагах на долю длительности.
+function getFieldScheduleSlope(times, index){
+  const span = times[index + 1] - times[index];
+  return span > 0 ? 1 / span : 0;
+}
+
+// Пройденный путь в шагах для момента progress.
+//
+// Внутри участка — кубический Эрмит, касательные на стыках равны среднему гармоническому
+// соседних скоростей. Это даёт непрерывную скорость: на границе шага лента НЕ тормозит до
+// нуля (иначе вернулась бы прежняя пошаговая дёрганость) и не дёргается вверх. Среднее
+// гармоническое не превышает удвоенной меньшей из скоростей, поэтому ход остаётся строго
+// монотонным — назад лента не отыгрывает ни на кадр.
+function easeFieldRibbonTravel(progress, times, settleShare){
+  const stepCount = times.length - 1;
+  if(stepCount <= 0) return 0;
+  if(progress <= 0) return 0;
+  if(progress >= 1) return stepCount;
+
+  const arriveAt = times[stepCount];
+  if(progress >= arriveAt){
+    // Приземление. Скорость на входе сохраняется, u(1-u)² возвращает ленту точно в центр
+    // с нулевой скоростью, а по дороге даёт ту самую отдачу.
+    const settle = Math.max(0, 1 - arriveAt);
+    if(settle <= 0) return stepCount;
+    const u = (progress - arriveAt) / settle;
+    const endSpeed = getFieldScheduleSlope(times, stepCount - 1) * FIELD_LANDING_SPEED_KEEP;
+    return stepCount + endSpeed * settle * u * (1 - u) * (1 - u);
+  }
+
+  let index = 0;
+  while(index < stepCount - 1 && progress >= times[index + 1]) index += 1;
+
+  const span = times[index + 1] - times[index];
+  if(span <= 0) return index + 1;
+  const slope = getFieldScheduleSlope(times, index);
+  const harmonic = (a, b) => (a + b > 0 ? (2 * a * b) / (a + b) : 0);
+  const inSlope = index > 0 ? harmonic(getFieldScheduleSlope(times, index - 1), slope) : slope;
+  const outSlope = index < stepCount - 1
+    ? harmonic(slope, getFieldScheduleSlope(times, index + 1))
+    : slope * FIELD_LANDING_SPEED_KEEP;
+
+  const t = (progress - times[index]) / span;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * index
+    + (t3 - 2 * t2 + t) * span * inSlope
+    + (-2 * t3 + 3 * t2) * (index + 1)
+    + (t3 - t2) * span * outSlope;
+}
+
 function animateFieldLabelChange(targetIndex, direction, animationToken, options = {}, token = null){
   if(FIELD_EXCLUSIVE_MODE && !token) return;
   if(FIELD_EXCLUSIVE_MODE){
@@ -3734,7 +3852,6 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
   const stepDelta = direction === 'next' ? 1 : -1;
   const stepOffsetPx = direction === 'next' ? -FIELD_LABEL_SLOT_WIDTH : FIELD_LABEL_SLOT_WIDTH;
   const baseTransform = getFieldBaseTransform();
-  const overshootStrength = 0.9 * Math.min(1, 1 / stepCount);
   const debugMotion = isFieldMotionDebugEnabled();
 
   normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, token);
@@ -3775,6 +3892,8 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
   // длинной ленты нет: три слота (prev/current/next) переклеиваются по мере прохода —
   // этого хватает, так как между двумя соседними пересечениями видно не больше трёх.
   const totalDurationMs = stepDurationMs * stepCount;
+  const settleShare = getFieldLandingSettleShare(totalDurationMs);
+  const stepSchedule = buildFieldStepSchedule(stepCount, settleShare);
   const startIndex = currentIndex;
   let crossedSteps = 0;
   let previewSteps = 0;
@@ -3837,10 +3956,9 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
     if(animationToken !== fieldAnimationToken) return;
     const elapsed = now - startTime;
     const progress = totalDurationMs > 0 ? Math.min(1, elapsed / totalDurationMs) : 1;
-    // Овершут считается от ВСЕЙ дистанции, а не от каждого шага: длинная протяжка едет
-    // ровно и мягко тормозит в конце, короткая — с заметной отдачей, как у дальности.
-    const easedProgress = easeOutBack(progress, overshootStrength);
-    const travelled = stepCount * easedProgress;
+    // Ход считается по расписанию шагов, а не одной кривой на всю дистанцию: торможение
+    // начинается за три шага до конца, и последний шаг не съедает половину времени.
+    const travelled = easeFieldRibbonTravel(progress, stepSchedule, settleShare);
 
     // Целые пройденные шаги — это и есть момент переклейки подписей. При овершуте
     // travelled ненадолго уходит за stepCount, поэтому ограничиваем сверху.
