@@ -19,7 +19,6 @@ const DEBUG_ENDGAME = false;
 const DEBUG_AIM = false;
 const DEBUG_PLANE_SHADING = false;
 const DEBUG_FX = false;
-const DEBUG_NUKE = false;
 const DEBUG_FLAME_POS = false;
 const DEBUG_LAYERS = false;
 const DEBUG_VFX = false;
@@ -85,20 +84,6 @@ const planeCtx    = planeCanvas.getContext("2d");
 
 const hudCanvas = document.getElementById("hudCanvas");
 const hudCtx = hudCanvas instanceof HTMLCanvasElement ? hudCanvas.getContext("2d") : null;
-const boardDimmerLayer = document.getElementById("boardDimmerLayer");
-const boardDimmerHole = document.getElementById("boardDimmerHole");
-
-function supportsBoardDimmerMasking(){
-  if (!(window.CSS && typeof window.CSS.supports === "function")) return false;
-  const standardMask = CSS.supports("mask-composite", "exclude");
-  const webkitMask = CSS.supports("-webkit-mask-composite", "xor");
-  return Boolean(standardMask || webkitMask);
-}
-
-if (boardDimmerLayer instanceof HTMLElement && !supportsBoardDimmerMasking()) {
-  boardDimmerLayer.classList.add("board-dimmer--fallback");
-}
-
 function logEndGameAction(action){
   if (!DEBUG_ENDGAME) return;
 
@@ -890,9 +875,6 @@ const overlayContainer = document.getElementById("overlayContainer");
 const overlayFxLayer = document.getElementById("overlayFxLayer");
 const fxHostLayer = document.getElementById("fxHostLayer");
 const uiOverlay = document.getElementById("uiOverlay");
-const nuclearStrikeLayer = document.getElementById("nuclearStrikeLayer");
-const nuclearStrikeGif = document.getElementById("nuclearStrikeGif");
-const nuclearStrikeFlash = document.getElementById("nuclearStrikeFlash");
 
 let OVERLAY_RESYNC_SCHEDULED = false;
 
@@ -950,7 +932,7 @@ const TRANSFER_FRAME_HIDE_EASING = "ease-in";
 const TRANSFER_FRAME_TURN_SHOW_DURATION_MS = 140;
 const TRANSFER_FRAME_WIN_SHOW_DURATION_MS = 180;
 const TRANSFER_FRAME_HIDE_DURATION_MS = 160;
-// Z-index policy: transfer/system notifications must always be above all gameplay FX hosts (cargo/explosions/nuclear).
+// Z-index policy: transfer/system notifications must always be above all gameplay FX hosts (cargo/explosions).
 const TRANSFER_SYSTEM_HOST_ID = "transferSystemHost";
 const TRANSFER_SYSTEM_HOST_Z_INDEX = 320;
 const TRANSFER_GLOW_LAYER_Z_INDEX = 320;
@@ -1547,10 +1529,6 @@ const INVENTORY_ITEM_TYPES = {
   INVISIBILITY: "invisible",
 };
 
-const NUCLEAR_STRIKE_ACTION_TYPES = Object.freeze({
-  NUCLEAR_STRIKE: "nuclear_strike",
-});
-
 const ITEM_USAGE_TARGETS = Object.freeze({
   BOARD: "board",
   SELF_PLANE: "self_plane",
@@ -1582,43 +1560,6 @@ const itemUsageConfig = Object.freeze({
     requiresDragAndDrop: true,
   },
 });
-
-const NUCLEAR_STRIKE_FX = {
-  type: NUCLEAR_STRIKE_ACTION_TYPES.NUCLEAR_STRIKE,
-  path: "ui_gamescreen/gamescreen_outside/gs_cargoeffects/gs_cagroeffects_nuclearstrike.gif",
-  durationMs: 1980,
-};
-
-const NUCLEAR_STRIKE_TIMELINE_PHASES = Object.freeze({
-  GIF_PLAY: "gif_play",
-  PAUSE_AFTER_GIF: "pause_after_gif",
-  SCORE_COUNTUP: "score_countup",
-  PAUSE_AFTER_SCORE: "pause_after_score",
-  SHOW_NO_SURVIVORS: "show_no_survivors",
-  PAUSE_BEFORE_NEW_ROUND: "pause_before_new_round",
-});
-
-const NUCLEAR_STRIKE_TIMELINE_ORDER = Object.freeze([
-  NUCLEAR_STRIKE_TIMELINE_PHASES.GIF_PLAY,
-  NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_AFTER_GIF,
-  NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP,
-  NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_AFTER_SCORE,
-  NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS,
-  NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_BEFORE_NEW_ROUND,
-]);
-
-const NUCLEAR_STRIKE_TIMELINE_DEFAULTS = Object.freeze({
-  [NUCLEAR_STRIKE_TIMELINE_PHASES.GIF_PLAY]: NUCLEAR_STRIKE_FX.durationMs,
-  [NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_AFTER_GIF]: 1000,
-  [NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP]: 1000,
-  [NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_AFTER_SCORE]: 1000,
-  [NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS]: 2000,
-  [NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_BEFORE_NEW_ROUND]: 1000,
-});
-
-const NUKE_TIMELINE = {
-  ...NUCLEAR_STRIKE_TIMELINE_DEFAULTS,
-};
 
 // Новый 6-слотовый inventory: все runtime-иконки и рамки только из ui_gamescreen/gs_inventory/.
 const INVENTORY_UI_CONFIG = Object.freeze({
@@ -2441,7 +2382,6 @@ function refreshInventoryTooltip(){
   tooltip.classList.add("is-visible");
 }
 
-let nuclearStrikeHideTimeoutId = null;
 let activeInventoryDrag = null;
 let inventoryPickupUiSyncRafId = null;
 let pendingInventoryUse = null;
@@ -2503,396 +2443,10 @@ function setPendingInventoryUse(nextState){
 function cancelPendingInventoryUse(){
   setPendingInventoryUse(null);
 }
-let isNuclearStrikeResolutionActive = false;
-let isNukeCinematicActive = false;
-
-const nuclearStrikeTimelineState = {
-  isActive: false,
-  currentPhase: null,
-  phaseStartAt: 0,
-  scenarioStartAt: 0,
-  totalDurationMs: 0,
-  totalElapsedMs: 0,
-  phaseElapsedMs: 0,
-  scoreDeltas: { blue: 0, green: 0 },
-  awardedScore: { blue: 0, green: 0 },
-  scoreQueueResolved: false,
-  startNewRoundQueued: false,
-};
-
-const NUCLEAR_STRIKE_STAGES = Object.freeze({
-  IDLE: "idle",
-  DRAGGING: "dragging",
-  ARMED: "armed",
-  CINEMATIC: "cinematic",
-  RESOLVED: "resolved",
-});
-
-const NUCLEAR_STRIKE_STAGE_TRANSITIONS = Object.freeze({
-  [NUCLEAR_STRIKE_STAGES.IDLE]: [NUCLEAR_STRIKE_STAGES.DRAGGING],
-  [NUCLEAR_STRIKE_STAGES.DRAGGING]: [NUCLEAR_STRIKE_STAGES.IDLE, NUCLEAR_STRIKE_STAGES.ARMED],
-  [NUCLEAR_STRIKE_STAGES.ARMED]: [NUCLEAR_STRIKE_STAGES.CINEMATIC],
-  [NUCLEAR_STRIKE_STAGES.CINEMATIC]: [NUCLEAR_STRIKE_STAGES.RESOLVED],
-  [NUCLEAR_STRIKE_STAGES.RESOLVED]: [NUCLEAR_STRIKE_STAGES.IDLE],
-});
-
-let nuclearStrikeStage = NUCLEAR_STRIKE_STAGES.IDLE;
-
-function applyNuclearStrikeInputLockUi(isLocked){
-  const lockEnabled = Boolean(isLocked);
-  document.body?.classList.toggle("nuke-input-locked", lockEnabled);
-}
-
-function isNuclearStrikeActionLocked(){
-  return Boolean(isNuclearStrikeResolutionActive || isNukeCinematicActive);
-}
-
-function updateBoardDimmerMask(){
-  if (!(boardDimmerLayer instanceof HTMLElement)) return;
-  if (!(gsBoardCanvas instanceof HTMLElement)) return;
-  const boardRect = gsBoardCanvas.getBoundingClientRect();
-  const left = Math.round(boardRect.left);
-  const top = Math.round(boardRect.top);
-  const width = Math.round(boardRect.width);
-  const height = Math.round(boardRect.height);
-  boardDimmerLayer.style.setProperty("--dimmer-hole-left", `${left}px`);
-  boardDimmerLayer.style.setProperty("--dimmer-hole-top", `${top}px`);
-  boardDimmerLayer.style.setProperty("--dimmer-hole-width", `${width}px`);
-  boardDimmerLayer.style.setProperty("--dimmer-hole-height", `${height}px`);
-
-  if (boardDimmerHole instanceof HTMLElement) {
-    boardDimmerHole.style.left = `${left}px`;
-    boardDimmerHole.style.top = `${top}px`;
-    boardDimmerHole.style.width = `${width}px`;
-    boardDimmerHole.style.height = `${height}px`;
-  }
-}
-
-function setBoardDimmerActive(isActive){
-  if (!(boardDimmerLayer instanceof HTMLElement)) return;
-  if (isActive) {
-    updateBoardDimmerMask();
-  }
-  boardDimmerLayer.classList.toggle("is-active", Boolean(isActive));
-}
-
-function clearNuclearStrikeCinematicLayer(){
-  if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
-    return;
-  }
-  if(nuclearStrikeHideTimeoutId){
-    clearTimeout(nuclearStrikeHideTimeoutId);
-    nuclearStrikeHideTimeoutId = null;
-  }
-  nuclearStrikeLayer.hidden = true;
-  nuclearStrikeFlash.classList.remove("is-on");
-  nuclearStrikeGif.src = INVENTORY_EMPTY_ICON;
-}
-
-function getNukePhaseDurationMs(phaseName){
-  const configured = NUKE_TIMELINE[phaseName];
-  if(Number.isFinite(configured) && configured >= 0){
-    return configured;
-  }
-  return NUCLEAR_STRIKE_TIMELINE_DEFAULTS[phaseName] ?? 0;
-}
-
-function getNukeTimelineTotalDurationMs(){
-  return NUCLEAR_STRIKE_TIMELINE_ORDER.reduce((sum, phaseName) => sum + getNukePhaseDurationMs(phaseName), 0);
-}
-
-function getNukeTimelinePhaseStartMs(phaseName){
-  let elapsed = 0;
-  for(const candidate of NUCLEAR_STRIKE_TIMELINE_ORDER){
-    if(candidate === phaseName){
-      return elapsed;
-    }
-    elapsed += getNukePhaseDurationMs(candidate);
-  }
-  return elapsed;
-}
-
-function getNukeTimelinePhaseByElapsed(elapsedMs){
-  const safeElapsed = Math.max(0, elapsedMs);
-  let cursor = 0;
-  for(const phaseName of NUCLEAR_STRIKE_TIMELINE_ORDER){
-    const duration = getNukePhaseDurationMs(phaseName);
-    if(safeElapsed < cursor + duration){
-      return {
-        phaseName,
-        phaseStartOffsetMs: cursor,
-        phaseElapsedMs: safeElapsed - cursor,
-        phaseDurationMs: duration,
-      };
-    }
-    cursor += duration;
-  }
-  const lastPhase = NUCLEAR_STRIKE_TIMELINE_ORDER[NUCLEAR_STRIKE_TIMELINE_ORDER.length - 1] ?? null;
-  const fallbackDuration = lastPhase ? getNukePhaseDurationMs(lastPhase) : 0;
-  return {
-    phaseName: lastPhase,
-    phaseStartOffsetMs: Math.max(0, cursor - fallbackDuration),
-    phaseElapsedMs: fallbackDuration,
-    phaseDurationMs: fallbackDuration,
-  };
-}
-
-function resetNukeTimelineState(){
-  nuclearStrikeTimelineState.isActive = false;
-  nuclearStrikeTimelineState.currentPhase = null;
-  nuclearStrikeTimelineState.phaseStartAt = 0;
-  nuclearStrikeTimelineState.scenarioStartAt = 0;
-  nuclearStrikeTimelineState.totalDurationMs = 0;
-  nuclearStrikeTimelineState.totalElapsedMs = 0;
-  nuclearStrikeTimelineState.phaseElapsedMs = 0;
-  nuclearStrikeTimelineState.scoreDeltas.blue = 0;
-  nuclearStrikeTimelineState.scoreDeltas.green = 0;
-  nuclearStrikeTimelineState.awardedScore.blue = 0;
-  nuclearStrikeTimelineState.awardedScore.green = 0;
-  nuclearStrikeTimelineState.scoreQueueResolved = false;
-  nuclearStrikeTimelineState.startNewRoundQueued = false;
-}
-
-function enterNukeTimelinePhase(phaseName, now){
-  nuclearStrikeTimelineState.currentPhase = phaseName;
-  nuclearStrikeTimelineState.phaseStartAt = now;
-  nuclearStrikeTimelineState.phaseElapsedMs = 0;
-  if(phaseName === NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP && !nuclearStrikeTimelineState.scoreQueueResolved){
-    const deltas = resolveNuclearStrikePlaneQueue();
-    nuclearStrikeTimelineState.scoreDeltas.blue = deltas?.blue ?? 0;
-    nuclearStrikeTimelineState.scoreDeltas.green = deltas?.green ?? 0;
-    nuclearStrikeTimelineState.awardedScore.blue = 0;
-    nuclearStrikeTimelineState.awardedScore.green = 0;
-    nuclearStrikeTimelineState.scoreQueueResolved = true;
-  }
-  if(phaseName === NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS){
-    clearNuclearStrikeCinematicLayer();
-    applyNuclearStrikePostResolution();
-  }
-}
-
-function startNukeTimeline(now = performance.now()){
-  resetNukeTimelineState();
-  nuclearStrikeTimelineState.isActive = true;
-  nuclearStrikeTimelineState.scenarioStartAt = now;
-  nuclearStrikeTimelineState.totalDurationMs = getNukeTimelineTotalDurationMs();
-  enterNukeTimelinePhase(NUCLEAR_STRIKE_TIMELINE_PHASES.GIF_PLAY, now);
-}
-
-function applyNukeScoreCountup(now){
-  const phaseStart = nuclearStrikeTimelineState.phaseStartAt;
-  const duration = getNukePhaseDurationMs(NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP);
-  const progress = duration > 0
-    ? Math.max(0, Math.min(1, (now - phaseStart) / duration))
-    : 1;
-
-  for(const color of ["blue", "green"]){
-    const target = nuclearStrikeTimelineState.scoreDeltas[color] ?? 0;
-    const nextAwarded = Math.floor(target * progress);
-    const alreadyAwarded = nuclearStrikeTimelineState.awardedScore[color] ?? 0;
-    const delta = nextAwarded - alreadyAwarded;
-    if(delta > 0){
-      addScore(color, delta, { deferVictoryCheck: true });
-      nuclearStrikeTimelineState.awardedScore[color] = nextAwarded;
-    }
-  }
-}
-
-function updateNukeTimeline(now = performance.now()){
-  if(!nuclearStrikeTimelineState.isActive || nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC){
-    return;
-  }
-
-  const elapsed = Math.max(0, now - nuclearStrikeTimelineState.scenarioStartAt);
-  const phaseInfo = getNukeTimelinePhaseByElapsed(elapsed);
-  nuclearStrikeTimelineState.totalDurationMs = getNukeTimelineTotalDurationMs();
-  nuclearStrikeTimelineState.totalElapsedMs = elapsed;
-
-  if(phaseInfo.phaseName && phaseInfo.phaseName !== nuclearStrikeTimelineState.currentPhase){
-    enterNukeTimelinePhase(phaseInfo.phaseName, now);
-  }
-
-  nuclearStrikeTimelineState.phaseElapsedMs = phaseInfo.phaseElapsedMs;
-
-  if(phaseInfo.phaseName === NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP){
-    applyNukeScoreCountup(now);
-  }
-
-  const totalDuration = nuclearStrikeTimelineState.totalDurationMs;
-  if(elapsed >= totalDuration && !nuclearStrikeTimelineState.startNewRoundQueued){
-    nuclearStrikeTimelineState.startNewRoundQueued = true;
-    transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.RESOLVED, { reason: "timeline complete" });
-    if(isMapTesterModeActive()){
-      openMapTesterDialog();
-    } else {
-      startNewRound();
-    }
-  }
-}
-
-function getNukePlaneFadeFx(now = performance.now()){
-  if(!isNukeCinematicActive || nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC){
-    return { alpha: 1, grayscale: 0, active: false };
-  }
-
-  const fadeStart = NUCLEAR_STRIKE_FX.durationMs * 0.5;
-  const fadeEnd = getNukeTimelinePhaseStartMs(NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS);
-  const elapsed = Math.max(0, now - nuclearStrikeTimelineState.scenarioStartAt);
-  const fadeDuration = Math.max(1, fadeEnd - fadeStart);
-  const progress = Math.max(0, Math.min(1, (elapsed - fadeStart) / fadeDuration));
-  const alpha = 1 - 0.9 * progress;
-  const grayscale = Math.round(100 * progress);
-  return {
-    active: progress > 0,
-    alpha,
-    grayscale,
-  };
-}
-
-function isNukeEliminatedPlaneRenderable(plane){
-  if(!plane?.nukeEliminated) return false;
-  if(!nuclearStrikeTimelineState.isActive) return false;
-  const hideFromMs = getNukeTimelinePhaseStartMs(NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS);
-  return nuclearStrikeTimelineState.totalElapsedMs < hideFromMs;
-}
-
-function getNukeTimelineDebugSnapshot(){
-  return {
-    stage: nuclearStrikeStage,
-    active: nuclearStrikeTimelineState.isActive,
-    currentPhase: nuclearStrikeTimelineState.currentPhase,
-    phaseStartAt: nuclearStrikeTimelineState.phaseStartAt,
-    scenarioStartAt: nuclearStrikeTimelineState.scenarioStartAt,
-    totalElapsedMs: nuclearStrikeTimelineState.totalElapsedMs,
-    phaseElapsedMs: nuclearStrikeTimelineState.phaseElapsedMs,
-    totalDurationMs: nuclearStrikeTimelineState.totalDurationMs,
-    durations: { ...NUKE_TIMELINE },
-    scoreDeltas: { ...nuclearStrikeTimelineState.scoreDeltas },
-    awardedScore: { ...nuclearStrikeTimelineState.awardedScore },
-  };
-}
-
-function ensureNukeDebugApi(){
-  if(typeof window === "undefined") return;
-  window.NUKE_DEBUG = {
-    getTimeline(){
-      return getNukeTimelineDebugSnapshot();
-    },
-    setDuration(phaseName, ms){
-      if(!Object.prototype.hasOwnProperty.call(NUKE_TIMELINE, phaseName)) return false;
-      const safeMs = Number.isFinite(ms) ? Math.max(0, Math.round(ms)) : null;
-      if(safeMs === null) return false;
-      NUKE_TIMELINE[phaseName] = safeMs;
-      return true;
-    },
-    skipTo(phaseName){
-      if(!NUCLEAR_STRIKE_TIMELINE_ORDER.includes(phaseName)) return false;
-      if(nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC || !nuclearStrikeTimelineState.isActive){
-        return false;
-      }
-      const phaseOffset = getNukeTimelinePhaseStartMs(phaseName);
-      const now = performance.now();
-      nuclearStrikeTimelineState.scenarioStartAt = now - phaseOffset;
-      updateNukeTimeline(now);
-      return true;
-    },
-    restart(){
-      if(nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC){
-        return false;
-      }
-      startNukeTimeline(performance.now());
-      return true;
-    }
-  };
-}
-
-ensureNukeDebugApi();
-
-function applyNuclearStrikePostResolution(){
-  const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
-  if(!matchEnded){
-    lockInNoSurvivors();
-  }
-}
-
-function resolveNuclearStrikePlaneQueue(){
-  isNuclearStrikeResolutionActive = true;
-  try {
-    return destroyAllPlanesWithNukeScoring();
-  } finally {
-    isNuclearStrikeResolutionActive = false;
-  }
-}
-
-function transitionNuclearStrikeStage(nextStage, context = {}){
-  const currentStage = nuclearStrikeStage;
-  if(currentStage === nextStage) return true;
-  const allowedNextStages = NUCLEAR_STRIKE_STAGE_TRANSITIONS[currentStage] || [];
-  if(!allowedNextStages.includes(nextStage)){
-    if(DEBUG_NUKE){
-      console.warn(`[NUKE] invalid transition ${currentStage} -> ${nextStage}`);
-    }
-    return false;
-  }
-
-  nuclearStrikeStage = nextStage;
-
-  switch(nextStage){
-    case NUCLEAR_STRIKE_STAGES.DRAGGING: {
-      updateBoardDimmerMask();
-      setBoardDimmerActive(true);
-      isNukeCinematicActive = false;
-      applyNuclearStrikeInputLockUi(false);
-      break;
-    }
-    case NUCLEAR_STRIKE_STAGES.ARMED: {
-      setBoardDimmerActive(false);
-      isNukeCinematicActive = true;
-      applyNuclearStrikeInputLockUi(true);
-      break;
-    }
-    case NUCLEAR_STRIKE_STAGES.CINEMATIC: {
-      isNukeCinematicActive = true;
-      applyNuclearStrikeInputLockUi(true);
-      playNuclearStrikeFx();
-      startNukeTimeline(performance.now());
-      break;
-    }
-    case NUCLEAR_STRIKE_STAGES.RESOLVED: {
-      clearNuclearStrikeCinematicLayer();
-      resetNukeTimelineState();
-      isNukeCinematicActive = false;
-      applyNuclearStrikeInputLockUi(false);
-      transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.IDLE, { reason: "resolved" });
-      break;
-    }
-    case NUCLEAR_STRIKE_STAGES.IDLE:
-    default: {
-      setBoardDimmerActive(false);
-      isNukeCinematicActive = false;
-      applyNuclearStrikeInputLockUi(false);
-      break;
-    }
-  }
-
-  if(DEBUG_NUKE){
-    const reasonLabel = context?.reason ? ` (${context.reason})` : "";
-    console.log(`[NUKE] stage ${currentStage} -> ${nextStage}${reasonLabel}`);
-  }
-
-  return true;
-}
-
 function cancelActiveInventoryDrag(reason = "cancel"){
   resetInventoryDragFallbackGhost();
   if (!activeInventoryDrag) return;
-  if (!activeInventoryDrag.consumed && DEBUG_NUKE) {
-    console.log(`[NUKE] drag ${reason}`);
-  }
   activeInventoryDrag = null;
-  if(nuclearStrikeStage === NUCLEAR_STRIKE_STAGES.DRAGGING){
-    transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.IDLE, { reason });
-  }
 }
 
 function setInventoryInteractionState(mode, activeItem){
@@ -2940,30 +2494,8 @@ function resetInventoryInteractionState(){
   setInventoryInteractionState("idle", null);
   clearInventoryInteractionPointer();
   pendingInventoryUse = null;
-  isNuclearStrikeResolutionActive = false;
-  isNukeCinematicActive = false;
-  resetNukeTimelineState();
-  nuclearStrikeStage = NUCLEAR_STRIKE_STAGES.IDLE;
-  setBoardDimmerActive(false);
-  applyNuclearStrikeInputLockUi(false);
-  clearNuclearStrikeCinematicLayer();
 }
 
-function showNuclearStrikeCinematicLayer(){
-  if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
-    return;
-  }
-
-  nuclearStrikeLayer.hidden = false;
-
-  nuclearStrikeFlash.classList.remove("is-on");
-  void nuclearStrikeFlash.offsetWidth;
-  nuclearStrikeFlash.classList.add("is-on");
-
-  if (DEBUG_NUKE) {
-    console.log("[NUKE] fx started");
-  }
-}
 
 // Какой предмет выпал из ящика.
 //
@@ -2981,16 +2513,6 @@ function getRandomInventoryItem(label = null){
   return INVENTORY_ITEMS[index] ?? null;
 }
 
-function playNuclearStrikeFx(){
-  if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
-    return;
-  }
-
-  nuclearStrikeGif.removeAttribute("src");
-  void nuclearStrikeGif.offsetHeight;
-  nuclearStrikeGif.src = `${NUCLEAR_STRIKE_FX.path}?t=${Date.now()}`;
-  showNuclearStrikeCinematicLayer();
-}
 
 
 function normalizeInventoryItemType(type){
@@ -4416,9 +3938,6 @@ function onBoardDrop(event){
     logInventoryInputEarlyExit("drop", event, "target outside board", {
       foundItem: activeInventoryDrag,
     });
-    if (DEBUG_NUKE) {
-      console.log("[NUKE] drop rejected");
-    }
     return;
   }
   const applied = applyInventoryItemAtBoardPoint(activeInventoryDrag, clientX, clientY, "onBoardDrop");
@@ -5695,7 +5214,7 @@ if(typeof window !== "undefined"){
       winnerColor,
       shouldShowEndScreen,
       isDrawGame,
-      roundEndedByNuke,
+      roundEndedWithoutSurvivors,
       roundTextTimer
     };
     const winner = Math.random() < 0.5 ? "blue" : "green";
@@ -5704,7 +5223,7 @@ if(typeof window !== "undefined"){
     winnerColor = winner;
     shouldShowEndScreen = endOfGame;
     isDrawGame = false;
-    roundEndedByNuke = false;
+    roundEndedWithoutSurvivors = false;
     roundTextTimer = 0;
     showTransferFrame({
       mode: "win",
@@ -5717,7 +5236,7 @@ if(typeof window !== "undefined"){
       winnerColor = snapshot.winnerColor;
       shouldShowEndScreen = snapshot.shouldShowEndScreen;
       isDrawGame = snapshot.isDrawGame;
-      roundEndedByNuke = snapshot.roundEndedByNuke;
+      roundEndedWithoutSurvivors = snapshot.roundEndedWithoutSurvivors;
       roundTextTimer = snapshot.roundTextTimer;
     }, lifeMs);
   };
@@ -5849,7 +5368,6 @@ const GAME_SCREEN_ASSETS = [
   // Новый 6-слотовый inventory: preload только из ui_gamescreen/gs_inventory/.
   INVENTORY_UI_CONFIG.frameAtlasPath,
   ...INVENTORY_ICON_ASSET_PATHS,
-  NUCLEAR_STRIKE_FX.path,
 
   // Match score
   "ui_gamescreen/gamescreen_outside/matchscore_blue_corn.png",
@@ -11926,7 +11444,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 let isGameOver   = false;
 let winnerColor  = null;
-let roundEndedByNuke = false;
+let roundEndedWithoutSurvivors = false;
 let awaitingFlightResolution = false;
 let pendingRoundTransitionDelay = null;
 let pendingRoundTransitionStart = 0;
@@ -16661,7 +16179,7 @@ function lockInWinner(color, options = {}){
   isGameOver = true;
   winnerColor = color;
   isDrawGame = false;
-  roundEndedByNuke = false;
+  roundEndedWithoutSurvivors = false;
 
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
@@ -16710,7 +16228,7 @@ function lockInNoSurvivors(options = {}){
   isGameOver = true;
   winnerColor = null;
   isDrawGame = false;
-  roundEndedByNuke = true;
+  roundEndedWithoutSurvivors = true;
 
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
@@ -16745,7 +16263,7 @@ function lockInDraw(options = {}){
   isGameOver = true;
   winnerColor = null;
   isDrawGame = true;
-  roundEndedByNuke = false;
+  roundEndedWithoutSurvivors = false;
 
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
@@ -16820,7 +16338,7 @@ function finalizePostFlightState(){
     return;
   }
 
-  if(shouldShowEndScreen && !roundEndedByNuke && endGameDiv){
+  if(shouldShowEndScreen && !roundEndedWithoutSurvivors && endGameDiv){
     if(isTransferFrameVisible()){
       setEndGamePanelVisible(false);
       if(endScreenRevealTimeout){
@@ -16870,7 +16388,7 @@ function addScore(color, delta, options = {}){
     updateArcadeScore(color, scoreByColor, { animate: true });
   }
 
-  if(!isGameOver && !options.deferVictoryCheck && !isNuclearStrikeResolutionActive){
+  if(!isGameOver){
     maybeLockInMatchOutcome({ showEndScreen: true });
   }
 
@@ -20375,7 +19893,7 @@ function resetGame(options = {}){
 
   isGameOver= false;
   winnerColor= null;
-  roundEndedByNuke = false;
+  roundEndedWithoutSurvivors = false;
   setEndGamePanelVisible(false);
   awaitingFlightResolution = false;
   pendingRoundTransitionDelay = null;
@@ -22021,7 +21539,6 @@ function isPlaneGrabbableAt(x, y) {
 }
 
 function getGrabRejectReason(mx, my, currentColor){
-  if(isNuclearStrikeActionLocked()) return "nuclear_action_locked";
   if(isGameOver || !gameMode) return "game_not_active";
   if(pendingInventoryUse) return "pending_inventory_use";
   if(isAiColor(currentColor)) return "ai_turn";
@@ -22097,7 +21614,6 @@ function updateBoardCursorForHover(x, y) {
 
 function handleStart(e) {
   e.preventDefault();
-  if(isNuclearStrikeActionLocked()) return;
   if(isGameOver || !gameMode) return;
 
   const { x: designX, y: designY } = getPointerDesignCoords(e);
@@ -22260,7 +21776,6 @@ function endStickyAimHoldTracking(e){
 }
 
 function handleAAPlacement(x, y){
-  if(isNuclearStrikeActionLocked()) return;
   if(phase !== 'AA_PLACEMENT') return;
   if(!isValidAAPlacement(x,y)) return;
 
@@ -22310,7 +21825,6 @@ function onCanvasPointerDown(e){
     e.preventDefault();
     return;
   }
-  if(isNuclearStrikeActionLocked()) return;
   if(handleCircle.active && phase !== 'AA_PLACEMENT'){
     if(!isHumanAllowedToControlActiveAimSession()){
       e.preventDefault();
@@ -22369,10 +21883,6 @@ function onCanvasPointerMove(e){
       gsBoardCanvas.style.cursor = "grab";
       return;
     }
-  }
-  if(isNuclearStrikeActionLocked()) {
-    gsBoardCanvas.style.cursor = '';
-    return;
   }
   const { x: designX, y: designY } = getPointerDesignCoords(e);
   const { x, y } = designToBoardCoords(designX, designY);
@@ -22433,13 +21943,6 @@ function onCanvasPointerUp(e){
     e.preventDefault();
     return;
   }
-  if(isNuclearStrikeActionLocked()){
-    aaPointerDown = false;
-    aaPlacementPreview = null;
-    aaPreviewTrail = [];
-    return;
-  }
-
   if(phase !== 'AA_PLACEMENT'){
     if(!handleCircle.active) return;
     if(!isHumanAllowedToControlActiveAimSession()){
@@ -47371,26 +46874,6 @@ function destroyAllPlanesWithoutScoring(){
   });
 }
 
-function destroyAllPlanesWithNukeScoring(){
-  const scoreDeltas = { blue: 0, green: 0 };
-
-  points.forEach((p) => {
-    if(!p || !p.isAlive) return;
-    if(p.color !== "blue" && p.color !== "green") return;
-    const scoringColor = p.color === "green" ? "blue" : "green";
-    scoreDeltas[scoringColor] += 1;
-    dropActiveFlagFromPlane(p, { x: p.x, y: p.y });
-    eliminatePlane(p, { keepBurning: false, keepCrashMarkers: false, skipFlameFx: true });
-    p.nukeEliminated = !isArcadePlaneRespawnEnabled();
-    if(!isArcadePlaneRespawnEnabled()){
-      p.crashStart = 0;
-      p.killMarkerStart = 0;
-    }
-    flyingPoints = flyingPoints.filter(x => x.plane !== p);
-  });
-
-  return scoreDeltas;
-}
 
 let failSafeAdvanceTurnInProgress = false;
 function tryRecoverAiFailSafeWithEmergencyLaunch(details = {}){
@@ -48063,8 +47546,6 @@ function gameDraw(){
   syncCargoAnimationDomEntries();
   drawCargo(gsBoardCtx);
 
-  updateNukeTimeline(now);
-
   // The !aiPostInventoryLaunchTimeout gate prevents a visible "double aim" race when AI uses an
   // inventory item. After applying an item, issueAIMoveWithInventoryUsage schedules the actual
   // launch via setTimeout(AI_POST_INVENTORY_LAUNCH_DELAY_MS=260ms) so the consume FX can play.
@@ -48493,11 +47974,8 @@ function gameDraw(){
 
   drawAimOverlay(rangeTextInfo);
 
-  const shouldShowNoSurvivorsText = roundEndedByNuke
-    && nuclearStrikeTimelineState.currentPhase === NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS;
-
   const shouldDrawWinnerRoundMessage = shouldShowEndScreen && Boolean(winnerColor);
-  if(isGameOver && (shouldDrawWinnerRoundMessage || isDrawGame || shouldShowNoSurvivorsText)){
+  if(isGameOver && (shouldDrawWinnerRoundMessage || isDrawGame)){
     const endTextCtx = hudCtx && hudCanvas instanceof HTMLCanvasElement ? hudCtx : gsBoardCtx;
     const endTextCanvas = hudCtx && hudCanvas instanceof HTMLCanvasElement ? hudCanvas : gsBoardCanvas;
     if(endTextCtx === hudCtx) markHudCanvasOverlayDrawn();
@@ -48506,7 +47984,7 @@ function gameDraw(){
     endTextCtx.save();
     endTextCtx.setTransform(1, 0, 0, 1, 0, 0);
     // В горизонтали холст уезжает на бок вместе с кадром, и надписи конца матча
-    // («Игра окончена. Ничья.», «No one survived.») читались бы сверху вниз.
+    // («Игра окончена. Ничья.») читались бы сверху вниз.
     // Разворачиваем весь блок вокруг центра холста: встречный поворот гасит поворот
     // кадра, текст снова идёт слева направо и остаётся там же относительно поля —
     // он и так центрован по холсту, а смещение на 80px вверх сохраняется как есть.
@@ -48544,34 +48022,7 @@ function gameDraw(){
         endGameDiv.style.top = `${targetTop}px`;
       }
     };
-    if(shouldShowNoSurvivorsText){
-      const lines = ["No one survived.", "No one won the round."];
-      endTextCtx.font = "700 44px 'Patrick Hand', cursive";
-      const lineHeight = 50;
-      const horizontalPadding = 22;
-      const verticalPadding = 18;
-      const maxLineWidth = lines.reduce((maxWidth, line) => {
-        const metrics = endTextCtx.measureText(line);
-        return Math.max(maxWidth, metrics.width);
-      }, 0);
-      const totalTextHeight = lineHeight * lines.length;
-      const panelWidth = maxLineWidth + horizontalPadding * 2;
-      const panelHeight = totalTextHeight + verticalPadding * 2;
-      const panelX = (textAreaWidth - panelWidth) / 2;
-      const panelY = textBaselineY - 40;
-
-      endTextCtx.fillStyle = "rgba(0, 0, 0, 0.75)";
-      endTextCtx.fillRect(panelX, panelY, panelWidth, panelHeight);
-
-      endTextCtx.fillStyle = "#ffffff";
-      lines.forEach((line, index) => {
-        const metrics = endTextCtx.measureText(line);
-        const w = metrics.width;
-        const textX = (textAreaWidth - w) / 2;
-        const lineY = panelY + verticalPadding + 34 + index * lineHeight;
-        endTextCtx.fillText(line, textX, lineY);
-      });
-    } else if(isDrawGame){
+    if(isDrawGame){
       endTextCtx.fillStyle = "#ffffff";
       const text = "Game over. It's a draw.";
       const metrics = endTextCtx.measureText(text);
@@ -48586,7 +48037,7 @@ function gameDraw(){
     endTextCtx.restore();
   }
 
-  if(endGameDiv && !endGamePanelPreviewEnabled && (!shouldShowEndScreen || !isGameOver || (!winnerColor && !isDrawGame) || roundEndedByNuke)){
+  if(endGameDiv && !endGamePanelPreviewEnabled && (!shouldShowEndScreen || !isGameOver || (!winnerColor && !isDrawGame) || roundEndedWithoutSurvivors)){
     setEndGamePanelVisible(false);
     endGameDiv.style.left = "";
     endGameDiv.style.top = "";
@@ -49035,7 +48486,7 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0, alphaMultiplier = 1
 
 function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const { x: cx, y: cy, color, angle } = plane;
-  const isGhostState = plane.burning || (!plane.isAlive && !plane.nukeEliminated);
+  const isGhostState = plane.burning || !plane.isAlive;
   const resolvedInvisibilityAlpha = Number.isFinite(invisibilityAlpha)
     ? invisibilityAlpha
     : getPlaneInvisibilityAlpha(plane);
@@ -49054,7 +48505,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const smokeAnchor = getPlaneAnchorOffset("smoke");
   const jetAnchor = getPlaneAnchorOffset("jet");
   const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
-  const showEngine = !isGhostState && !plane.nukeEliminated && !isInvisibilityFullyHidden && !isArcadeRespawnOutline;
+  const showEngine = !isGhostState && !isInvisibilityFullyHidden && !isArcadeRespawnOutline;
   const hasWingsBuff = !isArcadeRespawnOutline && planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
   const broadwingOverlayWidth = BROADWING_OVERLAY_DRAW_W;
   const broadwingOverlayHeight = BROADWING_OVERLAY_DRAW_H;
@@ -49113,8 +48564,6 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   ctx2d.shadowBlur = 0;
   ctx2d.filter = "none";
 
-  const nukeFadeFx = getNukePlaneFadeFx();
-  const shouldApplyNukeFade = nukeFadeFx.active && (plane.isAlive || plane.nukeEliminated);
   const previousFilter = ctx2d.filter;
   const baseGhostAlpha = 0.3;
   const planeLifeState = getPlaneLifeState(plane);
@@ -49163,10 +48612,6 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
       ctx2d.globalAlpha *= baseGhostAlpha;
       ctx2d.filter = "grayscale(100%) brightness(90%)";
     }
-    if (shouldApplyNukeFade && !isArcadeRespawnOutline) {
-      ctx2d.globalAlpha *= nukeFadeFx.alpha;
-      ctx2d.filter = `grayscale(${nukeFadeFx.grayscale}%)`;
-    }
 
     ctx2d.drawImage(bluePlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
     if (hasWingsBuff && isSpriteReady(blueBroadwingedPlaneImg)) {
@@ -49192,10 +48637,6 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
     if (isGhostState) {
       ctx2d.globalAlpha *= baseGhostAlpha;
       ctx2d.filter = "grayscale(100%) brightness(90%)";
-    }
-    if (shouldApplyNukeFade && !isArcadeRespawnOutline) {
-      ctx2d.globalAlpha *= nukeFadeFx.alpha;
-      ctx2d.filter = `grayscale(${nukeFadeFx.grayscale}%)`;
     }
 
     ctx2d.drawImage(greenPlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
@@ -49522,7 +48963,7 @@ function drawPlanesAndTrajectories(){
   };
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
-    if(!p.isAlive && !p.burning && !isNukeEliminatedPlaneRenderable(p)) return;
+    if(!p.isAlive && !p.burning) return;
     const invisibilityAlpha = getPlaneInvisibilityAlpha(p);
 
     if (debugDrawOrder) {
@@ -50402,7 +49843,7 @@ ensureExplosionDebugApi();
 /* ======= HITS / VICTORY ======= */
 function awardPoint(color){
   if(!color) return;
-  addScore(color, 1, { deferVictoryCheck: isNuclearStrikeResolutionActive });
+  addScore(color, 1);
 }
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
@@ -51672,7 +51113,7 @@ function startNewRound(){
   cleanupGreenCrashFx();
   clearPendingEndScreenRevealTimeout();
   setEndGamePanelVisible(false);
-  isGameOver=false; winnerColor=null; isDrawGame = false; roundEndedByNuke = false;
+  isGameOver=false; winnerColor=null; isDrawGame = false; roundEndedWithoutSurvivors = false;
   awaitingFlightResolution = false;
   pendingRoundTransitionDelay = null;
   pendingRoundTransitionStart = 0;
@@ -51724,7 +51165,6 @@ function startNewRound(){
 
   globalFrame=0;
   flyingPoints=[];
-  resetNukeTimelineState();
   hasShotThisRound=false;
   aaUnits = [];
   mines = [];
@@ -51855,7 +51295,7 @@ function resetMapEditorPlanePlacement(){
   isGameOver = false;
   winnerColor = null;
   isDrawGame = false;
-  roundEndedByNuke = false;
+  roundEndedWithoutSurvivors = false;
   awaitingFlightResolution = false;
   pendingRoundTransitionDelay = null;
   pendingRoundTransitionStart = 0;
@@ -53092,10 +52532,6 @@ async function syncLayoutAndField(reason = "sync") {
       height: rect.height
     };
   };
-
-  if (activeInventoryDrag) {
-    updateBoardDimmerMask();
-  }
 
   if (DEBUG_RESIZE) {
     console.log('Layout rects after resize', {

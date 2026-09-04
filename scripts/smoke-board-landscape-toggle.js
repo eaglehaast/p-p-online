@@ -337,11 +337,14 @@ assert(/endGameDiv\.classList\.contains\("is-visible"\)[\s\S]{0,80}placeEndGameP
   .test(source.slice(source.indexOf('function setBoardLandscape('))),
   '9g: при смене ориентации открытая табличка переставляется сразу');
 
-// Надписи конца матча («Игра окончена. Ничья.», «No one survived.») рисуются прямо
-// на холсте HUD в его пиксельных координатах, поэтому в горизонтали читались бы
-// сверху вниз. Разворот ставится один раз на весь блок — вокруг центра холста, до
-// первой отрисовки: тогда и подложка «нет выживших», и обе строки едут вместе.
-const endTextStart = source.indexOf('const shouldShowNoSurvivorsText');
+// Надписи конца матча («Игра окончена. Ничья.») рисуются прямо на холсте HUD в его
+// пиксельных координатах, поэтому в горизонтали читались бы сверху вниз. Разворот
+// ставится один раз на весь блок — вокруг центра холста, до первой отрисовки, чтобы
+// подложка и строки ехали вместе.
+//
+// Раньше якорем была надпись ядерного удара «нет выживших». Механику удалили целиком,
+// поэтому якорь теперь — само условие показа блока.
+const endTextStart = source.indexOf('if(isGameOver && (shouldDrawWinnerRoundMessage || isDrawGame)){');
 const endTextBody = source.slice(endTextStart, source.indexOf('endTextCtx.restore();', endTextStart));
 assert(/if\(isBoardLandscapeActive\(\)\)\{[\s\S]{0,240}endTextCtx\.rotate\(-Math\.PI \/ 2\)/.test(endTextBody),
   '10: в горизонтали блок надписей конца матча разворачивается');
