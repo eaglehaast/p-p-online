@@ -5935,6 +5935,8 @@ const SETTINGS_PRELOAD_LABEL = "settingsPreload";
 const MENU_CRITICAL = MAIN_MENU_ASSETS;
 let menuAssetsReady = false;
 let gameAssetsReady = false;
+// Игрок нажал Play. Начальная расстановка, если она ещё едет, обязана обойти его стороной.
+let matchStartRequested = false;
 let isPreloadVisible = false;
 let gameAssetsPromise = null;
 let gameAssetsResults = [];
@@ -20851,6 +20853,12 @@ async function handlePlayStart(){
   }
   selectedMode = normalizedMode;
   setStoredGameMode(selectedMode);
+
+  // С этой секунды партия принадлежит игроку. Дальше здесь ещё несколько ожиданий —
+  // догрузка картинок игрового экрана, список карт, — и ровно в это окно раньше успевала
+  // прилететь начальная расстановка от загрузчика и стереть уже начатую партию. Флаг
+  // ставится ДО первого await, иначе окно останется открытым.
+  matchStartRequested = true;
 
   bootTrace.startTs = performance.now();
   bootTrace.markers = [];
@@ -53532,19 +53540,46 @@ if (window.visualViewport) {
 }
 
   /* ======= BOOTSTRAP ======= */
-  function waitForStylesReady() {
-    if (document.readyState === 'complete') return Promise.resolve();
+
+  // Начальная расстановка ждёт РАЗМЕТКУ, а не всю страницу до последней картинки.
+  //
+  // Раньше здесь стояло ожидание события window 'load'. Оно наступает только после того,
+  // как догрузился КАЖДЫЙ подресурс: все <img> в index.html, шрифты с чужого домена,
+  // всё. На плохом интернете это десятки секунд, а игра к тому моменту давно доступна:
+  // оверлей загрузки снимается через 5 секунд в любом случае, кнопки живые. Замер с
+  // одной медленной картинкой (и оборванным fonts.googleapis.com):
+  //
+  //     5.2 с  оверлей снят, меню доступно
+  //     5.4 с  игрок нажал Play, партия пошла
+  //    20.1 с  window 'load'
+  //    20.1 с  resetGame() — партия игрока стёрта на пятнадцатой секунде
+  //
+  // Разметка и стили готовы гораздо раньше: таблицы стилей в <head> блокируют
+  // выполнение скриптов, поэтому к моменту DOMContentLoaded они уже применены — а
+  // расстановке нужны именно они, размеры картинок она не спрашивает. Кто дорисуется
+  // позже, тот перерисуется сам: у фона, рамки кирпичей и стрелки для этого свои
+  // обработчики 'load'.
+  function waitForDomReady() {
+    if (document.readyState !== 'loading') return Promise.resolve();
 
     return new Promise((resolve) => {
-      window.addEventListener('load', resolve, { once: true });
+      document.addEventListener('DOMContentLoaded', resolve, { once: true });
     });
   }
 
   async function bootstrapGame(){
-    await waitForStylesReady();
+    await waitForDomReady();
     await syncLayoutAndField("bootstrap");
     logLayoutMetrics("bootstrap");
     await ensureMapsDataReady();
+
+    // Список карт тоже едет по сети. Пока он ехал, игрок мог успеть нажать Play — и тогда
+    // расставлять заново нечего: партия уже расставлена и в неё уже играют. Проверка
+    // стоит ПОСЛЕ последнего await, потому что нажать успевают именно во время ожидания.
+    if(matchStartRequested){
+      console.warn('[BOOT] начальная расстановка пропущена: игрок уже начал партию');
+      return;
+    }
 
     if(MAPS.length > 0){
       resetGame();
