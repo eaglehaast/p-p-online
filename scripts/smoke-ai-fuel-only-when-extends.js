@@ -46,6 +46,8 @@ const context = {
   CELL_SIZE: 20,
   AI_FUEL_MIN_REACH_RATIO: 1.0,
   AI_FUEL_EXTEND_MIN_EXTRA_TARGETS: 1,
+  AI_FUEL_SURPLUS_MIN_STOCK: 2,
+  AI_FUEL_SURPLUS_MAX_LANDING_RISK_DELTA: 0.05,
   INVENTORY_ITEM_TYPES,
   getEffectiveFlightRangeCells: (p) => (p?.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.FUEL] ? 60 : 30),
   getAiSelectedPlanIntentText: (plan) =>
