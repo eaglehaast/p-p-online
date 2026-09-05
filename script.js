@@ -5508,7 +5508,52 @@ function hideLoadingOverlay() {
 const IMAGE_LOAD_TIMEOUT_MS = 8000;
 const pendingImageLoads = new Set();
 
-const DEBUG_ASSETS = true;
+// Подробные логи включаются нарочно, а не идут всегда.
+//
+// Их было 661 строка к началу партии, из них 451 — ещё до того, как меню станет доступным:
+// по две на каждый загруженный файл. Настоящее предупреждение в таком потоке не разглядеть,
+// а именно за ним в консоль и заходят, когда у игрока что-то не работает.
+//
+// Включается двумя способами. ?debug=1 в адресе — на один заход, чтобы попросить игрока
+// прислать снимок консоли. Ключ в localStorage — чтобы пережить перезагрузку, когда чинишь
+// сам: ставится тем же ?debug=1, снимается ?debug=0.
+//
+// Предупреждения и ошибки НЕ трогаем: они и должны быть видны всегда, ради них всё это.
+const DEBUG_LOG_STORAGE_KEY = "debug.verboseLogs";
+
+function readVerboseLoggingFlag(){
+  if(typeof window === "undefined") return false;
+
+  let fromQuery = null;
+  try {
+    const raw = new URLSearchParams(window.location?.search || "").get("debug");
+    if(raw !== null) fromQuery = raw !== "0" && raw !== "false" && raw !== "";
+  } catch(_error){ /* адрес разобрать не вышло — считаем, что флага нет */ }
+
+  try {
+    const stored = window.localStorage;
+    if(fromQuery !== null && stored){
+      if(fromQuery) stored.setItem(DEBUG_LOG_STORAGE_KEY, "1");
+      else stored.removeItem(DEBUG_LOG_STORAGE_KEY);
+    }
+    if(fromQuery === null && stored) return stored.getItem(DEBUG_LOG_STORAGE_KEY) === "1";
+  } catch(_error){
+    // Приватный режим и запрет на хранилище: флаг из адреса всё равно работает.
+  }
+
+  return fromQuery === true;
+}
+
+const DEBUG_ASSETS = readVerboseLoggingFlag();
+
+// Один и тот же выключатель на всё подробное, чтобы не заводить их по штуке на подсистему.
+function debugLog(...args){
+  if(DEBUG_ASSETS) console.log(...args);
+}
+
+function debugInfo(...args){
+  if(DEBUG_ASSETS) console.info(...args);
+}
 const imageCache = new Map();
 const imageCreationStacks = new Map();
 const startedImageLoads = new Set();
@@ -5529,7 +5574,7 @@ function applyImageOptions(img, options = {}) {
 
 function logImageCreation(label, url, stack) {
   if (!DEBUG_ASSETS) return;
-  console.log("[asset][create]", { label, url, stack });
+  debugLog("[asset][create]", { label, url, stack });
 }
 
 function logDuplicateRequest(label, url, stack) {
@@ -5608,7 +5653,7 @@ if (typeof window !== "undefined") {
   });
 
   window.addEventListener("load", () => {
-    console.log("[asset][summary]", {
+    debugLog("[asset][summary]", {
       cacheSize: imageCache.size,
       createdImagesCount,
       duplicateAttemptsCount
@@ -5623,7 +5668,7 @@ function trackImageLoad(label, url, img, timeoutMs = IMAGE_LOAD_TIMEOUT_MS) {
   const normalizedUrl = typeof url === "string" ? url : "";
   const pendingEntry = { label, url: normalizedUrl };
   pendingImageLoads.add(pendingEntry);
-  console.log("[IMG] pending", { label, url: normalizedUrl, pending: pendingImageLoads.size });
+  debugLog("[IMG] pending", { label, url: normalizedUrl, pending: pendingImageLoads.size });
 
   let timeoutId = null;
   if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
@@ -5646,7 +5691,7 @@ function trackImageLoad(label, url, img, timeoutMs = IMAGE_LOAD_TIMEOUT_MS) {
       console.warn("[IMG] error", { label, url: normalizedUrl, pending: pendingImageLoads.size, event });
       return;
     }
-    console.log("[IMG] load", { label, url: normalizedUrl, pending: pendingImageLoads.size });
+    debugLog("[IMG] load", { label, url: normalizedUrl, pending: pendingImageLoads.size });
   };
 
   img.addEventListener("load", event => finalize("load", event), { once: true });
@@ -9144,7 +9189,7 @@ function ensureInventoryTooltipDebugApi(){
 
   window.INVENTORY_TOOLTIP_CMD = (command, value) => runInventoryTooltipConsoleCommand(command, value);
 
-  console.info(
+  debugInfo(
     '[INVENTORY_TOOLTIP_DEBUG] ready. Try: INVENTORY_TOOLTIP_CMD("get"), INVENTORY_TOOLTIP_CMD("set-x", 12), INVENTORY_TOOLTIP_CMD("set-y", -8), INVENTORY_TOOLTIP_CMD("set-anchor", "self"), INVENTORY_TOOLTIP_CMD("set-threshold", 2), INVENTORY_TOOLTIP_CMD("set-font-size", "14px"), INVENTORY_TOOLTIP_CMD("set-font-family", "Roboto, sans-serif"), INVENTORY_TOOLTIP_CMD("set-max-width", "280px"), INVENTORY_TOOLTIP_CMD("reset")'
   );
 }
@@ -9202,7 +9247,7 @@ function ensureMineDebugApi(){
     },
   };
 
-  console.info(
+  debugInfo(
     "[MINE_DEBUG] ready. Try: MINE_DEBUG.getConfig(), MINE_DEBUG.setScreenSize(42), MINE_DEBUG.setLogicalSize(36), MINE_DEBUG.setBoth(32), MINE_DEBUG.setWingHalfSpan(16), MINE_DEBUG.reset()"
   );
 }
@@ -9220,13 +9265,13 @@ function isSpriteReady(img) {
 }
 const { img: backgroundImg } = loadImageAsset("ui_gamescreen/paperwithred2.webp", GAME_PRELOAD_LABEL);
 backgroundImg?.addEventListener("load", () => {
-  console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg.src });
+  debugLog("[IMG] load", { label: "backgroundImg", url: backgroundImg.src });
 });
 backgroundImg?.addEventListener("error", (event) => {
   console.warn("[IMG] error", { label: "backgroundImg", url: backgroundImg.src, event });
 });
 if (isSpriteReady(backgroundImg)) {
-  console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg?.src });
+  debugLog("[IMG] load", { label: "backgroundImg", url: backgroundImg?.src });
 }
 
 let currentBackgroundLayerCount = 2;
@@ -9347,7 +9392,7 @@ const MAP_SPRITE_ASSETS = Object.create(null);
 
 function handleBrickFrameLoad() {
   if (!brickFrameImg) return;
-  console.log("[IMG] load", { label: "brickFrameImg", url: brickFrameImg.src });
+  debugLog("[IMG] load", { label: "brickFrameImg", url: brickFrameImg.src });
 }
 
 function handleBrickFrameError(event) {
@@ -9475,7 +9520,7 @@ const DYNAMITE_BRICK_REMOVAL_FRAME_INDEX = Math.min(
 const DYNAMITE_BRICK_FADE_OUT_DURATION_MS = 280;
 
 arrowSprite?.addEventListener("load", () => {
-  console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
+  debugLog("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
 });
 arrowSprite?.addEventListener("error", (event) => {
   console.warn("[IMG] error", { label: "arrowSprite", url: arrowSprite.src, event });
@@ -49687,7 +49732,7 @@ function ensureExplosionDebugApi(){
     return arcadePlaneTimerOpacity;
   };
 
-  console.info(
+  debugInfo(
     '[EXPLOSION_DEBUG] ready. Try: EXPLOSION_PLAY("blue"), EXPLOSION_PLAY("green"), EXPLOSION_SPEED(1.5), EXPLOSION_SPEED(0.7), EXPLOSION_SIZE(0.7), EXPLOSION_DEBUG.setPlaybackRate(1), EXPLOSION_DEBUG.getPlaybackRate(), EXPLOSION_DEBUG.getSizeScale()'
   );
 }
