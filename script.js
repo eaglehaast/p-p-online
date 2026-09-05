@@ -938,11 +938,11 @@ const TRANSFER_SYSTEM_HOST_Z_INDEX = 320;
 const TRANSFER_GLOW_LAYER_Z_INDEX = 320;
 const TRANSFER_FRAME_LAYER_Z_INDEX = 321;
 const TRANSFER_FRAME_ASSETS = Object.freeze({
-  back: "ui_gamescreen/gs_transfer_2/gs_transfer_back.png",
-  blue: "ui_gamescreen/gs_transfer_2/gs_transfer_blue.png",
-  green: "ui_gamescreen/gs_transfer_2/gs_transfer_green.png",
-  winGameBlue: "ui_gamescreen/gs_transfer_2/gs_bluewingame.png",
-  winGameGreen: "ui_gamescreen/gs_transfer_2/gs_greenwingame.png",
+  back: "ui_gamescreen/gs_transfer_2/gs_transfer_back.webp",
+  blue: "ui_gamescreen/gs_transfer_2/gs_transfer_blue.webp",
+  green: "ui_gamescreen/gs_transfer_2/gs_transfer_green.webp",
+  winGameBlue: "ui_gamescreen/gs_transfer_2/gs_bluewingame.webp",
+  winGameGreen: "ui_gamescreen/gs_transfer_2/gs_greenwingame.webp",
 });
 const transferFrameState = {
   host: null,
@@ -5377,8 +5377,8 @@ const GAME_SCREEN_ASSETS = [
 
   // End game screen
   "ui_gamescreen/playagain/playagain_container.webp",
-  "ui_gamescreen/playagain/yes.png",
-  "ui_gamescreen/playagain/no.png",
+  "ui_gamescreen/playagain/yes.webp",
+  "ui_gamescreen/playagain/no.webp",
   TRANSFER_FRAME_ASSETS.back,
   TRANSFER_FRAME_ASSETS.blue,
   TRANSFER_FRAME_ASSETS.green,

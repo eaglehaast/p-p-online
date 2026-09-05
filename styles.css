@@ -3220,13 +3220,13 @@ html.dev-tools-on #menuLayer #modeMenu .mode-menu__btn--editor {
 #endGameButtons .playagain-btn--yes {
   left: calc(64px * var(--playagain-scale));
   top: calc(77px * var(--playagain-scale));
-  background-image: url('ui_gamescreen/playagain/yes.png');
+  background-image: url('ui_gamescreen/playagain/yes.webp');
 }
 
 #endGameButtons .playagain-btn--no {
   left: calc(223px * var(--playagain-scale));
   top: calc(77px * var(--playagain-scale));
-  background-image: url('ui_gamescreen/playagain/no.png');
+  background-image: url('ui_gamescreen/playagain/no.webp');
 }
 
 /* Плавные переходы */

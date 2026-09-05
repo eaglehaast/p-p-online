@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// Smoke test: самые тяжёлые фоны лежат в WebP, а не в PNG.
+// Smoke test: самые тяжёлые картинки лежат в WebP, а не в PNG.
 //
-// Шесть фоновых картинок весили 5 248 КБ — треть всего, что игра тянет по сети до того,
+// Тринадцать картинок весили 7 565 КБ — треть всего, что игра тянет по сети до того,
 // как станет доступной. Это не «неаккуратно упаковали»: пережатие БЕЗ потерь даёт всего
 // −33% (WebP lossless — 3 522 КБ), потому что картинки текстурные, в них тысячи оттенков.
 // Вся разница именно в переходе на сжатие с потерями.
@@ -14,7 +14,18 @@
 //   mm_frame                   622 КБ →   49 КБ   −93%
 //   cp_background              429 КБ →   16 КБ   −97%
 //   paperwithred2              389 КБ →   56 КБ   −86%
-//   ИТОГО                     5248 КБ →  471 КБ   −92%
+//
+// Второй заход — экран передачи хода и кнопки переигровки. Они не на критическом пути,
+// но это самый крупный оставшийся кусок, и он нужен в конце каждого раунда:
+//
+//   gs_transfer_back           673 КБ →   60 КБ   −92%
+//   gs_greenwingame            579 КБ →   26 КБ   −96%
+//   gs_bluewingame             529 КБ →   20 КБ   −97%
+//   gs_transfer_green          153 КБ →    8 КБ   −95%
+//   gs_transfer_blue           148 КБ →    7 КБ   −95%
+//   playagain/yes              119 КБ →   10 КБ   −92%
+//   playagain/no               113 КБ →    9 КБ   −92%
+//   ИТОГО                     7565 КБ →  614 КБ   −92%
 //
 // Замер запуска на 600 кбит/с с задержкой 300 мс (со сжатием текста, как отдаёт
 // GitHub Pages):
@@ -48,6 +59,13 @@ const CONVERTED = [
   'ui_mainmenu/mm_frame',
   'ui_controlpanel/cp_background',
   'ui_gamescreen/paperwithred2',
+  'ui_gamescreen/gs_transfer_2/gs_transfer_back',
+  'ui_gamescreen/gs_transfer_2/gs_greenwingame',
+  'ui_gamescreen/gs_transfer_2/gs_bluewingame',
+  'ui_gamescreen/gs_transfer_2/gs_transfer_green',
+  'ui_gamescreen/gs_transfer_2/gs_transfer_blue',
+  'ui_gamescreen/playagain/yes',
+  'ui_gamescreen/playagain/no',
 ];
 
 // === 1. ГЛАВНОЕ: тяжёлых PNG больше нет ни на диске, ни в ссылках ===
@@ -85,8 +103,8 @@ const CONVERTED = [
     total += size;
   }
 
-  assert(total < 700 * 1024,
-    `2e: шесть фонов весят ${Math.round(total / 1024)} КБ вместо примерно 470 — `
+  assert(total < 850 * 1024,
+    `2e: тринадцать картинок весят ${Math.round(total / 1024)} КБ вместо примерно 614 — `
     + 'качество подняли обратно, и выигрыш растаял');
 }
 
@@ -96,6 +114,8 @@ const CONVERTED = [
 {
   const expectStyles = [
     'letterbox2.webp',
+    'ui_gamescreen/playagain/yes.webp',
+    'ui_gamescreen/playagain/no.webp',
     'ui_gamescreen/playagain/playagain_container.webp',
     'ui_gamescreen/gamescreen_outside/gs_background.webp',
     'ui_mainmenu/mm_frame.webp',
@@ -110,6 +130,14 @@ const CONVERTED = [
     '3b: фон игрового экрана больше не ставится из кода');
   assert(/loadImageAsset\("ui_gamescreen\/paperwithred2\.webp"/.test(script),
     '3c: бумажный фон поля больше не загружается');
+
+  // Экран передачи хода собирается из пяти картинок, и все пять ставятся из кода.
+  const transfer = /const TRANSFER_FRAME_ASSETS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(script);
+  assert(transfer, '3d: набор картинок экрана передачи хода не найден');
+  for(const key of ['back', 'blue', 'green', 'winGameBlue', 'winGameGreen']){
+    assert(new RegExp(`${key}: "[^"]+\\.webp"`).test(transfer[0]),
+      `3e: у экрана передачи хода картинка ${key} не в WebP`);
+  }
 
   // И все шесть по-прежнему в списках предзагрузки: иначе они поедут в момент показа.
   for(const base of CONVERTED){
