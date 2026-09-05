@@ -5359,7 +5359,7 @@ const GAME_SCREEN_ASSETS = [
   "ui_gamescreen/gamescreen_outside/planecounter_ green.png",
 
   // UI extras
-  "sprite_ copy.png",
+  "sprite_ copy.webp",
   ...HUD_PLANE_TIMER_FRAME_PATHS,
   HUD_PLANE_TIMER_GO_PATH,
   ARCADE_RESPAWN_SHIELD_PATHS.blue,
@@ -9410,7 +9410,7 @@ function getFieldOffsetsInCanvasSpace(canvas, fallbackScaleX = 1, fallbackScaleY
 }
 
 // Sprite used for the aiming arrow
-const { img: arrowSprite } = loadImageAsset("sprite_ copy.png", GAME_PRELOAD_LABEL);
+const { img: arrowSprite } = loadImageAsset("sprite_ copy.webp", GAME_PRELOAD_LABEL);
 const { img: crosshairIconSprite } = loadImageAsset(
   "ui_gamescreen/gs_inventory/gs_inventory_crossfire.png",
   GAME_PRELOAD_LABEL
