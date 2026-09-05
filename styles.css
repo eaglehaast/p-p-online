@@ -282,7 +282,7 @@ body, button {
     position: relative;
     font-family: 'Roboto', sans-serif;
     background-color: #101010;
-    background-image: url('letterbox2.png');
+    background-image: url('letterbox2.webp');
     background-size: cover;
     background-repeat: no-repeat;
     background-position: center;
@@ -454,7 +454,7 @@ body, button {
   #gameBackground {
     position: absolute;
     inset: 0;
-    background-image: url("ui_gamescreen/gamescreen_outside/gs_background.png");
+    background-image: url("ui_gamescreen/gamescreen_outside/gs_background.webp");
     background-size: 100% 100%;
     background-repeat: no-repeat;
     background-position: center top;
@@ -1456,7 +1456,7 @@ body, button {
   }
 
   #menuLayer {
-    background-image: url("ui_mainmenu/mm_frame.png");
+    background-image: url("ui_mainmenu/mm_frame.webp");
     background-repeat: no-repeat;
     background-position: center;
     background-size: 100% 100%;
@@ -1483,7 +1483,7 @@ body, button {
   }
 
   #settingsLayer {
-    background-image: url("ui_controlpanel/cp_background.png");
+    background-image: url("ui_controlpanel/cp_background.webp");
     background-repeat: no-repeat;
     background-position: center;
     background-size: 100% 100%;
@@ -3144,7 +3144,7 @@ html.dev-tools-on #menuLayer #modeMenu .mode-menu__btn--editor {
   z-index: 250;
   width: calc(388px * var(--playagain-scale));
   height: calc(230px * var(--playagain-scale));
-  background: url('ui_gamescreen/playagain/playagain_container.png') center / 100% 100% no-repeat;
+  background: url('ui_gamescreen/playagain/playagain_container.webp') center / 100% 100% no-repeat;
   opacity: 0;
   visibility: hidden;
   transform: translateY(-220px) rotate(0deg) scale(0.98);
