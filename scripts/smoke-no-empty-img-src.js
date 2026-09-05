@@ -75,8 +75,12 @@ function stripComments(source){
   assert((script.match(/detachImageSource\(/g) || []).length >= 4,
     '2d: detachImageSource зовут реже, чем в трёх местах гашения плюс объявление — '
     + 'значит какое-то место снова гасит картинку по-своему');
-  assert((settings.match(/clearPreviewGif\(/g) || []).length >= 3,
-    '2e: превью аркады и флагов гасятся не одним и тем же способом');
+  // У превью гашение спрятано ещё на уровень глубже: три анимации ходят через один
+  // applyPreviewGif, а гасит их всех clearPreviewGif внутри него. Проверяем эту связку, а
+  // не число упоминаний: считать вызовы бессмысленно, когда места гашения схлопываются в одно.
+  const applyPreview = /function applyPreviewGif\([^)]*\)\{[\s\S]*?\n\}/.exec(settings);
+  assert(applyPreview && /clearPreviewGif\(img\)/.test(applyPreview[0]),
+    '2e: превью гасятся не через clearPreviewGif — значит опять кто-то делает это по-своему');
 }
 
 // === 3. Гифки превью не качаются, пока их тумблер выключен ===

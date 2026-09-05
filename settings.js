@@ -894,6 +894,7 @@ function readPreviewGifSrc(img, fallback){
 
 const arcadePreviewGifSrc = readPreviewGifSrc(arcadePreviewGif, 'ui_controlpanel/cp_adds/cp_arcade.gif');
 const flagsPreviewOnGifSrc = readPreviewGifSrc(flagsPreviewOn, 'ui_controlpanel/cp_adds/cp_flags_on.gif');
+const cargoPreviewOnGifSrc = readPreviewGifSrc(cargoPreviewOn, 'ui_controlpanel/cp_adds/cp_cargo on_gif.gif');
 
 // Погасить анимацию превью.
 //
@@ -902,6 +903,38 @@ const flagsPreviewOnGifSrc = readPreviewGifSrc(flagsPreviewOn, 'ui_controlpanel/
 // Снятие атрибута отцепляет источник и никуда не ходит.
 function clearPreviewGif(img){
   if(img && img.hasAttribute('src')) img.removeAttribute('src');
+}
+
+// Гифки превью не грузятся, пока панель настроек не открыли хотя бы раз.
+//
+// Все три лежат внутри скрытого #settingsMenu и весят вместе около полумегабайта, из них
+// 460 КБ одна анимация груза — второй по весу файл во всей игре. Раньше они ехали при
+// каждом запуске, даже если игрок в настройки не заходил ни разу, и конкурировали за канал
+// с кодом игры на самом медленном участке.
+//
+// Флаг взводится в момент показа панели, а не по таймеру: пока панель не открыта, эти
+// картинки не видны ни при каких условиях.
+//
+// Исключение — отдельная страница настроек: там панель и есть вся страница, показывать её
+// нечем, script.js не подключён и onShow не придёт никогда. Значит, ждать нечего.
+let settingsPreviewsAwake = document.body.classList.contains('settings-page');
+
+function applyPreviewGif(img, src, shouldShow){
+  if(!img) return;
+  if(shouldShow && settingsPreviewsAwake){
+    if(img.getAttribute('src') !== src) img.src = src;
+  }else{
+    clearPreviewGif(img);
+  }
+}
+
+function wakeSettingsPreviewGifs(){
+  if(settingsPreviewsAwake) return;
+  settingsPreviewsAwake = true;
+  // Пересобираем состояние теми же функциями, что и обычно: одно место решает, что видно.
+  syncCargoPreview(addsUiState.cargo);
+  syncFlagsPreview(addsUiState.flags);
+  syncArcadeCargoPreview(addsUiState.arcade);
 }
 const arcadePreviewShadowClass = 'arcade-preview--shadow';
 const resetBtn = selectInSettings('#instance_reset');
@@ -4783,11 +4816,7 @@ function syncArcadeCargoPreview(isArcadeOn){
     arcadePreviewStill.classList.toggle(arcadePreviewShadowClass, !isArcadeOn);
   }
   if(arcadePreviewGif){
-    if(isArcadeOn){
-      arcadePreviewGif.src = arcadePreviewGifSrc;
-    }else{
-      clearPreviewGif(arcadePreviewGif);
-    }
+    applyPreviewGif(arcadePreviewGif, arcadePreviewGifSrc, isArcadeOn);
     arcadePreviewGif.style.display = isArcadeOn ? 'block' : 'none';
   }
 }
@@ -4797,11 +4826,7 @@ function syncFlagsPreview(isFlagsOn){
     flagsPreviewOff.style.display = isFlagsOn ? 'none' : 'block';
   }
   if(flagsPreviewOn){
-    if(isFlagsOn){
-      flagsPreviewOn.src = flagsPreviewOnGifSrc;
-    }else{
-      clearPreviewGif(flagsPreviewOn);
-    }
+    applyPreviewGif(flagsPreviewOn, flagsPreviewOnGifSrc, isFlagsOn);
     flagsPreviewOn.style.display = isFlagsOn ? 'block' : 'none';
   }
 }
@@ -4811,6 +4836,7 @@ function syncCargoPreview(isCargoOn){
     cargoPreviewOff.style.display = isCargoOn ? 'none' : 'block';
   }
   if(cargoPreviewOn){
+    applyPreviewGif(cargoPreviewOn, cargoPreviewOnGifSrc, isCargoOn);
     cargoPreviewOn.style.display = isCargoOn ? 'block' : 'none';
   }
 }
@@ -4981,6 +5007,8 @@ if(exitBtn){
 
 function handleSettingsLayerShow(){
   isSettingsActive = true;
+  // Панель открыли — теперь гифкам превью можно ехать.
+  wakeSettingsPreviewGifs();
   if(window.paperWingsSettings){
     window.paperWingsSettings.isActive = true;
   }
