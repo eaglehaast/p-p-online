@@ -1265,13 +1265,23 @@ function stopTransferPanelAnimation() {
   transferFrameState.panelAnimation = null;
 }
 
+// Отцепить картинку от источника.
+//
+// Нельзя писать src = "": по правилам HTML пустая строка разрешается относительно адреса
+// страницы, то есть картинка начинает грузить саму страницу, не может её раскодировать и
+// роняет ошибку в консоль. Экран передачи хода гасится в конце каждого раунда, так что это
+// повторялось всю партию. Снятие атрибута источник отцепляет и никуда не ходит.
+function detachImageSource(image) {
+  if (image instanceof HTMLImageElement && image.hasAttribute("src")) {
+    image.removeAttribute("src");
+  }
+}
+
 function clearTransferFrameContent() {
   stopTransferTurnGlow();
-  if (transferFrameState.backImage instanceof HTMLImageElement) {
-    transferFrameState.backImage.src = "";
-  }
+  detachImageSource(transferFrameState.backImage);
   if (transferFrameState.colorImage instanceof HTMLImageElement) {
-    transferFrameState.colorImage.src = "";
+    detachImageSource(transferFrameState.colorImage);
     transferFrameState.colorImage.classList.remove("is-visible");
   }
   if (transferFrameState.winText instanceof HTMLElement) {
@@ -1369,7 +1379,7 @@ function showTransferFrame(options = {}) {
         stopTransferTurnGlow();
       }
     } else {
-      transferState.colorImage.src = "";
+      detachImageSource(transferState.colorImage);
       transferState.colorImage.classList.remove("is-visible");
       stopTransferTurnGlow();
     }
