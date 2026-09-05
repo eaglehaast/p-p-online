@@ -886,8 +886,23 @@ const flagsPreviewOff = selectInSettings('#flags_preview_off');
 const flagsPreviewOn = selectInSettings('#flags_preview_on');
 const cargoPreviewOff = selectInSettings('#cargo_preview_off');
 const cargoPreviewOn = selectInSettings('#cargo_preview_on');
-const arcadePreviewGifSrc = arcadePreviewGif?.getAttribute('src') || 'ui_controlpanel/cp_adds/cp_arcade.gif';
-const flagsPreviewOnGifSrc = flagsPreviewOn?.getAttribute('src') || 'ui_controlpanel/cp_adds/cp_flags_on.gif';
+// Путь к анимации превью держится в data-src, а не в src: в src браузер начал бы качать
+// гифку при разборе разметки, а мы её тут же гасим, если тумблер выключен.
+function readPreviewGifSrc(img, fallback){
+  return img?.getAttribute('data-src') || img?.getAttribute('src') || fallback;
+}
+
+const arcadePreviewGifSrc = readPreviewGifSrc(arcadePreviewGif, 'ui_controlpanel/cp_adds/cp_arcade.gif');
+const flagsPreviewOnGifSrc = readPreviewGifSrc(flagsPreviewOn, 'ui_controlpanel/cp_adds/cp_flags_on.gif');
+
+// Погасить анимацию превью.
+//
+// Нельзя писать src = '': по правилам HTML пустая строка разрешается относительно адреса
+// страницы, то есть картинка начинает грузить саму страницу и падает с ошибкой в консоли.
+// Снятие атрибута отцепляет источник и никуда не ходит.
+function clearPreviewGif(img){
+  if(img && img.hasAttribute('src')) img.removeAttribute('src');
+}
 const arcadePreviewShadowClass = 'arcade-preview--shadow';
 const resetBtn = selectInSettings('#instance_reset');
 const exitBtn = selectInSettings('#instance_exit');
@@ -4771,7 +4786,7 @@ function syncArcadeCargoPreview(isArcadeOn){
     if(isArcadeOn){
       arcadePreviewGif.src = arcadePreviewGifSrc;
     }else{
-      arcadePreviewGif.src = '';
+      clearPreviewGif(arcadePreviewGif);
     }
     arcadePreviewGif.style.display = isArcadeOn ? 'block' : 'none';
   }
@@ -4785,7 +4800,7 @@ function syncFlagsPreview(isFlagsOn){
     if(isFlagsOn){
       flagsPreviewOn.src = flagsPreviewOnGifSrc;
     }else{
-      flagsPreviewOn.src = '';
+      clearPreviewGif(flagsPreviewOn);
     }
     flagsPreviewOn.style.display = isFlagsOn ? 'block' : 'none';
   }
