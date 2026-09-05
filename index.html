@@ -70,6 +70,19 @@
               </div>
             </div>
 
+            <!-- Карты не доехали. Панель, а не alert: игру открывают внутри рамки на чужой
+                 странице (itch.io) и как мини-приложение телеграма, а там модальное окно
+                 браузера могут и не показать — тогда игрок остался бы вовсе без объяснения.
+                 role="alert" читалка озвучит сама, как только панель появится. -->
+            <div id="mapsErrorNotice" class="menu-notice" hidden role="alert">
+              <p id="mapsErrorNoticeText" class="menu-notice__text">
+                Couldn’t load the game maps. Check your connection and reload.
+              </p>
+              <div class="menu-notice__actions">
+                <button id="mapsErrorNoticeReload" class="menu-notice__btn" type="button">Reload</button>
+              </div>
+            </div>
+
             <button id="mapTesterBtn" class="mode-menu__btn mode-menu__btn--editor mode-menu__btn--tester" type="button" aria-label="Map Tester">
               <span>Map Tester</span>
             </button>
