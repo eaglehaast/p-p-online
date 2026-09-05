@@ -5784,11 +5784,11 @@ const MAIN_MENU_ASSETS = [
   "ui_mainmenu/mm_playbutton.png",
   "ui_mainmenu/mm_classicrules.png",
   "ui_mainmenu/mm_advancedsettings.png",
-  "ui_mainmenu/mm_frame.png",
+  "ui_mainmenu/mm_frame.webp",
   "ui_gamescreen/PLANES/gs_plane_green.png",
   "ui_gamescreen/PLANES/gs_plane_blue.png",
   "preload_animation.gif",
-  "letterbox2.png"
+  "letterbox2.webp"
 ];
 
 const HUD_PLANE_TIMER_FRAME_PATHS = [
@@ -5837,8 +5837,8 @@ const GAME_SCREEN_ASSETS = [
   ARCADE_RESPAWN_SHIELD_PATHS.green,
 
   // Game field background
-  "ui_gamescreen/paperwithred2.png",
-  "ui_gamescreen/gamescreen_outside/gs_background.png",
+  "ui_gamescreen/paperwithred2.webp",
+  "ui_gamescreen/gamescreen_outside/gs_background.webp",
   "ui_gamescreen/gamescreen_outside/goat and sparrow.png",
 
   // Game maps
@@ -5858,7 +5858,7 @@ const GAME_SCREEN_ASSETS = [
   "ui_gamescreen/gamescreen_outside/matchscore_green_egg_ghost.png",
 
   // End game screen
-  "ui_gamescreen/playagain/playagain_container.png",
+  "ui_gamescreen/playagain/playagain_container.webp",
   "ui_gamescreen/playagain/yes.png",
   "ui_gamescreen/playagain/no.png",
   TRANSFER_FRAME_ASSETS.back,
@@ -5882,7 +5882,7 @@ const GAME_SCREEN_ASSETS = [
 
 const SETTINGS_ASSETS = [
   // Control panel
-  "ui_controlpanel/cp_background.png",
+  "ui_controlpanel/cp_background.webp",
   "ui_controlpanel/cp_frame_add3.png",
   "ui_controlpanel/cp_button_off.png",
   "ui_controlpanel/cp_button_on.png",
@@ -9690,7 +9690,7 @@ function isSpriteReady(img) {
     img.naturalHeight > 0
   );
 }
-const { img: backgroundImg } = loadImageAsset("ui_gamescreen/paperwithred2.png", GAME_PRELOAD_LABEL);
+const { img: backgroundImg } = loadImageAsset("ui_gamescreen/paperwithred2.webp", GAME_PRELOAD_LABEL);
 backgroundImg?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg.src });
 });
@@ -20441,7 +20441,7 @@ function resetGame(options = {}){
 
   if (shouldShowMenu) {
     menuScreenLocked = false;
-    setBackgroundImage('ui_gamescreen/paperwithred2.png');
+    setBackgroundImage('ui_gamescreen/paperwithred2.webp');
     hideGameBackgroundForMenu();
   } else {
     restoreGameBackgroundAfterMenu();
@@ -51762,7 +51762,7 @@ function startNewRound(){
     syncAimCanvasLayout();
   });
 
-  setBackgroundImage('ui_gamescreen/gamescreen_outside/gs_background.png');
+  setBackgroundImage('ui_gamescreen/gamescreen_outside/gs_background.webp');
 
   initPoints(); // ориентации на базе
   seedMapEditorInventory();
