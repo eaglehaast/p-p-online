@@ -49006,12 +49006,25 @@ function drawPlanesAndTrajectories(){
       }
       const effectiveRangeCells = getEffectiveFlightRangeCells(p);
       const cells = (vdist / MAX_DRAG_DISTANCE) * effectiveRangeCells;
-      const textX = p.x + POINT_RADIUS + 8;
+
+      // Якорь отодвигается от самолёта В ТУ СТОРОНУ, КУДА ЧИТАЕТСЯ ПОДПИСЬ.
+      //
+      // В вертикали подпись читается вправо, поэтому якорь смещён по +x — и блок целиком
+      // уходит вбок от самолёта. В горизонтали холст повёрнут вместе с кадром, и блок
+      // разворачивают на 90° вокруг якоря, чтобы он читался ровно; после разворота он
+      // уходит от якоря уже по −y. А смещение оставалось прежним, по +x, — то есть поперёк
+      // чтения. Якорь стоял всего в восьми точках от края самолёта, половина толщины блока
+      // (две строки плюс значки) заезжала обратно, и надпись ложилась прямо на самолёт.
+      //
+      // Теперь смещение поворачивается вместе с блоком, и в обеих ориентациях подпись
+      // стоит сбоку от самолёта одинаково.
+      const away = POINT_RADIUS + 8;
+      const landscape = isBoardLandscapeActive();
       rangeTextInfo = {
         color: colorFor(p.color),
         cells,
-        x: textX,
-        y: p.y,
+        x: landscape ? p.x : p.x + away,
+        y: landscape ? p.y - away : p.y,
         activeEffectTypes: getPlaneActiveTurnBuffs(p),
         planeColor: p.color
       };
