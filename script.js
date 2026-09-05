@@ -1485,7 +1485,7 @@ function buildBlueExplosionSequenceFramePaths() {
   const folder = "ui_gamescreen/gs_blue_explosion11";
   return Array.from({ length: 25 }, (_unused, frameIndex) => {
     const frame = String(frameIndex + 1).padStart(2, "0");
-    return `${folder}/explosion_blue_1_${frame}.png`;
+    return `${folder}/explosion_blue_1_${frame}.webp`;
   });
 }
 
@@ -1493,7 +1493,7 @@ function buildGreenExplosionSequenceFramePaths() {
   const folder = "ui_gamescreen/gs_green_explosion_one";
   return Array.from({ length: 25 }, (_unused, frameIndex) => {
     const frame = String(frameIndex + 1).padStart(2, "0");
-    return `${folder}/explosion_green_3_${frame}.png`;
+    return `${folder}/explosion_green_3_${frame}.webp`;
   });
 }
 
@@ -5327,10 +5327,10 @@ const CRASH_FX_DELAY_MS = 0;   // fallback delay before showing wreck FX
 const FLAME_FRAME_DURATION_MS = 140;
 const BURNING_FLAME_FRAME_COUNT = 15;
 const GREEN_FLAME_SEQUENCE = {
-  framePaths: Array.from({ length: BURNING_FLAME_FRAME_COUNT }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.png`)
+  framePaths: Array.from({ length: BURNING_FLAME_FRAME_COUNT }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.webp`)
 };
 const BLUE_FLAME_SEQUENCE = {
-  framePaths: Array.from({ length: BURNING_FLAME_FRAME_COUNT }, (_, index) => `ui_gamescreen/flames/gs_flame_blue_1/flame_blue_1_${String(index + 1).padStart(2, '0')}.png`)
+  framePaths: Array.from({ length: BURNING_FLAME_FRAME_COUNT }, (_, index) => `ui_gamescreen/flames/gs_flame_blue_1/flame_blue_1_${String(index + 1).padStart(2, '0')}.webp`)
 };
 const BURNING_FLAME_SRCS = [...GREEN_FLAME_SEQUENCE.framePaths, ...BLUE_FLAME_SEQUENCE.framePaths];
 const BLUE_FLAME_DISPLAY_SIZE = { width: 36, height: 36 };
