@@ -200,6 +200,9 @@ function makeSide(seat, { search = '', room = 'stand' } = {}){
       onlineSession: { seat: 'blue' },
       onlinePresence: presence,
       onlineReady: { mine: mineReady, theirs: false },
+      // Здесь проверяется онлайновый замок, поэтому карты считаем приехавшими: иначе
+      // «Play» гасил бы второй замок, и проверка ничего не говорила бы про первый.
+      mapsUnavailable: false,
       log,
     };
     sandbox.playBtn = Object.setPrototypeOf({

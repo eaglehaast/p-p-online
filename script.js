@@ -5853,9 +5853,40 @@ function syncModeButtonSkins(mode){
   applyMenuButtonSkin(onlineBtn, "online", mode === "online");
 }
 
+// Список карт не доехал.
+//
+// Отдельный флаг, а не проверка MAPS.length на месте: список едет по сети, и до его
+// прибытия он пуст совершенно законно — кнопка Play в эти секунды гаснуть не должна.
+// Флаг ставится один раз, когда попытка уже провалилась.
+let mapsUnavailable = false;
+
+// Сказать игроку, что карт нет, и погасить кнопку, которая всё равно ничего не сделает.
+//
+// Раньше здесь стоял alert, причём в двух местах сразу: один срабатывал при загрузке
+// страницы, второй — на каждое нажатие Play, и оба были написаны для разработчика
+// («проверьте manifest.json и JSON-файлы карт») и по-русски, хотя весь интерфейс
+// английский. Игроку это не говорит ни что случилось, ни что делать.
+//
+// Панель вместо модального окна нужна ещё и потому, что игру открывают внутри рамки на
+// чужой странице и как мини-приложение телеграма: там alert могут не показать вовсе.
+function showMapsUnavailableNotice(reason){
+  if(mapsUnavailable) return;
+  mapsUnavailable = true;
+  console.error('[maps] карты не загружены, партию начать нечем', {
+    reason,
+    manifestPath: mapDataBridge.MAPS_MANIFEST_PATH || null,
+  });
+  if(mapsErrorNotice instanceof HTMLElement) mapsErrorNotice.hidden = false;
+  syncPlayButtonSkin(false);
+}
+
 function syncPlayButtonSkin(isReady){
   if(!(playBtn instanceof HTMLElement)) return;
   let ready = !!isReady;
+  // Без карт начинать нечего. Решение живёт здесь по той же причине, что и онлайновое
+  // ниже: вызывающих несколько, и любой забытый снова показал бы живую кнопку, которая
+  // не делает ничего.
+  if(ready && mapsUnavailable) ready = false;
   // В онлайне «Play» — это «я готов», а не «поехали», и доступна она, только пока за
   // столом двое и мы ещё не ответили. Решение живёт здесь, а не в вызывающих: их
   // несколько, и любой забытый снова открыл бы возможность начать партию в одиночку.
@@ -7504,6 +7535,14 @@ const onlineLobbyCloseBtn = document.getElementById("onlineLobbyClose");
 const onlineLobbyCodeEl = document.getElementById("onlineLobbyCode");
 const onlineLobbyJoinInput = document.getElementById("onlineLobbyJoinCode");
 const onlineLobbyJoinBtn = document.getElementById("onlineLobbyJoin");
+const mapsErrorNotice = document.getElementById("mapsErrorNotice");
+const mapsErrorNoticeReloadBtn = document.getElementById("mapsErrorNoticeReload");
+if(mapsErrorNoticeReloadBtn instanceof HTMLElement){
+  // Перезагрузка — это и есть починка: сеть моргнула, а файлы лежат на месте.
+  mapsErrorNoticeReloadBtn.addEventListener("click", () => {
+    window.location.reload();
+  });
+}
 const leftModePlane = document.getElementById("mm_plane_left_mode");
 const rightModePlane = document.getElementById("mm_plane_right_mode");
 const leftRulesPlane = document.getElementById("mm_plane_left_rules");
@@ -20427,8 +20466,9 @@ async function handlePlayStart(){
 
   await ensureMapsDataReady();
   if(!MAPS.length){
-    console.error('[maps] match start aborted: no maps loaded', { manifestPath: mapDataBridge.MAPS_MANIFEST_PATH || null });
-    alert('Не удалось загрузить карты из папки ui_gamescreen/maps. Проверьте manifest.json и JSON-файлы карт.');
+    // Сюда обычно уже не попадают: панель показана при загрузке, и кнопка Play погашена.
+    // Проверка остаётся на случай, когда список успел приехать пустым позже.
+    showMapsUnavailableNotice('match-start');
     return false;
   }
 
@@ -53045,11 +53085,8 @@ if (window.visualViewport) {
       return;
     }
 
-    console.error('[maps] bootstrap aborted: no maps loaded', {
-      manifestPath: mapDataBridge.MAPS_MANIFEST_PATH || null
-    });
     setMenuVisibility(true);
-    alert('Не удалось загрузить карты. Игра останется в меню без запуска раунда.');
+    showMapsUnavailableNotice('bootstrap');
   }
 
 // Место за столом занимается ЗДЕСЬ, в самом конце файла, а не там, где читаются
