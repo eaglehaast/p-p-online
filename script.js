@@ -11438,9 +11438,17 @@ function drawCargoShadow(ctx2d, cargo, now = performance.now()) {
   // Тень лежит ПОД ящиком, то есть по экранной вертикали. В горизонтали экранная
   // вертикаль — это ось X мира, поэтому и смещение, и сам сплюснутый эллипс
   // разворачиваются на -90°: иначе тень уезжает вбок от ящика.
+  //
+  // А при своём крае снизу мир на экране идёт в обратную сторону, и то же смещение
+  // уводит тень НАД ящик. Знак идёт вместе с доской.
+  //
+  // Считается смещение от ЦЕНТРА ящика: вокруг центра доворачивается сам ящик
+  // (drawWorldSpriteUpright), и это единственная точка, которая не уезжает ни от какого
+  // поворота. Числа при этом прежние: 0.5 + 0.4 = 0.9 — как и было.
   const landscape = isBoardLandscapeActive();
-  const centerX = cargo.x + width * (landscape ? 0.9 : 0.5);
-  const centerY = cargo.y + height * (landscape ? 0.5 : 0.9);
+  const shadowSign = isBoardFlipped() ? -1 : 1;
+  const centerX = cargo.x + width * 0.5 + (landscape ? width * 0.4 * shadowSign : 0);
+  const centerY = cargo.y + height * 0.5 + (landscape ? 0 : height * 0.4 * shadowSign);
 
   ctx2d.save();
   ctx2d.fillStyle = `rgba(${CARGO_SHADOW_COLOR}, ${Math.max(0, Math.min(1, shadow.alpha))})`;
@@ -49202,7 +49210,12 @@ function drawPlanesAndTrajectories(){
       //
       // Теперь смещение поворачивается вместе с блоком, и в обеих ориентациях подпись
       // стоит сбоку от самолёта одинаково.
-      const away = POINT_RADIUS + 8;
+      //
+      // При своём крае снизу к развороту блока добавляется ещё 180° (см. overlayTurn в
+      // drawAimOverlay), а смещение оставалось прежним — и подпись ложилась прямо на
+      // самолёт, ровно как это было в горизонтали. Знак идёт вместе с разворотом.
+      const awaySign = isBoardFlipped() ? -1 : 1;
+      const away = (POINT_RADIUS + 8) * awaySign;
       const landscape = isBoardLandscapeActive();
       rangeTextInfo = {
         color: colorFor(p.color),
@@ -49352,15 +49365,25 @@ function drawBaseSprite(ctx2d, color){
   // оказывается у ПРАВОГО края — то есть отвёрнутой от поля. Отражаем её по
   // экранной горизонтали. Экранная горизонталь — это ось Y мира (мир +y идёт на
   // экране влево), поэтому зеркало по экрану — это scale(1, -1) в координатах холста.
-  const mirrorToField = color === "blue" && isBoardLandscapeActive();
-  if(!mirrorToField){
+  //
+  // Переворот доски — другое дело: на боку корзинка читается, а вверх дном нет. Поэтому
+  // ровно на 180° её доворачивают назад. Это не спорит с решением выше: там корзинка едет
+  // вместе с полем, чтобы поместиться в клетку, а поворот на 180° габаритов не меняет.
+  //
+  // И отражают в горизонтали не всегда синюю: при своём крае снизу корзинки меняются
+  // краями экрана, и отвёрнутой от поля оказывается уже зелёная.
+  const mirrorToField = isBoardLandscapeActive()
+    && color === (isBoardFlipped() ? "green" : "blue");
+  const uprightTurn = isBoardFlipped() ? Math.PI : 0;
+  if(!mirrorToField && uprightTurn === 0){
     ctx2d.drawImage(sprite, layout.x, layout.y, layout.width, layout.height);
     return true;
   }
 
   ctx2d.save();
   ctx2d.translate(layout.x + layout.width / 2, layout.y + layout.height / 2);
-  ctx2d.scale(1, -1);
+  if(uprightTurn !== 0) ctx2d.rotate(uprightTurn);
+  if(mirrorToField) ctx2d.scale(1, -1);
   ctx2d.drawImage(sprite, -layout.width / 2, -layout.height / 2, layout.width, layout.height);
   ctx2d.restore();
   return true;
