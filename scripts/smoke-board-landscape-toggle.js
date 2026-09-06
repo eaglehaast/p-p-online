@@ -902,11 +902,15 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     '15k: подпись табло различает ориентации');
 }
 
-// === 16. Значок счётчика в горизонтали — полевой спрайт, а тень рисуется отдельно ===
+// === 16. Значок счётчика — полевой спрайт, а тень рисуется отдельно ===
 //
 // У иконок счётчика тень запечена в картинку, поэтому она едет вместе с кадром: развернуть
 // её отдельно от самолёта нельзя никаким преобразованием. Полевые спрайты нарисованы БЕЗ
-// тени — в горизонтали берём их, а тень кладём сами, туда же, куда она падает в портрете.
+// тени — берём их, а тень кладём сами, туда же, куда она падала у прежней иконки.
+//
+// Здесь проверяется горизонталь и сама таблица углов. Что значок смотрит вдоль полёта своей
+// стороны и в сторону поля во всех четырёх сочетаниях ориентации и края — это
+// smoke-plane-counter-icon-direction.
 {
   const counter = extractFunctionSource(source, 'drawPlaneCounterIcon');
   const picker = extractFunctionSource(source, 'getCounterPlaneFieldSprite');
@@ -915,12 +919,13 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
   // Берём именно полевые спрайты, и оба цвета — иначе стороны выглядели бы по-разному.
   assert(/color === "blue" \? bluePlaneImg : color === "green" \? greenPlaneImg : null/.test(picker),
     '16a: значок в горизонтали берётся из полевых спрайтов, и синий, и зелёный');
-  assert(/isBoardLandscapeActive\(\) \? getCounterPlaneFieldSprite\(color\) : null/.test(counter),
-    '16b: полевой спрайт подставляется ТОЛЬКО в горизонтали — портрет остаётся на прежней иконке');
+  assert(/const fieldSprite = getCounterPlaneFieldSprite\(color\);/.test(counter),
+    '16b: полевой спрайт подставляется не всегда — значок, который нельзя повернуть, '
+    + 'не сможет поехать за своей стороной');
   assert(/} else if \(spriteReady\) \{[\s\S]{0,120}ctx2d\.drawImage\(img, -size \/ 2, -size \/ 2, size, size\);/.test(counter),
-    '16c: в портрете (и пока полевой спрайт не загружен) рисуется прежняя иконка счётчика');
+    '16c: пока полевой спрайт не загружен, рисуется прежняя иконка счётчика');
   assert(/img = blueCounterPlaneImg;/.test(counter) && /img = greenCounterPlaneImg;/.test(counter),
-    '16d: портретная иконка счётчика никуда не делась');
+    '16d: запасная иконка счётчика никуда не делась');
 
   // Разворот. Полевой спрайт нарисован носом вверх, кадр повёрнут на +90°, поэтому угол
   // поворота холста читается прямо как экранное направление носа: 0 — вправо, дальше по
@@ -983,9 +988,10 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
   const ox = Function(`return (${off[1]});`)();
   const oy = Function(`return (${off[2]});`)();
   assert(ox < 0 && oy > 0, `16n: в портрете тень падает влево-вниз (${ox}, ${oy})`);
-  // В коде: shadowFrameX = oy * D, shadowFrameY = -ox * D — это кадровые координаты.
-  assert(/const shadowFrameX = COUNTER_PLANE_SHADOW_SCREEN_OFFSET\.y \* drawSize;/.test(counter)
-    && /const shadowFrameY = -COUNTER_PLANE_SHADOW_SCREEN_OFFSET\.x \* drawSize;/.test(counter),
+  // В горизонтали кадровые координаты: shadowFrameX = oy * D, shadowFrameY = -ox * D.
+  // В портрете кадр не повёрнут, и сдвиг идёт как есть — обе ветки в одном выражении.
+  assert(/\? COUNTER_PLANE_SHADOW_SCREEN_OFFSET\.y\s*\n\s*: COUNTER_PLANE_SHADOW_SCREEN_OFFSET\.x\)/.test(counter)
+    && /\? -COUNTER_PLANE_SHADOW_SCREEN_OFFSET\.x\s*\n\s*: COUNTER_PLANE_SHADOW_SCREEN_OFFSET\.y\)/.test(counter),
     '16o: кадровый сдвиг тени собран из портретного поворотом на -90°');
   // Кадр повёрнут на +90°, поэтому кадровое (du, dv) видно на экране как (-dv, du).
   const seenX = -(-ox);
