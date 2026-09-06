@@ -19807,6 +19807,8 @@ function makePlane(x,y,color,angle){
     collisionY:null,
     prevX: x,
     prevY: y,
+    renderPrevX: x,
+    renderPrevY: y,
     homeX: x,
     homeY: y,
     flagColor:null,
@@ -21739,6 +21741,10 @@ function runLaunchReleaseStage({ plane, vx, vy, actor = "human" }){
 
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
   markPlaneLaunchedFromBase(plane);
+  // Откуда рисовать в первом кадре полёта: пока не сделан ни один шаг, рисовать надо
+  // ровно на месте, а не между текущим местом и остатком от прошлого полёта.
+  plane.renderPrevX = plane.x;
+  plane.renderPrevY = plane.y;
   flyingPoints.push({
     plane, vx, vy,
     timeLeft: FIELD_FLIGHT_DURATION_SEC,
@@ -47565,6 +47571,12 @@ function stepSimulation(deltaSec, now){
         }
         const prevX = p.x;
         const prevY = p.y;
+        // Отдельная отметка для отрисовки, снятая ДО шага. Общий p.prevX для этого не
+        // годится: он нарочно обновляется в самом конце шага (см. длинный комментарий
+        // ниже) и к моменту рисования равен текущему положению — интерполировать между
+        // ними значит не интерполировать вовсе.
+        p.renderPrevX = prevX;
+        p.renderPrevY = prevY;
 
         resolveFlightSurfaceCollision(fp, prevX, prevY, deltaSec);
 
@@ -47614,6 +47626,50 @@ function stepSimulation(deltaSec, now){
         }
       }
     }
+}
+
+// Сглаживание отрисовки между шагами симуляции.
+//
+// Шаг симуляции строго 1/60 с и таким обязан остаться: он сам появился как лекарство от
+// того, что траектория зависела от частоты кадров, и один и тот же бросок садился у двоих
+// игроков в разные точки.
+//
+// Но кадры экрана с этим шагом совпадают только на экране в 60 Гц. На 120 и 144 Гц кадров
+// больше, чем шагов, и лишние кадры показывают ровно ту же картинку. Замер, 40 кадров
+// подряд, шаг полёта 6.618 px:
+//
+//    60 Гц   0 кадров без движения
+//   120 Гц  20 кадров без движения из 40
+//   144 Гц  24 кадра без движения из 40
+//
+// То есть на 120 Гц самолёт стоит каждый второй кадр, а на 144 — почти два кадра из трёх.
+// Физика при этом идеально ровная; рывки чисто в показе, и потому видны одинаково и в
+// вертикальном, и в горизонтальном поле.
+//
+// Лечится не шагом, а отрисовкой: рисуем самолёт МЕЖДУ двумя последними просчитанными
+// положениями, по доле недосчитанного времени. Симуляция не трогается совсем — это чисто
+// то, где нарисовать спрайт.
+//
+// Рисуем именно МЕЖДУ, а не дальше последнего шага: отставание на неполный шаг (16 мс)
+// глазу незаметно, а выход вперёд означал бы догадку о ещё не просчитанном будущем — и
+// самолёт дёргался бы назад каждый раз, когда догадка не сходится.
+function getRenderInterpolationAlpha(){
+  if(!Number.isFinite(simulationStepAccumulator) || SIMULATION_STEP_SEC <= 0) return 0;
+  return Math.max(0, Math.min(1, simulationStepAccumulator / SIMULATION_STEP_SEC));
+}
+
+// Где нарисовать самолёт. Для всех, кроме летящих, это просто его место.
+function getPlaneRenderPosition(plane){
+  if(!plane) return { x: 0, y: 0 };
+  const flying = flyingPoints.some((fp) => fp.plane === plane);
+  if(!flying || !Number.isFinite(plane.renderPrevX) || !Number.isFinite(plane.renderPrevY)){
+    return { x: plane.x, y: plane.y };
+  }
+  const alpha = getRenderInterpolationAlpha();
+  return {
+    x: plane.renderPrevX + (plane.x - plane.renderPrevX) * alpha,
+    y: plane.renderPrevY + (plane.y - plane.renderPrevY) * alpha,
+  };
 }
 
 function runSimulationSteps(frameDeltaSec, now){
@@ -48602,7 +48658,11 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0, alphaMultiplier = 1
 }
 
 function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
-  const { x: cx, y: cy, color, angle } = plane;
+  // Положение для отрисовки, а не для физики: у летящего оно сглажено между двумя
+  // последними шагами симуляции. Всё, что рисуется относительно самолёта — двигатель,
+  // дым, тень, — считается отсюда же и едет вместе с ним.
+  const { x: cx, y: cy } = getPlaneRenderPosition(plane);
+  const { color, angle } = plane;
   const isGhostState = plane.burning || !plane.isAlive;
   const resolvedInvisibilityAlpha = Number.isFinite(invisibilityAlpha)
     ? invisibilityAlpha
@@ -49068,12 +49128,19 @@ function drawPlanesAndTrajectories(){
 
   const drawPlaneSegments = (ctx, plane, invisibilityAlpha = 1) => {
     ctx.save();
-    for (const seg of plane.segments) {
+    // Последний отрезок следа обрывается там же, где нарисован самолёт, а не в конце
+    // последнего просчитанного шага. Иначе след торчал бы из носа на недорисованный
+    // остаток шага — до 6.6 px, и тем заметнее, чем чаще экран обновляется.
+    const tip = getPlaneRenderPosition(plane);
+    const lastIndex = plane.segments.length - 1;
+    for (let i = 0; i < plane.segments.length; i += 1) {
+      const seg = plane.segments[i];
       ctx.beginPath();
       ctx.strokeStyle = colorWithAlpha(plane.color, PLANE_TRAIL_ALPHA * invisibilityAlpha);
       ctx.lineWidth = seg.lineWidth || PLANE_TRAIL_LINE_WIDTH;
       ctx.moveTo(seg.x1, seg.y1);
-      ctx.lineTo(seg.x2, seg.y2);
+      if(i === lastIndex) ctx.lineTo(tip.x, tip.y);
+      else ctx.lineTo(seg.x2, seg.y2);
       ctx.stroke();
     }
     ctx.restore();
@@ -50201,6 +50268,8 @@ const MATCH_STATE_SKIPPED_PLANE_FIELDS = Object.freeze({
   collisionY: "точка столкновения текущего полёта",
   prevX: "предыдущий кадр полёта",
   prevY: "предыдущий кадр полёта",
+  renderPrevX: "откуда рисовать между шагами; только показ, на партию не влияет",
+  renderPrevY: "откуда рисовать между шагами; только показ, на партию не влияет",
   activeTurnBuffs: "переносится отдельным полем buffs — только ключи, без ссылок",
 });
 
@@ -50323,6 +50392,8 @@ function applyMatchState(state){
     plane.segments = [];
     plane.prevX = plane.x;
     plane.prevY = plane.y;
+    plane.renderPrevX = plane.x;
+    plane.renderPrevY = plane.y;
     // И отметка для подбора груза: иначе восстановленный самолёт «пролетел бы» от места,
     // где стоял до применения снимка, до нового — и подобрал бы всё по дороге.
     plane.cargoSweepX = plane.x;
