@@ -4445,9 +4445,16 @@ function updateAndDrawDynamiteExplosions(ctx2d, now){
     const { boardRect, overlayRect, host } = metrics;
     // Заряд стоит на НИЖНЕЙ (по экрану) грани кирпича. В портрете это мировой низ,
     // в горизонтали — мировой правый край, потому что мир +x идёт на экране вниз.
+    //
+    // А при своём крае снизу доска развёрнута на 180°, и нижней на экране становится
+    // противоположная грань кирпича. Своих полей под неё нет, но кирпич симметричен
+    // относительно центра: дальняя грань, отражённая через центр, и есть ближняя.
     const landscape = isBoardLandscapeActive();
-    const anchorX = landscape && Number.isFinite(entry.rightX) ? entry.rightX : entry.x;
-    const anchorY = landscape && Number.isFinite(entry.rightX) ? entry.y : entry.bottomY;
+    const mirrorEdge = (edge, center) => (isBoardFlipped() ? 2 * center - edge : edge);
+    const edgeX = Number.isFinite(entry.rightX) ? mirrorEdge(entry.rightX, entry.x) : entry.x;
+    const edgeY = Number.isFinite(entry.bottomY) ? mirrorEdge(entry.bottomY, entry.y) : entry.y;
+    const anchorX = landscape && Number.isFinite(entry.rightX) ? edgeX : entry.x;
+    const anchorY = landscape && Number.isFinite(entry.rightX) ? entry.y : edgeY;
     const { overlayX, overlayY } = worldToOverlayLocal(anchorX, anchorY, { boardRect, overlayRect });
     const drawX = overlayX - frameW / 2;
     const drawY = overlayY - frameH;
@@ -6421,6 +6428,15 @@ function clientToBoard(event) {
   };
 }
 
+// Мировая точка -> точка на экране. Обратное к designToBoardCoords, и переворот доски
+// обязан учитываться здесь по той же причине, по какой он учитывается там.
+//
+// Через эту функцию встают накладки, которые рисует не холст, а DOM: падающий груз, огонь
+// над сбитым, взрывы, заряд динамита на стене. Холст поля разворачивается в
+// setFieldTransform, а DOM о развороте не знал ничего — и накладка вставала в
+// противоположный угол. Замер при своём крае снизу: груз с мировой точкой (39, 336) холст
+// рисует на экране в (371, 384), а накладка вставала в (89, 416). Груз падал по анимации в
+// один угол, а приземлялся в другой.
 function worldToOverlayLocal(x, y, options = {}) {
   const { overlayRect: providedOverlayRect = null, boardRect: providedBoardRect = null } = options || {};
   const boardRect = providedBoardRect ? normalizeRect(providedBoardRect) : getBoardCssRect();
@@ -6430,8 +6446,9 @@ function worldToOverlayLocal(x, y, options = {}) {
   const boardHeight = boardRect.height || CANVAS_BASE_HEIGHT;
   const boardLeft = boardRect.left;
   const boardTop = boardRect.top;
-  const safeX = Number.isFinite(x) ? x : 0;
-  const safeY = Number.isFinite(y) ? y : 0;
+  const rawX = Number.isFinite(x) ? x : 0;
+  const rawY = Number.isFinite(y) ? y : 0;
+  const { x: safeX, y: safeY } = flipBoardPointIfNeeded(rawX, rawY);
   const nx = safeX / WORLD.width;
   const ny = safeY / WORLD.height;
   const clientX = boardLeft + nx * boardWidth;
@@ -6443,6 +6460,9 @@ function worldToOverlayLocal(x, y, options = {}) {
   return { clientX, clientY, overlayX, overlayY, nx, ny, boardRect, overlayRect };
 }
 
+// Второй перевод мира на экран, с пересчётом в собственные единицы накладки. Вызовов у него
+// сейчас нет ни одного, но переворот тут такой же: неперевёрнутая копия рядом с
+// перевёрнутой — это готовые грабли для того, кто ею однажды воспользуется.
 function worldToOverlay(x, y, options = {}) {
   const { overlay = null, boardRect: providedBoardRect = null, overlayRect: providedOverlayRect = null } = options || {};
   const boardRect = providedBoardRect || getBoardCssRect();
@@ -6450,8 +6470,9 @@ function worldToOverlay(x, y, options = {}) {
   const boardHeight = Number.isFinite(boardRect.height) && boardRect.height !== 0 ? boardRect.height : CANVAS_BASE_HEIGHT;
   const boardLeft = Number.isFinite(boardRect.left) ? boardRect.left : getFieldLeftCssValue();
   const boardTop = Number.isFinite(boardRect.top) ? boardRect.top : getFieldTopCssValue();
-  const safeX = Number.isFinite(x) ? x : 0;
-  const safeY = Number.isFinite(y) ? y : 0;
+  const rawX = Number.isFinite(x) ? x : 0;
+  const rawY = Number.isFinite(y) ? y : 0;
+  const { x: safeX, y: safeY } = flipBoardPointIfNeeded(rawX, rawY);
   const nx = safeX / WORLD.width;
   const ny = safeY / WORLD.height;
   const clientX = boardLeft + nx * boardWidth;
@@ -10582,12 +10603,31 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     cargo.domEntry.img.src = activeFrame.src;
   }
 
-  const offsetPoint = worldToOverlayLocal(
-    cargo.x + CARGO_ANIM_OFFSET_X,
-    cargo.y + CARGO_ANIM_OFFSET_Y,
+  const { scaleX, scaleY } = getCargoOverlayScale(metrics);
+  const crateSize = getCargoSpriteDrawSize();
+
+  // Кадр анимации намного больше ящика: сверху остаётся место под парашют, а сам ящик
+  // стоит внутри кадра со смещением (-CARGO_ANIM_OFFSET_X, -CARGO_ANIM_OFFSET_Y).
+  //
+  // Раньше кадр ставился по своему левому верхнему углу, и смещение до него шло в МИРОВЫХ
+  // единицах. При перевёрнутой доске мир на экране идёт в обратную сторону, и это смещение
+  // переворачивалось вместе с точкой — кадр уезжал от ящика на два смещения.
+  //
+  // Теперь считается наоборот: сначала на экран переводится ЦЕНТР ящика, а смещение внутри
+  // кадра вычитается уже в экранных единицах. Центр выбран не случайно — это та самая
+  // точка, вокруг которой доворачивается приземлившийся ящик и вокруг которой поворачивается
+  // сам кадр, и единственная, которая не уезжает ни от какого поворота.
+  const crateCenter = worldToOverlayLocal(
+    cargo.x + crateSize.width / 2,
+    cargo.y + crateSize.height / 2,
     metrics
   );
-  const { scaleX, scaleY } = getCargoOverlayScale(metrics);
+  const crateInFrameX = (-CARGO_ANIM_OFFSET_X + crateSize.width / 2) * scaleX;
+  const crateInFrameY = (-CARGO_ANIM_OFFSET_Y + crateSize.height / 2) * scaleY;
+  const offsetPoint = {
+    overlayX: crateCenter.overlayX - crateInFrameX,
+    overlayY: crateCenter.overlayY - crateInFrameY,
+  };
   const naturalWidth = activeFrame?.naturalWidth || activeFrame?.width || 0;
   const naturalHeight = activeFrame?.naturalHeight || activeFrame?.height || 0;
   const width = Math.max(1, Math.round(Math.max(1, naturalWidth) * scaleX));
@@ -10605,12 +10645,13 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
   // намного больше ящика (сверху парашют), и поворот вокруг центра кадра увёл бы точку
   // приземления: анимация садилась бы в одном месте, а готовый ящик появлялся в другом.
   // Ящик внутри кадра стоит со смещением (-CARGO_ANIM_OFFSET_X, -CARGO_ANIM_OFFSET_Y).
+  //
+  // Переворота доски здесь нет нарочно: кадр рисует не холст, а DOM, и он не
+  // переворачивается вместе с полем. Приземлившийся ящик при этом доворачивается назад
+  // (drawWorldSpriteUpright), так что оба стоят стоймя и совпадают.
   const cargoDomStyle = cargo.domEntry.element.style;
   if(isBoardLandscapeActive()){
-    const crateSize = getCargoSpriteDrawSize();
-    const originX = (-CARGO_ANIM_OFFSET_X + crateSize.width / 2) * scaleX;
-    const originY = (-CARGO_ANIM_OFFSET_Y + crateSize.height / 2) * scaleY;
-    cargoDomStyle.transformOrigin = `${originX}px ${originY}px`;
+    cargoDomStyle.transformOrigin = `${crateInFrameX}px ${crateInFrameY}px`;
     cargoDomStyle.transform = 'rotate(-90deg)';
   } else {
     cargoDomStyle.transformOrigin = '';
@@ -11399,15 +11440,25 @@ function getCargoShadowState(cargo, now = performance.now()) {
 // координатах (ящики груза, базы, флаги), ложится на бок. Рисуем такие спрайты со
 // встречным поворотом вокруг их собственного центра — на экране они стоят ровно, а
 // позиция в мире не меняется.
+// Спрайты, которые обязаны читаться СТОЙМЯ: ящик, гнездо, кукуруза. Холст поля бывает
+// повёрнут — в горизонтали вместе с кадром, а при своём крае снизу ещё и на 180°, — и
+// такой спрайт лёг бы на бок или встал вверх ногами. Поэтому здесь он доворачивается
+// назад ровно на столько, на сколько повёрнуто поле.
+//
+// Доворот идёт вокруг ЦЕНТРА спрайта: центр — единственная точка, которая от поворота не
+// уезжает. Отсюда и правило для всех, кто должен совпасть с таким спрайтом: сходиться надо
+// по центру, а не по углу.
 function drawWorldSpriteUpright(ctx2d, sprite, x, y, width, height){
   if(!ctx2d || !sprite) return;
-  if(!isBoardLandscapeActive()){
+  const turn = (isBoardLandscapeActive() ? -Math.PI / 2 : 0)
+    + (isBoardFlipped() ? Math.PI : 0);
+  if(turn === 0){
     ctx2d.drawImage(sprite, x, y, width, height);
     return;
   }
   ctx2d.save();
   ctx2d.translate(x + width / 2, y + height / 2);
-  ctx2d.rotate(-Math.PI / 2);
+  ctx2d.rotate(turn);
   ctx2d.drawImage(sprite, -width / 2, -height / 2, width, height);
   ctx2d.restore();
 }

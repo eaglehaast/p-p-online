@@ -38,9 +38,13 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 const markup = fs.readFileSync('index.html', 'utf8');
 
 // Стенд: кадр 460x800, масштаб 1, в горизонтали габаритная коробка 800x460.
-const buildContext = ({ landscape, scale = 1, frameLeft = 0, frameTop = 0 } = {}) => {
+const buildContext = ({ landscape, flipped = false, scale = 1, frameLeft = 0, frameTop = 0 } = {}) => {
   const context = {
     Math, Number,
+    // Выбор своего края поля — отдельная от горизонтали ось, и здесь она нарочно выключена:
+    // этот набор проверяет ровно поворот в горизонталь. Переворот проверяет
+    // smoke-flip-dom-overlays.
+    isBoardFlipped: () => flipped,
     FRAME_BASE_WIDTH: 460,
     FRAME_BASE_HEIGHT: 800,
     uiFrameEl: { getBoundingClientRect: () => ({ left: frameLeft, top: frameTop }) },
@@ -186,7 +190,8 @@ assert(/element\.style\.transform = withLandscapeUprightTransform\('translate\(-
   '7f: взрыв разворачивается и при обновлении масштаба, а не только при создании');
 // Падающий груз обязан крутиться вокруг точки приземления ящика, иначе анимация
 // садится в одном месте, а готовый ящик появляется в другом.
-assert(/originX = \(-CARGO_ANIM_OFFSET_X \+ crateSize\.width \/ 2\) \* scaleX/.test(source),
+assert(/crateInFrameX = \(-CARGO_ANIM_OFFSET_X \+ crateSize\.width \/ 2\) \* scaleX/.test(source)
+  && /cargoDomStyle\.transformOrigin = `\$\{crateInFrameX\}px \$\{crateInFrameY\}px`/.test(source),
   '7g: анимация груза разворачивается вокруг точки приземления ящика');
 
 // Огонь над сбитым самолётом. Взрыв и груз переписывают свой transform на каждом
@@ -300,8 +305,11 @@ assert(/transformOrigin = landscape \? `\$\{frameW \/ 2\}px \$\{frameH\}px` : 't
   '7l: кадр динамита разворачивается вокруг своей нижней середины');
 assert(/translate\(\$\{drawX\}px, \$\{drawY\}px\) rotate\(-90deg\)/.test(dynBody),
   '7m: в горизонтали кадр динамита разворачивается');
-assert(/const anchorX = landscape && Number\.isFinite\(entry\.rightX\) \? entry\.rightX : entry\.x/.test(dynBody),
-  '7n: в горизонтали заряд приставляется к правому краю кирпича');
+// Край берётся через edgeX/edgeY: при своём крае снизу доска развёрнута, и ближней
+// на экране становится противоположная грань кирпича (см. smoke-flip-dom-overlays).
+// Без переворота edgeX — это ровно entry.rightX, то есть здесь ничего не изменилось.
+assert(/const anchorX = landscape && Number\.isFinite\(entry\.rightX\) \? edgeX : entry\.x/.test(dynBody),
+  '7n: в горизонтали заряд приставляется к боковому краю кирпича');
 assert((source.match(/rightX: targetBrick\.cx \+ targetBrick\.halfWidth/g) || []).length === 2,
   '7o: правый край кирпича пишется в запись заряда в ОБЕИХ точках создания (игрок и ИИ)');
 
