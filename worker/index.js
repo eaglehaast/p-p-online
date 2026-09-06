@@ -11,6 +11,8 @@
 import {
   RELAY_PROTOCOL_VERSION,
   RELAY_KEPT_TYPES,
+  RELAY_ERRORS,
+  isMessageTooLarge,
   createRoom,
   joinRoom,
   routeEnvelope,
@@ -115,6 +117,17 @@ export class Room {
 
   async webSocketMessage(socket, message){
     if(typeof message !== "string") return;
+
+    // Слишком большой пакет закрывает соединение, а не отбрасывается молча.
+    //
+    // Молча — хуже всего, что здесь можно сделать: снимок партии не доехал бы, доска у
+    // соперника осталась бы прежней, и оба продолжали бы играть в разные партии, ничего
+    // не заметив. Обрыв соперник видит, и клиент на него умеет переподключаться.
+    if(isMessageTooLarge(message)){
+      try { socket.close(4009, RELAY_ERRORS.TOO_LARGE); } catch(_error){ /* уже закрыт */ }
+      return;
+    }
+
     let envelope = null;
     try { envelope = JSON.parse(message); } catch(_error){ return; }
 
@@ -122,7 +135,14 @@ export class Room {
     const routed = routeEnvelope(this.room, seat, envelope);
     if(routed.kept){
       // В хранилище, а не в поле объекта: пережить сон должно и это.
-      await this.state.storage.put(envelope.t, envelope);
+      //
+      // Отказ хранилища не должен уносить с собой пересылку: соперник ждёт этот пакет
+      // сейчас, а придержанная копия нужна только тому, кто вернётся после обрыва.
+      try {
+        await this.state.storage.put(envelope.t, envelope);
+      } catch(error){
+        console.warn("[room] не удалось придержать пакет", { type: envelope?.t, error });
+      }
     }
     if(!routed.connection) return;
     try { routed.connection.send(message); } catch(_error){ /* соперник отвалился */ }

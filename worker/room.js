@@ -26,7 +26,38 @@ export const RELAY_KEPT_TYPES = Object.freeze(["settings", "state"]);
 export const RELAY_ERRORS = Object.freeze({
   BAD_SEAT: "bad_seat",
   BAD_VERSION: "bad_version",
+  TOO_LARGE: "message_too_large",
 });
+
+// Предел на размер пакета.
+//
+// Придержанные типы (settings и state) уходят в хранилище Durable Object, а там предел
+// 128 КиБ на значение. Без проверки слишком большой снимок ронял бы put ВНУТРИ await, и
+// ловить его было некому: пакет не уехал бы сопернику, а комната молча осталась бы с
+// прежним снимком.
+//
+// Число взято от настоящего снимка, а не на глаз. Замер в живой партии:
+//
+//   в начале партии          3434 байта
+//   после десяти ходов       3447 байт
+//   нарочно раздутый до
+//   пределов правил          7997 байт
+//
+// 64 КиБ — это восьмикратный запас к худшему разумному случаю и вдвое меньше предела
+// хранилища. Расти снимку есть куда, а мусору — уже нет.
+export const RELAY_MAX_MESSAGE_BYTES = 64 * 1024;
+
+// Длина в БАЙТАХ, а не в символах: кириллица в названии карты занимает по два байта,
+// эмодзи по четыре, и предел, посчитанный по символам, врал бы в большую сторону.
+export function measureMessageBytes(message){
+  if(typeof message !== "string") return 0;
+  if(typeof TextEncoder === "function") return new TextEncoder().encode(message).length;
+  return Buffer.byteLength(message, "utf8");
+}
+
+export function isMessageTooLarge(message){
+  return measureMessageBytes(message) > RELAY_MAX_MESSAGE_BYTES;
+}
 
 export function createRoom(){
   return {

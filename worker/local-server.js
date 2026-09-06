@@ -23,6 +23,8 @@ import {
   createRoom,
   joinRoom,
   routeEnvelope,
+  RELAY_ERRORS,
+  isMessageTooLarge,
   leaveRoom,
   parseJoinRequest,
   buildPresenceEnvelope,
@@ -198,6 +200,13 @@ server.on("upgrade", (request, socket) => {
   broadcastPresence(room);
 
   connection.on("message", (text) => {
+    // Тот же предел, что в облаке: иначе на своей машине всё работало бы, а на сервере
+    // рвалось — и ровно на том пакете, который не воспроизвести.
+    if(isMessageTooLarge(String(text))){
+      console.log(`  пакет больше предела: комната ${roomName}, место ${seat}`);
+      connection.close(4009, RELAY_ERRORS.TOO_LARGE);
+      return;
+    }
     let envelope = null;
     try { envelope = JSON.parse(text); } catch(_error){ return; }
     const routed = routeEnvelope(room, seat, envelope);
