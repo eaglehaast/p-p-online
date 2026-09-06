@@ -280,8 +280,12 @@ assert(/ctx2d\.drawImage\(sprite, layout\.x, layout\.y, layout\.width, layout\.h
 // Обе корзинки нарисованы «смотрящими» в одну сторону, поэтому в горизонтали синяя
 // (у правого края) оказывается отвёрнутой от поля — её отражаем. Экранная горизонталь
 // это ось Y мира, поэтому зеркало по экрану — scale(1, -1) в координатах холста.
-assert(/color === "blue" && isBoardLandscapeActive\(\)/.test(baseBody),
-  '7j: отражается ровно синяя корзинка и ровно в горизонтали');
+// При своём крае снизу корзинки меняются краями экрана, и отвёрнутой оказывается уже
+// зелёная — за это отвечает smoke-flip-field-decorations. Здесь важно, что отражение
+// живёт ровно в горизонтали и достаётся ровно одной корзинке.
+assert(/isBoardLandscapeActive\(\)\s*\n\s*&& color === \(isBoardFlipped\(\) \? "green" : "blue"\)/
+  .test(baseBody),
+  '7j: отражается ровно одна корзинка и ровно в горизонтали');
 assert(/ctx2d\.scale\(1, -1\)/.test(baseBody),
   '7k: зеркало по экранной горизонтали — это scale(1, -1) на повёрнутом холсте');
 
@@ -289,8 +293,11 @@ assert(/ctx2d\.scale\(1, -1\)/.test(baseBody),
 // и сплюснутый эллипс разворачиваются, иначе тень уезжает вбок от ящика.
 const shadowFn = source.slice(source.indexOf('function drawCargoShadow('));
 const shadowBody = shadowFn.slice(0, shadowFn.indexOf('\n}'));
-assert(/width \* \(landscape \? 0\.9 : 0\.5\)/.test(shadowBody)
-  && /height \* \(landscape \? 0\.5 : 0\.9\)/.test(shadowBody),
+// Смещение считается от центра ящика и складывается из 0.5 + 0.4: это те же 0.9, что и
+// были. Знак shadowSign — это «свой край снизу», его проверяет smoke-flip-field-decorations,
+// и там же численно проверено, что на обычном крае числа не изменились.
+assert(/width \* 0\.5 \+ \(landscape \? width \* 0\.4 \* shadowSign : 0\)/.test(shadowBody)
+  && /height \* 0\.5 \+ \(landscape \? 0 : height \* 0\.4 \* shadowSign\)/.test(shadowBody),
   '7g: смещение тени разворачивается вместе с кадром');
 assert(/landscape \? -Math\.PI \/ 2 : 0/.test(shadowBody),
   '7h: сам эллипс тени тоже разворачивается, иначе он вытянут поперёк');

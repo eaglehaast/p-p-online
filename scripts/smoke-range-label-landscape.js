@@ -74,7 +74,10 @@ let turns;
 {
   const draw = extractFn('drawPlanesAndTrajectories');
 
-  const away = /const away = POINT_RADIUS \+ (\d+);/.exec(draw);
+  // Множитель awaySign — это «свой край снизу»: там блок разворачивают ещё на 180°, и
+  // смещение обязано развернуться вместе с ним. Проверяет это smoke-flip-field-decorations;
+  // здесь важна только горизонталь, поэтому знак берётся за скобки и на разбор не влияет.
+  const away = /const away = \(POINT_RADIUS \+ (\d+)\) \* awaySign;/.exec(draw);
   assert(away, '2: расстояние от самолёта до якоря не вынесено в отдельное имя');
 
   // Читаем оба смещения как вектор, в единицах away.
@@ -124,12 +127,13 @@ let turns;
 // Без этого можно поправить одну ветку и забыть вторую — ровно так эта ошибка и возникла.
 {
   const draw = extractFn('drawPlanesAndTrajectories');
-  const anchor = /const away = POINT_RADIUS[\s\S]*?planeColor: p\.color\n      \};/.exec(draw);
+  const anchor = /const away = \(POINT_RADIUS[\s\S]*?planeColor: p\.color\n      \};/.exec(draw);
   assert(anchor, '3: расчёт якоря не найден целиком');
-  assert((anchor[0].match(/away/g) || []).length === 3,
+  // Ровно «away», без awaySign: тот отвечает за сторону, а не за расстояние.
+  assert((anchor[0].match(/\baway\b/g) || []).length === 3,
     '3b: имя away встречается в расчёте якоря не три раза (объявление и два смещения) — '
     + 'значит одна из ориентаций считает отступ по-своему');
-  assert(!/POINT_RADIUS \+ 8/.test(anchor[0].replace(/const away = POINT_RADIUS \+ \d+;/, '')),
+  assert(!/POINT_RADIUS \+ 8/.test(anchor[0].replace(/const away = \(POINT_RADIUS \+ \d+\) \* awaySign;/, '')),
     '3c: отступ снова посчитан на месте, мимо общего имени');
 }
 
