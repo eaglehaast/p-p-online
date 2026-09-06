@@ -8291,10 +8291,61 @@ let onlinePresence = null;
 // «да» в реванше.
 let onlineReady = { mine: false, theirs: false };
 
+// Куда игре разрешено подключаться, помимо своего ретранслятора. Пусто — значит только
+// свой; сюда вписывают запасной или тестовый, когда он появится.
+const ONLINE_RELAY_ALLOWED_HOSTS = Object.freeze([]);
+
+// Страницу открыли на своей машине?
+//
+// Это единственный случай, когда произвольный адрес в ссылке безопасен: подсунуть её там
+// некому, зато разработчику она нужна — страница на одном порту, wrangler dev на другом,
+// и «auto» такую пару не сводит.
+function isLocalPageOrigin(location){
+  if(location?.protocol === "file:") return true;
+  const host = (location?.hostname || "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]"
+    || host.endsWith(".localhost");
+}
+
+function getRelayHost(address){
+  try {
+    return new URL(address).host.toLowerCase();
+  } catch(_error){
+    return "";
+  }
+}
+
+// Можно ли подключаться по этому адресу.
+//
+// Раньше ?relay=wss://... из адреса страницы принимался как есть, и это была дыра в
+// ссылке: через ретранслятор едут настройки создателя комнаты и полные снимки партии, то
+// есть присланная кем-то ссылка «сыграем?» уводила чужую партию на чужой сервер, и с виду
+// всё работало.
+function isRelayAddressAllowed(address, location){
+  if(!address) return false;
+  if(address === ONLINE_RELAY_URL) return true;
+
+  const host = getRelayHost(address);
+  if(!host) return false;
+  // Тот же самый ретранслятор, записанный иначе (со слэшем на конце, другим регистром).
+  if(ONLINE_RELAY_URL && host === getRelayHost(ONLINE_RELAY_URL)) return true;
+  if(ONLINE_RELAY_ALLOWED_HOSTS.includes(host)) return true;
+
+  return isLocalPageOrigin(location);
+}
+
 function getConfiguredRelayUrl(){
   const params = new URLSearchParams(window.location?.search || "");
   const fromLink = (params.get("relay") || "").trim();
-  if(fromLink) return resolveOnlineRelayAddress(fromLink, window.location);
+  if(!fromLink) return ONLINE_RELAY_URL;
+
+  // «auto» увести никуда не может: это ровно тот адрес, откуда открыта сама страница.
+  if(fromLink === "auto") return resolveOnlineRelayAddress(fromLink, window.location);
+
+  const resolved = resolveOnlineRelayAddress(fromLink, window.location);
+  if(isRelayAddressAllowed(resolved, window.location)) return resolved;
+
+  console.warn("[online] адрес ретранслятора из ссылки отклонён", { relay: fromLink });
   return ONLINE_RELAY_URL;
 }
 
@@ -8323,8 +8374,17 @@ function buildOnlineInviteLink(){
   // Адрес ретранслятора передаём тем же способом, каким получили сами: «auto» останется
   // «auto» и у друга выведется из его собственной ссылки — а это единственное, что
   // сработает и по локальной сети, и через туннель.
-  const relayInLink = new URLSearchParams(location?.search || "").get("relay");
-  if(relayInLink) params.set("relay", relayInLink);
+  //
+  // Но передаём только то, что приняли сами. Иначе отклонённый адрес поехал бы дальше по
+  // цепочке приглашений, у каждого молча отвергался и у каждого выглядел бы как «друг
+  // открыл ссылку, и ничего не происходит».
+  const relayInLink = (new URLSearchParams(location?.search || "").get("relay") || "").trim();
+  if(relayInLink === "auto"){
+    params.set("relay", "auto");
+  } else if(relayInLink
+    && isRelayAddressAllowed(resolveOnlineRelayAddress(relayInLink, location), location)){
+    params.set("relay", relayInLink);
+  }
   return `${location.origin}${location.pathname}?${params.toString()}`;
 }
 
