@@ -111,7 +111,10 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
 
   vm.runInContext([
     source.match(/const COLOR_CONTROLLERS = Object\.freeze\(\{[^}]*\}\);/)[0],
-    source.match(/const AI_PLAYER_COLOR = "[^"]*";/)[0],
+    'let boardViewSeat = "green";',
+    extractFunctionSource(source, 'getBoardViewSeat'),
+    extractFunctionSource(source, 'getOpposingSeat'),
+    extractFunctionSource(source, 'getAiPlayerColor'),
     source.match(/const ONLINE_SEAT_COLORS = Object\.freeze\(\[[^\]]*\]\);/)[0],
     source.match(/const ONLINE_ROOM_FALLBACK = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_MAX_LENGTH = \d+;/)[0],

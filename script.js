@@ -195,6 +195,103 @@ function setScreenMode(mode) {
 }
 
 const WORLD = { width: 360, height: 640 };
+
+// С какого края поля смотрит хозяин этого устройства.
+//
+// В МОДЕЛИ зелёный всегда внизу, синий всегда наверху — это не меняется никогда. Меняется
+// только вид: «синий край снизу» разворачивает поле на 180°, и тогда игрок видит свои
+// самолёты у себя под рукой, носом к сопернику.
+//
+// Именно вид, а не расстановка. Если бы мы меняли местами стартовые позиции, то в онлайне
+// у двух телефонов оказались бы РАЗНЫЕ партии, а не разные виды на одну, и разъехались бы
+// они молча. Поэтому переворот живёт в преобразовании холста и во вводе, а правила игры,
+// карты, ИИ и снимок партии о нём вообще не знают.
+const BOARD_VIEW_SEAT_STORAGE_KEY = "settings.boardViewSeat";
+let boardViewSeat = "green";
+
+function getBoardViewSeat(){
+  return boardViewSeat === "blue" ? "blue" : "green";
+}
+
+// Выбор стороны переживает перезагрузку: игрок выбрал сторону один раз, а не на партию.
+function setBoardViewSeat(seat, { persist = true } = {}){
+  const next = seat === "blue" ? "blue" : "green";
+  if(next === boardViewSeat) return next;
+  boardViewSeat = next;
+  syncBoardFlipClass();
+  if(persist){
+    try {
+      window.localStorage?.setItem(BOARD_VIEW_SEAT_STORAGE_KEY, next);
+    } catch(_error){
+      // Приватный режим: выбор проживёт до перезагрузки.
+    }
+  }
+  return next;
+}
+
+function loadBoardViewSeat(){
+  try {
+    const stored = window.localStorage?.getItem(BOARD_VIEW_SEAT_STORAGE_KEY);
+    if(stored === "blue" || stored === "green") boardViewSeat = stored;
+  } catch(_error){
+    // Хранилище недоступно — остаёмся на стороне по умолчанию.
+  }
+  syncBoardFlipClass();
+}
+loadBoardViewSeat();
+
+// Поле развёрнуто? Разворот — поворот на 180°, а НЕ зеркало: спрайты не отражаются, и
+// самолёт, стоящий внизу носом вверх, таким и остаётся.
+function isBoardFlipped(){
+  return getBoardViewSeat() === "blue";
+}
+
+// Кто наверху, тот и противник. За него играет компьютер.
+function getOpposingSeat(){
+  return getBoardViewSeat() === "blue" ? "green" : "blue";
+}
+
+// Какой КРАЙ экрана занимает HUD этого цвета.
+//
+// Поле переворачивается преобразованием холста, а HUD — нет: он не часть поля, и вверх
+// ногами он читаться не должен. Поэтому его блоки не поворачиваются, а МЕНЯЮТСЯ МЕСТАМИ, и
+// решает это одна функция: раскладка HUD задана таблицами по цвету, и достаточно спросить
+// у них слот соперника.
+function getHudEdgeSeat(color){
+  if(!isBoardFlipped()) return color === "blue" ? "blue" : "green";
+  return color === "blue" ? "green" : "blue";
+}
+
+// Класс на корне — крючок для стилей: часть HUD стоит в CSS, и оттуда таблицы не видно.
+function syncBoardFlipClass(){
+  document.documentElement?.classList?.toggle("is-board-flipped", isBoardFlipped());
+}
+
+// Преобразование «мир поля -> точки холста», общее для всех холстов поля.
+//
+// Их три, и у каждого свой сдвиг: доска рисуется от нуля, а прицел и HUD — со сдвигом,
+// потому что их холсты крупнее поля. Формула одна, поэтому и место одно: разъехавшись,
+// эти три преобразования дали бы прицел, съехавший относительно доски, — и заметить это
+// можно было бы только глазами.
+function setFieldTransform(ctx2d, scaleX, scaleY, offsetX = 0, offsetY = 0){
+  if(!ctx2d) return;
+  if(!isBoardFlipped()){
+    ctx2d.setTransform(scaleX, 0, 0, scaleY, offsetX, offsetY);
+    return;
+  }
+  // Точка мира (x, y) видна там, где была (W - x, H - y).
+  ctx2d.setTransform(
+    -scaleX, 0, 0, -scaleY,
+    scaleX * WORLD.width + offsetX,
+    scaleY * WORLD.height + offsetY
+  );
+}
+
+// Обратное преобразование для ввода: экранная точка -> точка мира.
+function flipBoardPointIfNeeded(x, y){
+  if(!isBoardFlipped()) return { x, y };
+  return { x: WORLD.width - x, y: WORLD.height - y };
+}
 const VIEW = {
   dpr: 1,
   cssW: 0,
@@ -386,12 +483,15 @@ function getPointerDesignCoords(event) {
   return toDesignCoords(clientX, clientY);
 }
 
+// Одна точка входа для всего ввода по доске: её зовут восемнадцать мест, и разворот
+// достаточно учесть здесь. Пропустить одно из восемнадцати значило бы получить игру, где
+// часть кликов уезжает в противоположный угол.
 function designToBoardCoords(designX, designY) {
   const boardRect = getBoardCssRect();
-  return {
-    x: designX - boardRect.left,
-    y: designY - boardRect.top
-  };
+  return flipBoardPointIfNeeded(
+    designX - boardRect.left,
+    designY - boardRect.top
+  );
 }
 
 function getCanvasDpr() {
@@ -802,8 +902,7 @@ function resizeCanvasToMatchCss(canvas) {
 }
 
 function applyViewTransform(ctx) {
-  if (!ctx) return;
-  ctx.setTransform(VIEW.scaleX, 0, 0, VIEW.scaleY, 0, 0);
+  setFieldTransform(ctx, VIEW.scaleX, VIEW.scaleY);
 }
 
 function syncCanvasBackingStore(canvas, baseWidth, baseHeight) {
@@ -1914,7 +2013,7 @@ const INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX = 4;
 
 function getInventoryTooltipLandscapeRect(color, slotIndex, width, height){
   if(!isBoardLandscapeActive()) return null;
-  const container = INVENTORY_UI_CONFIG.containers[color];
+  const container = INVENTORY_UI_CONFIG.containers[getHudEdgeSeat(color)];
   const slotType = INVENTORY_UI_CONFIG.slotOrder[slotIndex];
   const slotFrame = INVENTORY_UI_CONFIG.slots[slotType]?.frame;
   if(!container || !slotFrame) return null;
@@ -4715,7 +4814,7 @@ const INVENTORY_LANDSCAPE_SCALE = 300 / 342;
 
 function applyInventoryContainerLayout(color, host){
   if(!(host instanceof HTMLElement)) return;
-  const containerConfig = INVENTORY_UI_CONFIG.containers[color] ?? null;
+  const containerConfig = INVENTORY_UI_CONFIG.containers[getHudEdgeSeat(color)] ?? null;
   if(!containerConfig) return;
   const shift = isBoardLandscapeActive()
     ? (INVENTORY_LANDSCAPE_SHIFT_PX[color] ?? 0)
@@ -7588,6 +7687,7 @@ if(mapsErrorNoticeReloadBtn instanceof HTMLElement){
     window.location.reload();
   });
 }
+const swapSidesBtn = document.getElementById("swapSidesBtn");
 const leftModePlane = document.getElementById("mm_plane_left_mode");
 const rightModePlane = document.getElementById("mm_plane_right_mode");
 const leftRulesPlane = document.getElementById("mm_plane_left_rules");
@@ -7698,6 +7798,34 @@ let lastModeSelectionButton = null;
 let lastRulesSelectionButton = null;
 let settingsLayerTimer = null;
 
+// Самолёты меню показывают выбранную сторону: слева свой цвет, справа соперника.
+//
+// Клик по любому из них меняет сторону — и картинки меняются местами. Это единственный
+// способ её выбрать: механика нарочно неприметная, поэтому подписи у неё нет, а есть
+// невидимая кнопка для тех, кто играет без мыши.
+const MENU_PLANE_SPRITES = Object.freeze({
+  blue: "ui_gamescreen/PLANES/gs_plane_blue.png",
+  green: "ui_gamescreen/PLANES/gs_plane_green.png",
+});
+
+function syncMenuPlaneSides(){
+  const mine = getBoardViewSeat();
+  const theirs = getOpposingSeat();
+  for(const [plane, color] of [[leftModePlane, mine], [leftRulesPlane, mine],
+                               [rightModePlane, theirs], [rightRulesPlane, theirs]]){
+    const img = plane?.querySelector?.(".mm-plane__inner");
+    if(img instanceof HTMLImageElement) img.src = MENU_PLANE_SPRITES[color];
+  }
+}
+
+// Обе пары меняются разом: они изображают одну и ту же пару соперников, просто в двух
+// местах меню, и разъехавшись показывали бы разное про одно и то же.
+function toggleBoardViewSeat(){
+  setBoardViewSeat(getOpposingSeat());
+  syncMenuPlaneSides();
+  console.log("[side] свой край снизу:", getBoardViewSeat());
+}
+
 const MENU_PLANE_TRAVEL_MS = 220;
 const MENU_PLANE_FADE_MS = 180;
 const MENU_SETTINGS_DELAY_MS = Math.max(MENU_PLANE_TRAVEL_MS, MENU_PLANE_FADE_MS);
@@ -7720,8 +7848,14 @@ const VALID_GAME_MODES = new Set(["hotSeat", "computer", "online"]);
 // Сводим все пять в одно место. Заодно это ровно то, чего не хватает онлайну: там
 // «не моя сторона» — это не ИИ, а второй игрок, но отбивать ввод надо точно так же.
 const COLOR_CONTROLLERS = Object.freeze({ LOCAL: "local", AI: "ai", REMOTE: "remote" });
-// В игре против компьютера ИИ всегда играет за синих, а человек за зелёных.
-const AI_PLAYER_COLOR = "blue";
+// В игре против компьютера ИИ играет за ВЕРХНЕГО, а человек за нижнего.
+//
+// Раньше это было записано намертво: ИИ синий, человек зелёный. Теперь игрок сам выбирает,
+// с какого края смотреть, и «мой край» значит «моя сторона» — иначе выбор был бы
+// декоративным: сел поудобнее, а играешь всё равно за того, кто напротив.
+function getAiPlayerColor(){
+  return getOpposingSeat();
+}
 
 function getColorController(color){
   if(color !== "blue" && color !== "green") return COLOR_CONTROLLERS.LOCAL;
@@ -7729,7 +7863,7 @@ function getColorController(color){
   // не играет ни за кого — даже если в настройках осталась игра против компьютера.
   const seat = getOnlineSeatColor();
   if(seat) return color === seat ? COLOR_CONTROLLERS.LOCAL : COLOR_CONTROLLERS.REMOTE;
-  if(gameMode === "computer" && color === AI_PLAYER_COLOR) return COLOR_CONTROLLERS.AI;
+  if(gameMode === "computer" && color === getAiPlayerColor()) return COLOR_CONTROLLERS.AI;
   // Хот-сит: обе стороны за этим устройством.
   return COLOR_CONTROLLERS.LOCAL;
 }
@@ -20318,6 +20452,16 @@ if(onlineLobbyCloseBtn instanceof HTMLElement){
     updateModeSelection(hotSeatBtn);
   });
 }
+// Клик по любому самолёту меню — выбор стороны. Четыре элемента, одно действие.
+for(const plane of [leftModePlane, rightModePlane, leftRulesPlane, rightRulesPlane]){
+  plane?.addEventListener?.('click', (event) => {
+    event?.preventDefault?.();
+    toggleBoardViewSeat();
+  });
+}
+swapSidesBtn?.addEventListener?.('click', () => { toggleBoardViewSeat(); });
+syncMenuPlaneSides();
+
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     settings.flightRangeCells = 30;
@@ -47817,14 +47961,7 @@ function gameDraw(){
       VIEW.scaleX,
       VIEW.scaleY
     );
-    aimCtx.setTransform(
-      VIEW.scaleX,
-      0,
-      0,
-      VIEW.scaleY,
-      aimOffsetX,
-      aimOffsetY
-    );
+    setFieldTransform(aimCtx, VIEW.scaleX, VIEW.scaleY, aimOffsetX, aimOffsetY);
     const aiPreviewProgress = aiPreviewActive ? getAiLaunchPreviewProgress(aiLaunchSession, now) : 1;
     const aiPreviewPulse = aiPreviewActive
       ? (0.78 + Math.sin(now * AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED) * AI_LAUNCH_PREVIEW_ARROW_PULSE_AMPLITUDE)
@@ -48871,7 +49008,7 @@ function drawPlanesAndTrajectories(){
   const scaleX = VIEW.scaleX;
   const scaleY = VIEW.scaleY;
   planeCtx.save();
-  planeCtx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+  setFieldTransform(planeCtx, scaleX, scaleY);
 
   const debugDrawOrder = DEBUG_VFX ? [] : null;
 
@@ -49031,21 +49168,17 @@ function drawAimOverlay(rangeTextInfo) {
   );
 
   hudCtx.save();
-  hudCtx.setTransform(
-    hudScaleX,
-    0,
-    0,
-    hudScaleY,
-    hudOffsetX,
-    hudOffsetY
-  );
+  setFieldTransform(hudCtx, hudScaleX, hudScaleY, hudOffsetX, hudOffsetY);
 
-  // В горизонтали холст повёрнут вместе с кадром, поэтому подпись дальности читается
-  // снизу вверх. Разворачиваем весь блок (число, «cells» и значки баффов) вокруг его
-  // якоря у самолёта — тогда он стоит ровно и не съезжает с места.
-  if(isBoardLandscapeActive()){
+  // Холст поля может быть повёрнут — в горизонтали вместе с кадром, а при своём крае снизу
+  // ещё и на 180°. Подпись дальности от этого читается снизу вверх или вверх ногами.
+  // Разворачиваем весь блок (число, «cells» и значки баффов) вокруг его якоря у самолёта:
+  // тогда он стоит ровно, а с места не съезжает.
+  const overlayTurn = (isBoardLandscapeActive() ? -Math.PI / 2 : 0)
+    + (isBoardFlipped() ? Math.PI : 0);
+  if(overlayTurn !== 0){
     hudCtx.translate(rangeTextInfo.x, rangeTextInfo.y);
-    hudCtx.rotate(-Math.PI / 2);
+    hudCtx.rotate(overlayTurn);
     hudCtx.translate(-rangeTextInfo.x, -rangeTextInfo.y);
   }
 
@@ -49884,7 +50017,7 @@ function getMatchScoreScale(color, index, now){
 }
 
 function buildMatchScoreFrame(color, scaleX, scaleY) {
-  const spec = MATCH_SCORE_CONTAINERS?.[color];
+  const spec = MATCH_SCORE_CONTAINERS?.[getHudEdgeSeat(color)];
   if (!spec) return null;
 
   const width = spec.width * scaleX;
@@ -49907,7 +50040,7 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
   const colors = ["blue", "green"];
   for (const color of colors){
     const frame = buildMatchScoreFrame(color, scaleX, scaleY);
-    const spec = MATCH_SCORE_CONTAINERS?.[color];
+    const spec = MATCH_SCORE_CONTAINERS?.[getHudEdgeSeat(color)];
     const icon = matchScoreImages[color];
     const ghostIcon = matchScoreGhostImages[color] || icon;
     if (!frame || !spec || !isSpriteReady(icon) || !isSpriteReady(ghostIcon)) continue;
@@ -50280,7 +50413,7 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
   const stabilizeStrokeWidth = 2.3 / Math.max(transformScaleX, transformScaleY);
 
   for(const [color, rawScore] of pairs){
-    const frame = ARCADE_SCORE_CONTAINERS[color];
+    const frame = ARCADE_SCORE_CONTAINERS[getHudEdgeSeat(color)];
     const textStyle = ARCADE_SCORE_TEXT_STYLES[color];
     if(!frame || !textStyle) continue;
 
@@ -50617,7 +50750,7 @@ function renderScoreboard(now = performance.now()){
 }
 
 function buildPlaneCounterFrame(color, scaleX, scaleY) {
-  const spec = PLANE_COUNTER_CONTAINERS?.[color];
+  const spec = PLANE_COUNTER_CONTAINERS?.[getHudEdgeSeat(color)];
   if (!spec) return null;
 
   const width = spec.width * scaleX;

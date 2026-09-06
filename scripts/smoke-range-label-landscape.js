@@ -52,13 +52,17 @@ let turns;
 {
   const overlay = extractFn('drawAimOverlay');
 
-  assert(/if\(isBoardLandscapeActive\(\)\)\{[\s\S]{0,200}hudCtx\.rotate\(/.test(overlay),
+  // Углов у блока теперь два и они складываются: горизонталь даёт свои -90°, а «свой край
+  // снизу» ещё 180°. Здесь важен только первый — от него зависит смещение якоря.
+  assert(/isBoardLandscapeActive\(\) \? (-?)Math\.PI \/ 2 : 0/.test(overlay),
     '1: блок подписи больше не разворачивается в горизонтали — тогда он будет читаться '
     + 'снизу вверх');
 
-  const rot = /hudCtx\.rotate\((-?)Math\.PI \/ 2\)/.exec(overlay);
-  assert(rot, '1b: разворот блока задан не через Math.PI / 2 — проверка устарела');
+  const rot = /isBoardLandscapeActive\(\) \? (-?)Math\.PI \/ 2 : 0/.exec(overlay);
   turns = rot[1] === '-' ? -1 : 1;
+
+  assert(/hudCtx\.rotate\(overlayTurn\)/.test(overlay),
+    '1b: сложенный угол больше не применяется к блоку');
 
   // Разворот идёт вокруг якоря: только тогда якорь остаётся на месте, а блок поворачивается.
   assert(/hudCtx\.translate\(rangeTextInfo\.x, rangeTextInfo\.y\)/.test(overlay)
