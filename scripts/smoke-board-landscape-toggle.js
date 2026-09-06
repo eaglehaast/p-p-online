@@ -307,9 +307,13 @@ assert((source.match(/rightX: targetBrick\.cx \+ targetBrick\.halfWidth/g) || []
 
 // Подпись дальности разворачивается вокруг своего якоря у самолёта.
 const aimFn = source.slice(source.indexOf('function drawAimOverlay('));
-assert(/hudCtx\.translate\(rangeTextInfo\.x, rangeTextInfo\.y\);[\s\S]{0,120}hudCtx\.rotate\(-Math\.PI \/ 2\)/
+assert(/hudCtx\.translate\(rangeTextInfo\.x, rangeTextInfo\.y\);[\s\S]{0,160}hudCtx\.rotate\(overlayTurn\)/
   .test(aimFn.slice(0, 2000)),
   '7i: подпись дальности разворачивается вокруг якоря у самолёта');
+// Горизонтальная часть угла осталась прежней: складываться с ней может «свой край снизу»,
+// но подменять её собой — нет.
+assert(/isBoardLandscapeActive\(\) \? -Math\.PI \/ 2 : 0/.test(aimFn.slice(0, 2000)),
+  '7i2: в горизонтали блок подписи перестал разворачиваться на -90°');
 // Табличка «Play again». Её transform целиком занят анимацией появления с
 // animation-fill-mode: both, поэтому встречный поворот обычным правилом не задать —
 // кадры его перебьют. Для горизонтали заведён отдельный набор кадров.
@@ -412,6 +416,9 @@ function readLandscapeScale(){
     INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX: 4,
     INVENTORY_LANDSCAPE_SHIFT_PX: readLandscapeShifts(),
     INVENTORY_LANDSCAPE_SCALE: readLandscapeScale(),
+    // Здесь проверяется раскладка подсказок в горизонтали, а не выбор стороны: край
+    // остаётся своим у каждого цвета.
+    getHudEdgeSeat: (color) => color,
     INVENTORY_UI_CONFIG: {
       slotOrder: ['crosshair', 'fuel', 'wings', 'mine', 'dynamite', 'invisibility'],
       containers: {

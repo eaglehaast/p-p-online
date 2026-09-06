@@ -40,7 +40,7 @@ function extractFunctionSource(source, fnName){
 
 const source = fs.readFileSync('script.js', 'utf8');
 
-const build = ({ gameMode, turnColor, seat = null }) => {
+const build = ({ gameMode, turnColor, seat = null, viewSeat = 'green' }) => {
   const sandbox = {
     gameMode,
     turnColors: ['green', 'blue'],
@@ -50,7 +50,10 @@ const build = ({ gameMode, turnColor, seat = null }) => {
   vm.createContext(sandbox);
   vm.runInContext([
     source.match(/const COLOR_CONTROLLERS = Object\.freeze\(\{[^}]*\}\);/)[0],
-    source.match(/const AI_PLAYER_COLOR = "[^"]*";/)[0],
+    `let boardViewSeat = ${JSON.stringify(viewSeat)};`,
+    extractFunctionSource(source, 'getBoardViewSeat'),
+    extractFunctionSource(source, 'getOpposingSeat'),
+    extractFunctionSource(source, 'getAiPlayerColor'),
     // Место за столом — часть решения «чья это сторона», поэтому в стенде оно настоящее,
     // а не заглушка.
     `let onlineSession = ${seat ? `{ seat: ${JSON.stringify(seat)} }` : 'null'};`,
@@ -61,7 +64,7 @@ const build = ({ gameMode, turnColor, seat = null }) => {
     extractFunctionSource(source, 'isRemoteColor'),
     extractFunctionSource(source, 'isAiControlledTurn'),
     'this.api = { getColorController, isLocalColor, isAiColor, isRemoteColor,',
-    '             isAiControlledTurn, AI_PLAYER_COLOR };',
+    '             isAiControlledTurn, getAiPlayerColor };',
   ].join('\n'), sandbox);
   return sandbox.api;
 };
@@ -98,15 +101,28 @@ const COLORS = ['blue', 'green'];
   }
 }
 
-// === 3. Против компьютера: ИИ за синих, человек за зелёных ===
+// === 3. Против компьютера: ИИ играет за ВЕРХНЕГО ===
+//
+// Раньше это было записано намертво: ИИ синий, человек зелёный. Теперь игрок выбирает, с
+// какого края смотреть, и вместе с краем меняется сторона: иначе выбор был бы
+// декоративным — сел поудобнее, а играешь всё равно за того, кто напротив.
 {
-  const api = build({ gameMode: 'computer', turnColor: 'blue' });
-  assert(api.AI_PLAYER_COLOR === 'blue',
-    '3: цвет ИИ вынесен в константу и остался синим');
-  assert(api.isAiColor('blue') && !api.isLocalColor('blue'),
+  const снизуЗелёный = build({ gameMode: 'computer', turnColor: 'blue', viewSeat: 'green' });
+  assert(снизуЗелёный.getAiPlayerColor() === 'blue',
+    '3: при зелёном крае снизу компьютер обязан играть за синего');
+  assert(снизуЗелёный.isAiColor('blue') && !снизуЗелёный.isLocalColor('blue'),
     '3b: синий — сторона ИИ, руками не берётся');
-  assert(api.isLocalColor('green') && !api.isAiColor('green'),
+  assert(снизуЗелёный.isLocalColor('green') && !снизуЗелёный.isAiColor('green'),
     '3c: зелёный — сторона человека');
+
+  const снизуСиний = build({ gameMode: 'computer', turnColor: 'green', viewSeat: 'blue' });
+  assert(снизуСиний.getAiPlayerColor() === 'green',
+    '3d: игрок перевернул поле под себя, а компьютер остался на прежней стороне — тогда '
+    + 'человек играет за того, кто у него наверху');
+  assert(снизуСиний.isLocalColor('blue') && !снизуСиний.isAiColor('blue'),
+    '3e: при синем крае снизу синий берётся руками');
+  assert(снизуСиний.isAiColor('green') && !снизуСиний.isLocalColor('green'),
+    '3f: и зелёный становится стороной ИИ');
 }
 
 // === 4. Онлайн: своя сторона одна, вторая — у соперника ===

@@ -91,6 +91,11 @@
               <span>Map Editor</span>
             </button>
           </div>
+          <!-- Клик по любому самолёту меняет сторону: свой край уезжает вниз, чужой наверх.
+               Механика нарочно неприметная, поэтому сами самолёты остаются украшением и
+               скрыты от читалки, а рядом стоит невидимая кнопка с тем же действием — иначе
+               выбор стороны был бы недоступен без мыши. -->
+          <button id="swapSidesBtn" class="visually-hidden" type="button">Swap sides</button>
           <div id="mm_plane_left_mode" class="mm-plane mm-plane--left mm-plane--mode" aria-hidden="true">
             <div class="mm-plane__bob">
               <img class="mm-plane__inner" src="ui_gamescreen/PLANES/gs_plane_green.png" alt="" draggable="false" />

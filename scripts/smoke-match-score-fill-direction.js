@@ -84,6 +84,8 @@ function run({ landscape, blueScore, greenScore }){
     loadMatchScoreImagesIfNeeded: () => {},
     getMatchScoreScale: () => 1,
     isBoardLandscapeActive: () => landscape,
+    // Тут проверяется направление заполнения счёта, а не выбор стороны: край не меняем.
+    getHudEdgeSeat: (color) => color,
   };
   vm.createContext(sandbox);
   vm.runInContext([

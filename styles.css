@@ -4004,3 +4004,20 @@ html.is-board-landscape #aiThinkHoof {
 }
 
 #menuLayer #modeMenu .menu-notice__btn:hover { background: #ece4d3; }
+
+/* ===== Своя сторона внизу =====
+   Поле переворачивается преобразованием холста (см. setFieldTransform в script.js), а HUD
+   переворачивать нельзя: вверх ногами он не читается. Поэтому парные блоки МЕНЯЮТСЯ
+   МЕСТАМИ — то, что в коде решает getHudEdgeSeat, здесь делают четыре правила. */
+html.is-board-flipped #gs_planecounter_blue { top: 416px; }
+html.is-board-flipped #gs_planecounter_green { top: 97px; }
+
+/* ПРОБА: фон разворачивается целиком. */
+html.is-board-flipped #gameBackground { transform: rotate(180deg); }
+
+/* Самолёты меню — переключатель стороны. Украшение остаётся украшением, но нажать по нему
+   можно: клик по любому из четырёх меняет свой край поля. */
+#menuLayer #modeMenu .mm-plane {
+  pointer-events: auto;
+  cursor: pointer;
+}
