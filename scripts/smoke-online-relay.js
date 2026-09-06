@@ -201,17 +201,23 @@ const relay = await import('../worker/room.js');
   const room = createRoom();
   const blueSocket = { id: 'blue-1' };
   const greenSocket = { id: 'green-1' };
+  // Ключи мест: у каждого игрока свой, и он же служит пропуском при возвращении.
+  const BLUE_KEY = 'kljucsinegomesta1234';
+  const GREEN_KEY = 'kljuczelenogomesta56';
 
-  assert(joinRoom(room, { seat: 'red', version: RELAY_PROTOCOL_VERSION, connection: blueSocket }).error
+  assert(joinRoom(room, { seat: 'red', version: RELAY_PROTOCOL_VERSION, connection: blueSocket, key: BLUE_KEY }).error
     === RELAY_ERRORS.BAD_SEAT, '1: третьего места за столом нет');
-  assert(joinRoom(room, { seat: 'blue', version: 999, connection: blueSocket }).error
+  assert(joinRoom(room, { seat: 'blue', version: 999, connection: blueSocket, key: BLUE_KEY }).error
     === RELAY_ERRORS.BAD_VERSION,
     '1b: клиент чужой версии не пускают — иначе он молча сидел бы в комнате и не понимал пакетов');
+  assert(joinRoom(room, { seat: 'blue', version: RELAY_PROTOCOL_VERSION, connection: blueSocket, key: 'korotkij' }).error
+    === RELAY_ERRORS.BAD_KEY,
+    '1b2: без годного ключа за место не садятся — иначе ключ можно обойти, прислав пустой');
 
-  const blueJoin = joinRoom(room, { seat: 'blue', version: RELAY_PROTOCOL_VERSION, connection: blueSocket });
+  const blueJoin = joinRoom(room, { seat: 'blue', version: RELAY_PROTOCOL_VERSION, connection: blueSocket, key: BLUE_KEY });
   assert(blueJoin.ok && blueJoin.replay.length === 0,
     '1c: первому в пустой комнате показывать нечего');
-  joinRoom(room, { seat: 'green', version: RELAY_PROTOCOL_VERSION, connection: greenSocket });
+  joinRoom(room, { seat: 'green', version: RELAY_PROTOCOL_VERSION, connection: greenSocket, key: GREEN_KEY });
 
   // Пересылка — ровно одному, второму месту.
   const move = { p: 1, t: 'move', from: 'blue-a', seat: 'blue', seq: 1, payload: {} };
@@ -228,9 +234,23 @@ const relay = await import('../worker/room.js');
   assert(RELAY_KEPT_TYPES.length === 2,
     '1h: придерживается ровно то, без чего не продолжить, и ничего сверх');
 
-  // Занятое место ОТДАЁТСЯ, а не защищается.
+  // Занятое место отдаётся СВОЕМУ и не отдаётся чужому.
+  //
+  // Вытеснение сделано ради возвращения после обрыва: оборвавшийся сокет сервер замечает
+  // не сразу, и отказ означал бы «подождите, пока мы заметим, что вас нет». Но пока
+  // ключей не было, то же вытеснение работало и для постороннего, знающего имя комнаты, —
+  // а имя диктуют вслух и пересылают в чатах.
+  const stranger = { id: 'chuzhoj-1' };
+  const stolen = joinRoom(room, {
+    seat: 'green', version: RELAY_PROTOCOL_VERSION, connection: stranger, key: 'kljucsovsemdrugoj12',
+  });
+  assert(stolen.ok === false && stolen.error === RELAY_ERRORS.SEAT_TAKEN,
+    '1i0: посторонний с чужим ключом сел на занятое место и вышиб того, кто там играл');
+  assert(room.seats.green === greenSocket,
+    '1i1: после отказа за местом остался прежний игрок');
+
   const greenAgain = { id: 'green-2' };
-  const retake = joinRoom(room, { seat: 'green', version: RELAY_PROTOCOL_VERSION, connection: greenAgain });
+  const retake = joinRoom(room, { seat: 'green', version: RELAY_PROTOCOL_VERSION, connection: greenAgain, key: GREEN_KEY });
   assert(retake.ok, '1i: вернувшийся садится на своё место');
   assert(retake.evicted === greenSocket,
     '1j: прежнее соединение вытесняется — оборвавшийся сокет сервер замечает не сразу, ' +
@@ -454,6 +474,7 @@ const relay = await import('../worker/room.js');
   const returning = makeClient('blue', {});
   const join = relay.joinRoom(room, {
     seat: 'blue', version: relay.RELAY_PROTOCOL_VERSION, connection: { id: 'blue-2' },
+    key: 'kljucsinegomesta1234',
   });
   for(const envelope of join.replay) returning.transport.deliver(envelope);
 

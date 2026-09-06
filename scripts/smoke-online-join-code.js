@@ -188,7 +188,7 @@ function makeStand({ relay = 'wss://relay.example', session = null } = {}){
 
   // Состояние связи меняется само, без нашего участия. Если о нём не сообщать, на экране
   // навсегда застынет то, что было в миг открытия панели.
-  assert(/createWebSocketTransport\(room, seatInfo\.relay, seatInfo\.seat, refreshOnlineLobbyUi\)/
+  assert(/createWebSocketTransport\(room, seatInfo\.relay, seatInfo\.seat, refreshOnlineLobbyUi,/
     .test(source), '4e: смена состояния связи перерисовывает лобби');
   const announces = (transport.match(/announce\(\);/g) || []).length;
   assert(announces >= 3,
