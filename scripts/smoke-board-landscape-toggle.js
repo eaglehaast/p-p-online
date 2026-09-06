@@ -255,8 +255,10 @@ assert(/crateInFrameX = \(-CARGO_ANIM_OFFSET_X \+ crateSize\.width \/ 2\) \* sca
 {
   const mines = source.slice(source.indexOf('function drawMines('));
   const body = mines.slice(0, mines.indexOf('\n}'));
-  assert(/const uprightRad = isBoardLandscapeActive\(\) \? -Math\.PI \/ 2 : 0;/.test(body),
-    '7h: мина разворачивается встречно только в горизонтали');
+  // Слагаемое про свой край снизу проверяет smoke-flip-field-decorations; здесь важно,
+  // что горизонталь по-прежнему даёт свои -90°.
+  assert(/const uprightRad = \(isBoardLandscapeActive\(\) \? -Math\.PI \/ 2 : 0\)/.test(body),
+    '7h: мина разворачивается встречно в горизонтали');
   assert(/gsBoardCtx\.rotate\(uprightRad \+ swayRad\);/.test(body),
     '7i: покачивание складывается с разворотом, а не заменяет его');
   assert(/gsBoardCtx\.translate\(mine\.x, mine\.y\);\s*\n\s*gsBoardCtx\.rotate\(/.test(body),
