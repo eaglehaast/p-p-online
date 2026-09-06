@@ -35,7 +35,6 @@ const functionNames = [
   'getPlaneDangerGeometry',
   'getPlaneBeneficialGeometry',
   'angleDiffDeg',
-  'handleAAForPlane',
   'handleMineForPlane',
   'getDistanceFromPointToSegment',
   'getMineEffectiveTriggerRadius',
@@ -112,11 +111,6 @@ vm.runInContext(`${mineRuntime}\n\n${extracted}`, context);
 
 const basePlane = { color: 'green', isAlive: true, burning: false, respawnState: 'at_base', x: 0, y: 0 };
 assert(context.isPlaneTargetable(basePlane) === true, 'Arcade base plane should be targetable by default.');
-
-context.aaUnits = [{ id: 'aa-1', owner: 'blue', x: 0, y: 25, radius: 40, sweepAngleDeg: 270, beamWidthDeg: 180, dwellTimeMs: 0, cooldownMs: 0 }];
-assert(context.handleAAForPlane(basePlane, null) === false, 'AA first dwell check should arm tracking for at_base plane.');
-assert(context.handleAAForPlane(basePlane, null) === true, 'AA should be able to eliminate at_base plane in arcade.');
-assert(basePlane.wasEliminated === true, 'AA elimination path should run for at_base plane.');
 
 const minePlane = { color: 'green', isAlive: true, burning: false, respawnState: 'at_base', x: 0, y: 0 };
 context.mines = [{ owner: 'blue', x: 0, y: 10 }];

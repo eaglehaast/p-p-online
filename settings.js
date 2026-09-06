@@ -389,7 +389,6 @@ const ACCURACY_STORAGE_KEY_LEGACY = 'settings.aimingAmplitude';
 const DEFAULT_SETTINGS = {
   rangeCells: 30,
   accuracyPercent: 80,
-  addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
   addCargo: true,
@@ -401,7 +400,6 @@ const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings =
 const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   flightRangeCells: DEFAULT_SETTINGS.rangeCells,
   accuracyPercent: DEFAULT_SETTINGS.accuracyPercent,
-  addAA: DEFAULT_SETTINGS.addAA,
   sharpEdges: DEFAULT_SETTINGS.sharpEdges,
   flagsEnabled: DEFAULT_SETTINGS.flagsEnabled,
   arcadeMode: DEFAULT_SETTINGS.arcadeMode,
@@ -731,10 +729,6 @@ if(Number.isNaN(sharedSettings.accuracyPercent)){
 } else if(sharedSettings.accuracyPercent <= 20){
   sharedSettings.accuracyPercent *= 5;
 }
-const storedAddAA = getStoredItem('settings.addAA');
-sharedSettings.addAA = storedAddAA === null
-  ? DEFAULT_SETTINGS.addAA
-  : storedAddAA === 'true';
 const storedSharpEdges = getStoredItem('settings.sharpEdges');
 sharedSettings.sharpEdges = storedSharpEdges === null
   ? DEFAULT_SETTINGS.sharpEdges
@@ -875,7 +869,6 @@ const amplitudeMinusBtn =
 const amplitudePlusBtn =
   selectInSettings('#instance_accuracy_right') ??
   selectInSettings('#amplitudePlus');
-const addAAToggle = selectInSettings('#addAAToggle');
 const sharpEdgesToggle = selectInSettings('#sharpEdgesToggle');
 const addsCargoBtn = selectInSettings('#instance_adds_tumbler1_cargo');
 const addsFlagsBtn = selectInSettings('#instance_adds_tumbler2_flags');
@@ -3290,7 +3283,6 @@ function saveSettings(){
   sharedSettings.addCargo = addCargo;
   setStoredItem('settings.flightRangeCells', sharedSettings.flightRangeCells);
   setStoredItem(ACCURACY_STORAGE_KEY, sharedSettings.accuracyPercent);
-  setStoredItem('settings.addAA', sharedSettings.addAA);
   setStoredItem('settings.sharpEdges', sharedSettings.sharpEdges);
   setStoredItem('settings.flagsEnabled', sharedSettings.flagsEnabled);
   setStoredItem('settings.addCargo', addCargo);
@@ -3304,7 +3296,6 @@ function saveSettings(){
   console.log('[settings] save', {
     flightRangeCells: sharedSettings.flightRangeCells,
     accuracyPercent: sharedSettings.accuracyPercent,
-    addAA: sharedSettings.addAA,
     sharpEdges: sharedSettings.sharpEdges,
     flagsEnabled: sharedSettings.flagsEnabled,
     addCargo,
@@ -4740,7 +4731,6 @@ function resetSettingsToDefaults(){
   sharedSettings.flightRangeCells = DEFAULT_SETTINGS.rangeCells;
   syncRangeStepFromValue(sharedSettings.flightRangeCells);
   sharedSettings.accuracyPercent = DEFAULT_SETTINGS.accuracyPercent;
-  sharedSettings.addAA = DEFAULT_SETTINGS.addAA;
   sharedSettings.sharpEdges = DEFAULT_SETTINGS.sharpEdges;
   addCargo = DEFAULT_SETTINGS.addCargo;
   sharedSettings.addCargo = addCargo;
@@ -4763,7 +4753,6 @@ function resetSettingsToDefaults(){
   syncArcadeCargoPreview(addsUiState.arcade);
   syncFlagsPreview(addsUiState.flags);
   syncCargoPreview(addsUiState.cargo);
-  syncToggleInput(addAAToggle, sharedSettings.addAA);
   syncToggleInput(sharpEdgesToggle, sharedSettings.sharpEdges);
   if(accuracyCrackWatcher?.reset){
     accuracyCrackWatcher.reset();
@@ -4839,14 +4828,6 @@ function syncCargoPreview(isCargoOn){
     applyPreviewGif(cargoPreviewOn, cargoPreviewOnGifSrc, isCargoOn);
     cargoPreviewOn.style.display = isCargoOn ? 'block' : 'none';
   }
-}
-
-if(addAAToggle){
-  addAAToggle.checked = sharedSettings.addAA;
-  addAAToggle.addEventListener('change', e => {
-    sharedSettings.addAA = e.target.checked;
-    saveSettings();
-  });
 }
 
 if(sharpEdgesToggle){

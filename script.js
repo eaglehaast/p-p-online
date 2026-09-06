@@ -8183,7 +8183,6 @@ function receiveOnlineEnvelope(envelope){
 const ONLINE_ROOM_SETTING_KEYS = Object.freeze([
   "flightRangeCells",
   "accuracyPercent",
-  "addAA",
   "sharpEdges",
   "flagsEnabled",
   "addCargo",
@@ -9870,7 +9869,6 @@ const BASE_INTERACTION_RADIUS = 40;  // px
 const SLIDE_THRESHOLD      = 0.1;
 // Larger hit area for selecting planes with touch/mouse
 const PLANE_TOUCH_RADIUS   = 20;                   // px
-const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const MINE_TRIGGER_RADIUS  = 28; // v3.4: restored 24→28 after diagnosing the
 // "AI corrected its route around a mine, but not enough" symptom. Root cause:
 // runtime detonation uses getMineEffectiveTriggerRadius(plane) which returns
@@ -11574,21 +11572,6 @@ function applyAiLaunchStageBaseSmoothing(session, now, targetX, targetY){
   };
 }
 
-// Anti-Aircraft defaults and placement limits
-const AA_DEFAULTS = {
-  radius: 60, // detection radius, 3x smaller than original 180
-  hp: 1,
-  cooldownMs: 1000,
-  rotationDegPerSec: 30, // slow radar sweep
-  beamWidthDeg: 4, // width of sweeping beam
-  dwellTimeMs: 0 // time beam must stay on target before firing
-};
-const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
-const AA_MIN_DIST_FROM_EDGES = 40;
-// Duration for how long the anti-aircraft radar sweep remains visible
-// Quarter-circle afterglow so the sweep persists for 90° of rotation
-const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
-
 
 /* ======= STATE ======= */
 
@@ -11625,15 +11608,11 @@ let flyingPoints = [];
 let colliders    = [];
 let colliderSurfaces = [];
 
-let aaUnits     = [];
 let mines       = [];
 let dynamiteState = [];
-let aaPlacementPreview = null;
-let aaPreviewTrail = [];
 
-let aaPointerDown = false;
 
-let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
+let phase = "MENU"; // MENU | ROUND_START | TURN | ROUND_END
 
 const cargoState = [];
 
@@ -12070,8 +12049,6 @@ const FLAME_STYLE_OPTIONS = [
 
 const FLAME_STYLE_MAP = new Map(FLAME_STYLE_OPTIONS.map(option => [option.value, option]));
 
-// Temporary product decision: AA placement must stay fully disabled until the new flow is shipped.
-const AA_PLACEMENT_TEMP_DISABLED = true;
 
 function normalizeFlameStyleKey(key) {
   return FLAME_STYLE_MAP.has(key) ? key : 'random';
@@ -12081,7 +12058,6 @@ const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings =
 const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   flightRangeCells: 30,
   accuracyPercent: 80,
-  addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
   addCargo: true,
@@ -12094,9 +12070,6 @@ if(!Number.isFinite(sharedSettings.flightRangeCells)){
 }
 if(!Number.isFinite(sharedSettings.accuracyPercent)){
   sharedSettings.accuracyPercent = 80;
-}
-if(typeof sharedSettings.addAA !== 'boolean'){
-  sharedSettings.addAA = true;
 }
 if(typeof sharedSettings.sharpEdges !== 'boolean'){
   sharedSettings.sharpEdges = true;
@@ -12203,21 +12176,12 @@ settingsBridge.setMapIndex = (nextIndex, options = {}) => {
   return settings.mapIndex;
 };
 
-function isAAPlacementEnabled(){
-  return !AA_PLACEMENT_TEMP_DISABLED && settings.addAA === true;
-}
-
 function loadSettings(){
   const previousFlameStyle = settings.flameStyle;
   const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
   settings.flightRangeCells = Number.isNaN(fr) ? 30 : fr;
   if(!Number.isFinite(settings.accuracyPercent)){
     settings.accuracyPercent = 80;
-  }
-  const storedAddAA = getStoredSetting('settings.addAA');
-  settings.addAA = storedAddAA === null ? true : storedAddAA === 'true';
-  if(AA_PLACEMENT_TEMP_DISABLED){
-    settings.addAA = false;
   }
   const storedSharpEdges = getStoredSetting('settings.sharpEdges');
   settings.sharpEdges = storedSharpEdges === null ? true : storedSharpEdges === 'true';
@@ -20095,7 +20059,6 @@ function resetGame(options = {}){
     console.warn("[resetGame] map apply skipped: maps not loaded yet", { code: mapApplyResult.error.code });
   }
 
-  aaUnits = [];
   mines = [];
   clearDynamiteExplosionDomEntries();
   dynamiteState = [];
@@ -20267,7 +20230,6 @@ if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     settings.flightRangeCells = 30;
     settings.accuracyPercent = 80;
-    settings.addAA = false;
     settings.addCargo = true;
     settings.sharpEdges = true;
     const upcomingRoundNumber = roundNumber + 1;
@@ -21756,10 +21718,6 @@ function isHumanAllowedToControlActiveAimSession(){
 }
 
 function updateBoardCursorForHover(x, y) {
-  if(phase === 'AA_PLACEMENT') {
-    gsBoardCanvas.style.cursor = '';
-    return;
-  }
   if(handleCircle.active) {
     gsBoardCanvas.style.cursor = handleCircle.controllerType === "computer" ? '' : 'grabbing';
     return;
@@ -21855,7 +21813,7 @@ function removeStickyAimGlobalPointerListeners(){
 }
 
 function onGlobalStickyAimPointerDownWhileArmed(e){
-  if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
+  if(!handleCircle.active) return;
   if(!isHumanAllowedToControlActiveAimSession()) return;
   if(handleCircle.pointerDown) return;
 
@@ -21930,29 +21888,6 @@ function endStickyAimHoldTracking(e){
   };
 }
 
-function handleAAPlacement(x, y){
-  if(phase !== 'AA_PLACEMENT') return;
-  if(!isValidAAPlacement(x,y)) return;
-
-  placeAA({owner: currentPlacer, x, y});
-  aaPlacementPreview = null;
-  aaPreviewTrail = [];
-
-  if(currentPlacer === 'green'){
-    currentPlacer = 'blue';
-  } else {
-    phase = 'TURN';
-
-  }
-}
-
-function updateAAPreviewFromEvent(e){
-  const { x: designX, y: designY } = getPointerDesignCoords(e);
-  const { x, y } = designToBoardCoords(designX, designY);
-  aaPlacementPreview = { x, y };
-  aaPreviewTrail = [];
-}
-
 function onCanvasPointerDown(e){
   logPointerDebugEvent(e);
   if(isMapEditorBricksModeActive()){
@@ -21980,7 +21915,7 @@ function onCanvasPointerDown(e){
     e.preventDefault();
     return;
   }
-  if(handleCircle.active && phase !== 'AA_PLACEMENT'){
+  if(handleCircle.active){
     if(!isHumanAllowedToControlActiveAimSession()){
       e.preventDefault();
       return;
@@ -21993,15 +21928,7 @@ function onCanvasPointerDown(e){
     e.preventDefault();
     return;
   }
-  if(phase === 'AA_PLACEMENT'){
-    e.preventDefault();
-    aaPointerDown = true;
-    updateAAPreviewFromEvent(e);
-  } else if(pendingInventoryUse) {
-    handleStart(e);
-  } else {
-    handleStart(e);
-  }
+  handleStart(e);
 }
 
 function onCanvasPointerMove(e){
@@ -22042,7 +21969,7 @@ function onCanvasPointerMove(e){
   const { x: designX, y: designY } = getPointerDesignCoords(e);
   const { x, y } = designToBoardCoords(designX, designY);
 
-  if(handleCircle.active && phase !== 'AA_PLACEMENT'){
+  if(handleCircle.active){
     if(!isHumanAllowedToControlActiveAimSession()){
       gsBoardCanvas.style.cursor = '';
       document.body.style.cursor = '';
@@ -22067,13 +21994,6 @@ function onCanvasPointerMove(e){
     return;
   }
 
-  if(phase !== 'AA_PLACEMENT'){
-    updateBoardCursorForHover(x, y);
-    return;
-  }
-  if(e.pointerType === 'mouse' || aaPointerDown){
-    updateAAPreviewFromEvent(e);
-  }
   updateBoardCursorForHover(x, y);
 }
 
@@ -22098,7 +22018,7 @@ function onCanvasPointerUp(e){
     e.preventDefault();
     return;
   }
-  if(phase !== 'AA_PLACEMENT'){
+  {
     if(!handleCircle.active) return;
     if(!isHumanAllowedToControlActiveAimSession()){
       e.preventDefault();
@@ -22143,16 +22063,10 @@ function onCanvasPointerUp(e){
     return;
   }
 
-  aaPointerDown = false;
-  if(!aaPlacementPreview) return;
-  const {x, y} = aaPlacementPreview;
-  handleAAPlacement(x, y);
-  aaPlacementPreview = null;
-  aaPreviewTrail = [];
 }
 
 function onGlobalStickyAimPointerMove(e){
-  if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
+  if(!handleCircle.active) return;
   if(!isHumanAllowedToControlActiveAimSession()) return;
 
   const trackedPointerId = handleCircle.pointerId;
@@ -22180,7 +22094,7 @@ function onGlobalStickyAimPointerMove(e){
 }
 
 function onGlobalStickyAimPointerUpOrCancel(e){
-  if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
+  if(!handleCircle.active) return;
   if(!isHumanAllowedToControlActiveAimSession()) return;
 
   const holdResult = endStickyAimHoldTracking(e);
@@ -22272,7 +22186,6 @@ gsBoardCanvas.addEventListener("pointercancel", () => {
     document.body.style.cursor = "";
   }
 });
-gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
 gsBoardCanvas.addEventListener("dragover", onMapEditorBrickDragOver);
 gsBoardCanvas.addEventListener("drop", onMapEditorBrickDrop);
 if(shouldUseLegacyDragDropFallback()){
@@ -22307,147 +22220,6 @@ window.addEventListener("keydown", (event) => {
     cancelActiveInventoryPickup();
   }
 });
-
-function isValidAAPlacement(x,y){
-  // Allow Anti-Aircraft placement anywhere within the player's half of the field.
-  // The center may touch field edges or overlap planes, but must not be inside
-  // any collider so that AA can be destroyed by planes.
-
-  const half = FIELD_TOP + FIELD_HEIGHT / 2;
-
-  if (currentPlacer === 'green') {
-    if (y < half || y > FIELD_TOP + FIELD_HEIGHT) return false;
-  } else if (currentPlacer === 'blue') {
-    if (y < FIELD_TOP || y > half) return false;
-  } else {
-    return false;
-  }
-
-
-  if (x < FIELD_LEFT + FIELD_BORDER_OFFSET_X ||
-      x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
-
-    return false;
-  }
-
-  return true;
-}
-
-function placeAA({owner,x,y}){
-  aaUnits.push({
-    id: 'aa'+Date.now()+Math.random().toString(16).slice(2),
-    owner,
-    x, y,
-    radius: AA_DEFAULTS.radius,
-    hp: AA_DEFAULTS.hp,
-    cooldownMs: AA_DEFAULTS.cooldownMs,
-    lastTriggerAt: null,
-    sweepAngleDeg: 0,
-    rotationDegPerSec: AA_DEFAULTS.rotationDegPerSec,
-    beamWidthDeg: AA_DEFAULTS.beamWidthDeg,
-    dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
-    trail: []
-  });
-}
-
-
-function drawAAPlacementZone(){
-  if(phase !== 'AA_PLACEMENT') return;
-
-  const half = FIELD_TOP + FIELD_HEIGHT / 2;
-  gsBoardCtx.save();
-  gsBoardCtx.fillStyle = colorWithAlpha(currentPlacer, 0.05);
-  if(currentPlacer === 'green'){
-    gsBoardCtx.fillRect(FIELD_LEFT, half, FIELD_WIDTH, FIELD_TOP + FIELD_HEIGHT - half);
-  } else {
-    gsBoardCtx.fillRect(FIELD_LEFT, FIELD_TOP, FIELD_WIDTH, half - FIELD_TOP);
-  }
-  gsBoardCtx.restore();
-}
-
-function drawAAPreview(){
-  if(phase !== 'AA_PLACEMENT' || !aaPlacementPreview) return;
-  const {x, y} = aaPlacementPreview;
-  if(!isValidAAPlacement(x, y)) return;
-
-  gsBoardCtx.save();
-  gsBoardCtx.globalAlpha = 0.3;
-  gsBoardCtx.strokeStyle = colorFor(currentPlacer);
-  gsBoardCtx.beginPath();
-  gsBoardCtx.arc(x, y, AA_DEFAULTS.radius, 0, Math.PI*2);
-  gsBoardCtx.stroke();
-
-  // track preview sweep trail
-  const now = performance.now();
-  const angDeg = (now/1000 * AA_DEFAULTS.rotationDegPerSec) % 360;
-  aaPreviewTrail.push({angleDeg: angDeg, time: now});
-  aaPreviewTrail = aaPreviewTrail.filter(seg => now - seg.time < AA_TRAIL_MS);
-
-  for(const seg of aaPreviewTrail){
-    const age = now - seg.time;
-
-    const alpha = (1 - age/AA_TRAIL_MS) * 0.3;
-
-    gsBoardCtx.globalAlpha = alpha;
-    gsBoardCtx.strokeStyle = colorFor(currentPlacer);
-    gsBoardCtx.lineWidth = 2;
-    gsBoardCtx.lineCap = "round";
-    const trailAng = seg.angleDeg * Math.PI/180;
-    const trailEndX = x + Math.cos(trailAng) * AA_DEFAULTS.radius;
-    const trailEndY = y + Math.sin(trailAng) * AA_DEFAULTS.radius;
-    gsBoardCtx.beginPath();
-    gsBoardCtx.moveTo(x, y);
-    gsBoardCtx.lineTo(trailEndX, trailEndY);
-    gsBoardCtx.stroke();
-  }
-
-  // rotating sweep line preview
-  const ang = angDeg * Math.PI/180;
-
-  const endX = x + Math.cos(ang) * AA_DEFAULTS.radius;
-  const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
-
-  gsBoardCtx.globalAlpha = 0.6;
-  gsBoardCtx.strokeStyle = colorFor(currentPlacer);
-  gsBoardCtx.lineWidth = 2;
-  gsBoardCtx.lineCap = "round";
-  gsBoardCtx.beginPath();
-  gsBoardCtx.moveTo(x, y);
-  gsBoardCtx.lineTo(endX, endY);
-  gsBoardCtx.stroke();
-
-  // translucent white highlight on sweep line
-  gsBoardCtx.globalAlpha = 0.5;
-  gsBoardCtx.strokeStyle = "white";
-  gsBoardCtx.lineWidth = 1;
-  gsBoardCtx.lineCap = "round";
-  gsBoardCtx.beginPath();
-  gsBoardCtx.moveTo(x, y);
-  gsBoardCtx.lineTo(endX, endY);
-  gsBoardCtx.stroke();
-
-  gsBoardCtx.globalAlpha = 0.4;
-  gsBoardCtx.fillStyle = colorFor(currentPlacer);
-  gsBoardCtx.beginPath();
-  gsBoardCtx.arc(x, y, 6, 0, Math.PI*2);
-  gsBoardCtx.fill();
-
-  // inner white circle for volume
-  gsBoardCtx.globalAlpha = 0.6;
-  gsBoardCtx.fillStyle = "white";
-  gsBoardCtx.beginPath();
-  gsBoardCtx.arc(x, y, 4, 0, Math.PI*2);
-  gsBoardCtx.fill();
-
-  // colored center dot matching player color
-  gsBoardCtx.globalAlpha = 1;
-  gsBoardCtx.fillStyle = colorFor(currentPlacer);
-  gsBoardCtx.beginPath();
-  gsBoardCtx.arc(x, y, 1.5, 0, Math.PI*2);
-  gsBoardCtx.fill();
-  gsBoardCtx.restore();
-}
-
 
 function onHandleUp(){
   if(!isAimSessionActive()) return;
@@ -47387,64 +47159,6 @@ function angleDiffDeg(a, b){
   return Math.abs(diff);
 }
 
-function handleAAForPlane(p, fp){
-  if(!isPlaneTargetable(p)) return false;
-  const now = performance.now();
-  for(const aa of aaUnits){
-    if(aa.owner === p.color) continue; // no friendly fire
-    const dx = p.x - aa.x;
-    const dy = p.y - aa.y;
-    const dist = Math.hypot(dx, dy);
-    if(dist < AA_HIT_RADIUS){
-      aa.hp--;
-      if(aa.hp<=0){
-        aaUnits = aaUnits.filter(a=>a!==aa);
-      }
-      continue;
-    }
-    if(dist <= aa.radius + POINT_RADIUS){
-      const contactX = dist === 0 ? p.x : p.x - dx / dist * POINT_RADIUS;
-      const contactY = dist === 0 ? p.y : p.y - dy / dist * POINT_RADIUS;
-      if(isPathClear(aa.x, aa.y, contactX, contactY)){
-        const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
-        const angleBuffer = Math.asin(Math.min(1, POINT_RADIUS / Math.max(1, dist))) * 180/Math.PI;
-        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2 + angleBuffer){
-          if(!p._aaTimes) p._aaTimes={};
-          if(!p._aaTimes[aa.id]){
-            p._aaTimes[aa.id]=now;
-          } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
-            if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
-              aa.lastTriggerAt = now;
-              dropActiveFlagFromPlane(p, { x: contactX, y: contactY });
-              eliminatePlane(p);
-              spawnExplosionForPlane(p, contactX, contactY);
-              if(fp) {
-                flyingPoints = flyingPoints.filter(x=>x!==fp);
-              }
-              if(canAwardKillPointForPlane(p)){
-                markPlaneKillPointAwarded(p);
-                awardPoint(aa.owner);
-              }
-              checkVictory();
-              if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
-                advanceTurn();
-              }
-              return true;
-            }
-          }
-        } else if(p._aaTimes && p._aaTimes[aa.id]){
-          delete p._aaTimes[aa.id];
-        }
-      } else if(p._aaTimes && p._aaTimes[aa.id]){
-        delete p._aaTimes[aa.id];
-      }
-    } else if(p._aaTimes && p._aaTimes[aa.id]){
-      delete p._aaTimes[aa.id];
-    }
-  }
-  return false;
-}
-
 function handleMineForPlane(p, fp){
   if(!isPlaneTargetable(p)) return false;
   if(!Array.isArray(mines) || mines.length === 0) return false;
@@ -47546,12 +47260,6 @@ let simulationTimeSec = 0;
 
 function stepSimulation(deltaSec, now){
   simulationTimeSec += deltaSec;
-    for(const aa of aaUnits){
-      aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec * deltaSec) % 360;
-      aa.trail.push({angleDeg: aa.sweepAngleDeg, time: now});
-      aa.trail = aa.trail.filter(seg => now - seg.time < AA_TRAIL_MS);
-    }
-
 
     // полёты
     if(flyingPoints.length){
@@ -47611,7 +47319,6 @@ function stepSimulation(deltaSec, now){
         // проверка попаданий по врагам
         checkPlaneHits(p, fp);
         handleFlagInteractions(p);
-        if(handleAAForPlane(p, fp)) continue;
         if(handleMineForPlane(p, fp)) continue;
 
         // Прошлое положение обновляется ЗДЕСЬ, после проверок попаданий, а не до них.
@@ -47739,22 +47446,14 @@ function gameDraw(){
     for(const p of points){
       if(!p.isAlive || p.burning) continue;
       if(!flyingPoints.some(fp => fp.plane === p)){
-        if(handleAAForPlane(p, null)) continue;
         handleMineForPlane(p, null);
       }
   }
   }
 
-  // здания
-  drawAAPlacementZone();
-
   drawBaseVisuals();
 
-
-  // установки ПВО
-  drawAAUnits();
   drawMines();
-  drawAAPreview();
 
   // "ручка" при натяжке
   if(isAimSessionActive()){
@@ -49488,84 +49187,6 @@ function drawMines(){
 }
 
 
-function drawAAUnits(){
-  const now = performance.now();
-  for(const aa of aaUnits){
-    gsBoardCtx.save();
-    // draw fading trail
-    gsBoardCtx.save();
-    applyBrickTrailClip(gsBoardCtx);
-    for(const seg of aa.trail){
-      const age = now - seg.time;
-
-      const alpha = (1 - age/AA_TRAIL_MS) * 0.3;
-
-      const trailAng = seg.angleDeg * Math.PI/180;
-
-      gsBoardCtx.save();
-      gsBoardCtx.translate(aa.x, aa.y);
-      gsBoardCtx.rotate(trailAng);
-
-      // wider beam with fade across its width
-      const width = 8;
-      const grad = gsBoardCtx.createLinearGradient(0, -width/2, 0, width/2);
-      grad.addColorStop(0, "rgba(0,0,0,0)");
-      grad.addColorStop(0.5, colorFor(aa.owner));
-      grad.addColorStop(1, "rgba(0,0,0,0)");
-
-      gsBoardCtx.globalAlpha = alpha;
-      gsBoardCtx.strokeStyle = grad;
-      gsBoardCtx.lineWidth = width;
-      gsBoardCtx.lineCap = "round";
-      gsBoardCtx.beginPath();
-      gsBoardCtx.moveTo(0, 0);
-      gsBoardCtx.lineTo(aa.radius, 0);
-      gsBoardCtx.stroke();
-      gsBoardCtx.restore();
-    }
-    gsBoardCtx.restore();
-
-    gsBoardCtx.globalAlpha = 1;
-    // radar sweep line with highlight
-    const ang = aa.sweepAngleDeg * Math.PI/180;
-    const endX = aa.x + Math.cos(ang) * aa.radius;
-    const endY = aa.y + Math.sin(ang) * aa.radius;
-    gsBoardCtx.strokeStyle = colorFor(aa.owner);
-    gsBoardCtx.lineWidth = 2;
-    gsBoardCtx.lineCap = "round";
-    gsBoardCtx.beginPath();
-    gsBoardCtx.moveTo(aa.x, aa.y);
-    gsBoardCtx.lineTo(endX, endY);
-    gsBoardCtx.stroke();
-
-    // inner translucent white highlight on sweep line
-    gsBoardCtx.globalAlpha = 0.5;
-    gsBoardCtx.strokeStyle = "white";
-    gsBoardCtx.lineWidth = 1;
-    gsBoardCtx.lineCap = "round";
-    gsBoardCtx.beginPath();
-    gsBoardCtx.moveTo(aa.x, aa.y);
-    gsBoardCtx.lineTo(endX, endY);
-    gsBoardCtx.stroke();
-
-    gsBoardCtx.globalAlpha = 1;
-
-    // Anti-Aircraft center ring
-    gsBoardCtx.beginPath();
-    gsBoardCtx.fillStyle = colorFor(aa.owner);
-    gsBoardCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
-    gsBoardCtx.fill();
-
-    // inner white circle to add volume
-    gsBoardCtx.beginPath();
-    gsBoardCtx.fillStyle = "white";
-    gsBoardCtx.arc(aa.x, aa.y, 4, 0, Math.PI*2);
-    gsBoardCtx.fill();
-
-    gsBoardCtx.restore();
-  }
-}
-
 function drawArrow(ctx, cx, cy, dx, dy) {
   if (!isSpriteReady(arrowSprite)) return;
 
@@ -50374,12 +49995,6 @@ function serializeMatchState(){
       carrier: planeIndex(flag?.carrier),
       droppedAt: flag?.droppedAt ? { x: num(flag.droppedAt.x), y: num(flag.droppedAt.y) } : null,
     })),
-    // Зенитки сейчас выключены (AA_PLACEMENT_TEMP_DISABLED), но тип сущности переносим:
-    // иначе, включив их обратно, мы бы молча потеряли их в снимке.
-    aa: (Array.isArray(aaUnits) ? aaUnits : []).map((unit) => ({
-      id: unit?.id ?? null, owner: unit?.owner ?? null,
-      x: num(unit?.x), y: num(unit?.y), hp: unit?.hp ?? null,
-    })),
     inventory: {
       blue: (inventoryState?.blue ?? []).map((item) => item?.type ?? null),
       green: (inventoryState?.green ?? []).map((item) => item?.type ?? null),
@@ -50483,11 +50098,6 @@ function applyMatchState(state){
     flag.carrier = Number.isInteger(saved.carrier) && saved.carrier >= 0
       ? (points[saved.carrier] ?? null)
       : null;
-  }
-
-  aaUnits.length = 0;
-  for(const unit of (Array.isArray(state.aa) ? state.aa : [])){
-    aaUnits.push({ ...unit, trail: [], lastTriggerAt: null, sweepAngleDeg: 0 });
   }
 
   for(const color of ["blue", "green"]){
@@ -51006,14 +50616,7 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
     iconScale = 0;
   }
 
-  let statusText = '';
-  if (phase === 'AA_PLACEMENT') {
-    if (currentPlacer === color) {
-      statusText = 'Placing AA';
-    } else {
-      statusText = 'Enemy placing AA';
-    }
-  }
+  const statusText = '';
 
   const slotOrderFromCenter = getPlaneCounterSlotOrderFromCenter(color);
   const planesBySlot = slotOrderFromCenter.map((planeIndex) => playerPlanes[planeIndex] || null);
@@ -51069,11 +50672,7 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
   ctx.globalAlpha = previousAlpha;
 
   if (statusText) {
-    if (phase === 'AA_PLACEMENT' && currentPlacer !== color) {
-      ctx.fillStyle = '#888';
-    } else {
-      ctx.fillStyle = colorFor(color);
-    }
+    ctx.fillStyle = colorFor(color);
     const labelY = height + paddingY;
     ctx.fillText(statusText, width / 2, labelY);
   }
@@ -51237,7 +50836,6 @@ function startNewRound(){
   console.log('[settings] load at match start', {
     flightRangeCells: settings.flightRangeCells,
     accuracyPercent: settings.accuracyPercent,
-    addAA: settings.addAA,
     sharpEdges: settings.sharpEdges,
     flagsEnabled: settings.flagsEnabled,
     addCargo: settings.addCargo,
@@ -51334,7 +50932,6 @@ function startNewRound(){
   globalFrame=0;
   flyingPoints=[];
   hasShotThisRound=false;
-  aaUnits = [];
   mines = [];
   clearDynamiteExplosionDomEntries();
   dynamiteState = [];
@@ -51377,13 +50974,8 @@ function startNewRound(){
   spawnCargoForTurn();
   resetFlagsForNewRound();
   renderScoreboard();
-  if (isAAPlacementEnabled()) {
-    phase = 'AA_PLACEMENT';
-    currentPlacer = 'green';
-  } else {
-    phase = 'TURN';
-    currentPlacer = null;
-  }
+  phase = 'TURN';
+  currentPlacer = null;
   startMainLoopIfNotRunning("startNewRound");
   syncMapEditorResetButtonVisibility();
 }
@@ -51444,7 +51036,6 @@ function resetPlanePositionsForCurrentMap(){
   aiLaunchSession = null;
   hasShotThisRound = false;
   awaitingFlightResolution = false;
-  aaUnits = [];
   mines = [];
   clearDynamiteExplosionDomEntries();
   dynamiteState = [];

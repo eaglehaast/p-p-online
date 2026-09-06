@@ -48,13 +48,12 @@ const source = fs.readFileSync('script.js', 'utf8');
   const loop = source.slice(source.indexOf('// трейл'), source.indexOf('// трейл') + 3000);
   const trailAt = loop.indexOf('p.segments.push(seg)');
   const mineAt = loop.indexOf('handleMineForPlane(p, fp)');
-  const aaAt = loop.indexOf('handleAAForPlane(p, fp)');
   const hitsAt = loop.indexOf('checkPlaneHits(p, fp)');
   const updateAt = loop.indexOf('p.prevX = p.x; p.prevY = p.y;');
 
-  assert(trailAt !== -1 && mineAt !== -1 && aaAt !== -1 && hitsAt !== -1 && updateAt !== -1,
+  assert(trailAt !== -1 && mineAt !== -1 && hitsAt !== -1 && updateAt !== -1,
     '1: цикл полёта на месте и все проверки попаданий найдены');
-  assert(updateAt > mineAt && updateAt > aaAt && updateAt > hitsAt,
+  assert(updateAt > mineAt && updateAt > hitsAt,
     '1b: прошлое положение обновляется ПОСЛЕ проверок попаданий. Если поднять эту ' +
     'строчку выше, отрезок «откуда — куда» выродится в точку, и самолёт снова начнёт ' +
     'перепрыгивать мины — молча, при зелёных тестах');
