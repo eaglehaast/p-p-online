@@ -2760,6 +2760,13 @@ body, button {
     animation-delay: -1.4s;
   }
 
+  /* На время перелёта при смене стороны самолётик идёт НАД кнопкой (у неё z-index: 3).
+     В покое он лежит под ней, и на середине пути между краями кнопки скрывался бы за
+     её подписью. */
+  #menuLayer #modeMenu .mm-plane.is-swapping {
+    z-index: 4;
+  }
+
   @keyframes mm-plane-bob {
     0% {
       transform: translate(var(--mm-plane-offset-x), calc(var(--mm-plane-offset-y) + 1px));
