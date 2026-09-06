@@ -10121,10 +10121,40 @@ const MINE_PLACEMENT_MIN_DISTANCE = 24; // v3.2: was MINE_SIZE_DEFAULTS.LOGICAL_
 // (mine radius 11 + wing half-span 18 = 29px).
 const MINE_PLACEMENT_PLANE_CLEARANCE = MINE_VISUAL_RADIUS + PLANE_DRAW_W / 2; // = 29px (bare trigger)
 const BOUNCE_FRAMES        = 68;
-// Duration of a full-speed flight on the field (measured in frames)
-// (Restored to the original pre-change speed used for gameplay physics)
-// Shortened by 1.5x to speed up on-field flight animation
-const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
+
+// Сколько длится полёт.
+//
+// Самолёт летит по правилу «скорость × длительность = путь», и раньше здесь стояла
+// ПОСТОЯННАЯ длительность. Значит, дальность из настроек меняла не путь, а скорость:
+//
+//   дальность 10 клеток   путь  200 px   длительность 1.511 с   скорость 132 px/с
+//   дальность 30 клеток   путь  600 px   длительность 1.511 с   скорость 397 px/с
+//   дальность 50 клеток   путь 1000 px   длительность 1.511 с   скорость 662 px/с
+//
+// Пятикратный разброс, и это видно глазом: на большой дальности самолёты не летят
+// дальше, а мечутся. Настройка называется «дальность полёта» и должна менять именно
+// дальность.
+//
+// Поэтому постоянной становится СКОРОСТЬ, а длительность считается от дальности. Правило
+// «скорость × длительность = путь» при этом не трогается: его знают полторы сотни мест в
+// коде, включая всё планирование ИИ, и переписывать их значило бы переписать игру.
+// Меняется одно число, а читают его по-прежнему как раньше.
+//
+// На дальности по умолчанию всё остаётся ровно как было — отсюда и опорные величины.
+const FIELD_FLIGHT_REFERENCE_RANGE_CELLS = 30;
+const FIELD_FLIGHT_BASE_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
+let FIELD_FLIGHT_DURATION_SEC = FIELD_FLIGHT_BASE_DURATION_SEC;
+
+// Пересчитать длительность под текущую дальность. Зовётся там же, где применяются
+// настройки: дальность перечитывается каждый раунд, и длительность обязана ехать с ней.
+function syncFlightDurationToRange(){
+  const cells = Number(settings?.flightRangeCells);
+  const safeCells = Number.isFinite(cells) && cells > 0
+    ? cells
+    : FIELD_FLIGHT_REFERENCE_RANGE_CELLS;
+  FIELD_FLIGHT_DURATION_SEC = FIELD_FLIGHT_BASE_DURATION_SEC
+    * (safeCells / FIELD_FLIGHT_REFERENCE_RANGE_CELLS);
+}
 const FIELD_PLANE_SWAY_DEG = 0.75;
 const FIELD_PLANE_SWAY_PERIOD_SEC = 2.6 / 1.5;
 const FIELD_PLANE_ROLL_BOB_PX = 0.75;
@@ -12432,6 +12462,8 @@ function loadSettings(){
   if(!Number.isFinite(settings.accuracyPercent)){
     settings.accuracyPercent = 80;
   }
+
+  syncFlightDurationToRange();
 
   if(previousFlameStyle !== settings.flameStyle){
     onFlameStyleChanged();
@@ -20468,6 +20500,8 @@ if(classicRulesBtn){
     settings.accuracyPercent = 80;
     settings.addCargo = true;
     settings.sharpEdges = true;
+    // Дальность выставлена напрямую, мимо чтения настроек — длительность полёта едет за ней.
+    syncFlightDurationToRange();
     const upcomingRoundNumber = roundNumber + 1;
     randomMapPairSequenceNumber = null;
     randomMapPairIndex = null;
