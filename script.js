@@ -9904,6 +9904,9 @@ const CAPTURED_FLAG_RING_STYLE = {
 
 function drawCapturedFlagRing(ctx2d, plane){
   if(!ctx2d || !plane?.flagColor) return;
+  // Кольцо носит летящий самолёт, поэтому берётся то же положение, что и у него самого:
+  // по сырому оно отставало бы на недорисованный остаток шага и отрывалось от носителя.
+  const { x: cx, y: cy } = getPlaneRenderPosition(plane);
   const ringColor = colorWithAlpha(plane.flagColor, CAPTURED_FLAG_RING_STYLE.innerStrokeAlpha);
   const innerRingRadius = POINT_RADIUS + CAPTURED_FLAG_RING_STYLE.innerRadiusOffset;
   const outerRingRadius = innerRingRadius + CAPTURED_FLAG_RING_STYLE.outerRadiusOffset;
@@ -9917,13 +9920,13 @@ function drawCapturedFlagRing(ctx2d, plane){
   ctx2d.strokeStyle = CAPTURED_FLAG_RING_STYLE.outerStrokeColor;
   ctx2d.lineWidth = CAPTURED_FLAG_RING_STYLE.outerStrokeWidth;
   ctx2d.beginPath();
-  ctx2d.arc(plane.x, plane.y, outerRingRadius, 0, Math.PI * 2, false);
+  ctx2d.arc(cx, cy, outerRingRadius, 0, Math.PI * 2, false);
   ctx2d.stroke();
 
   ctx2d.strokeStyle = ringColor;
   ctx2d.lineWidth = CAPTURED_FLAG_RING_STYLE.innerStrokeWidth;
   ctx2d.beginPath();
-  ctx2d.arc(plane.x, plane.y, innerRingRadius, 0, Math.PI * 2, false);
+  ctx2d.arc(cx, cy, innerRingRadius, 0, Math.PI * 2, false);
   ctx2d.stroke();
   ctx2d.restore();
 }
@@ -47688,12 +47691,23 @@ function runSimulationSteps(frameDeltaSec, now){
   return steps;
 }
 
-function gameDraw(){
+// Время кадра — то, которое даёт браузер, а не то, когда до нас дошла очередь.
+//
+// requestAnimationFrame передаёт в обработчик момент САМОГО кадра: он привязан к обновлению
+// экрана и одинаков для всех обработчиков этого кадра. performance.now() внутри обработчика
+// — это уже другое: момент, когда браузер добрался до нас, а до того он мог верстать,
+// собирать мусор или разбирать чужой обработчик. Замер настоящего полёта: между кадром и
+// входом в gameDraw проходит от 0.3 до 15.5 мс, разброс 4.4 мс.
+//
+// Эта разница целиком уходила в длину кадра, а из неё — в шаг симуляции и в сглаживание.
+// Отсюда и бралось дрожание: при ровных кадрах по 16.7 мс самолёт сдвигался то на 1.7, то
+// на 13.7 px вместо своих 6.6.
+function gameDraw(frameTimeMs){
   if (!gameDrawFirstLogged) {
     logBootStep("gameDraw");
     gameDrawFirstLogged = true;
   }
-  const now = performance.now();
+  const now = Number.isFinite(frameTimeMs) ? frameTimeMs : performance.now();
   if (DEBUG_RENDER_INIT) {
     if (!renderInitState.firstFrameDrawn) {
       renderInitState.firstFrameDrawn = true;
@@ -47705,7 +47719,10 @@ function gameDraw(){
     }
   }
   let deltaSec = (now - lastFrameTime) / 1000;
-  deltaSec = Math.min(deltaSec, 0.05);
+  // Ноль снизу: первый кадр цикла отсчитывается от performance.now(), а приходит с меткой
+  // кадра, и она может оказаться чуть раньше. Отрицательная длина кадра отмотала бы время
+  // назад.
+  deltaSec = Math.min(Math.max(deltaSec, 0), 0.05);
   const delta = deltaSec * 60;
   const deltaMs = deltaSec * 1000;
   lastFrameTime = now;
@@ -48860,6 +48877,7 @@ function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
   const baseRadius = Math.max(PLANE_DRAW_W, PLANE_DRAW_H) * 0.55;
   const radius = baseRadius * (1 + progress * 1.0);
   const color = PLANE_BUFF_FX_COLORS[plane.buffAppliedType] || "#ffffff";
+  const { x: cx, y: cy } = getPlaneRenderPosition(plane);
   const isInvisibility = plane.buffAppliedType === "invisibility";
   const outerWidth = isInvisibility ? 1.5 : 2.5;
   const innerWidth = isInvisibility ? 1.0 : 1.5;
@@ -48870,7 +48888,7 @@ function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
     ? colorWithAlpha(color, fade)
     : color;
   ctx2d.beginPath();
-  ctx2d.arc(plane.x, plane.y, radius, 0, Math.PI * 2);
+  ctx2d.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx2d.stroke();
   // Inner softer ring
   ctx2d.lineWidth = innerWidth;
@@ -48878,7 +48896,7 @@ function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
     ? colorWithAlpha(color, fade * innerAlphaScale)
     : color;
   ctx2d.beginPath();
-  ctx2d.arc(plane.x, plane.y, radius * 0.65, 0, Math.PI * 2);
+  ctx2d.arc(cx, cy, radius * 0.65, 0, Math.PI * 2);
   ctx2d.stroke();
   ctx2d.restore();
 }
@@ -48903,8 +48921,9 @@ function drawArcadeRespawnShield(ctx2d, plane){
 
   const baseSize = Math.max(PLANE_DRAW_W, PLANE_DRAW_H) * 1.45;
   const shieldYOffset = plane.color === "blue" ? -5 : 0;
-  const drawX = plane.x - baseSize / 2;
-  const drawY = plane.y - baseSize / 2 + shieldYOffset;
+  const { x: cx, y: cy } = getPlaneRenderPosition(plane);
+  const drawX = cx - baseSize / 2;
+  const drawY = cy - baseSize / 2 + shieldYOffset;
 
   ctx2d.save();
   ctx2d.globalAlpha *= plane._shieldAlphaCurrent;
@@ -48916,7 +48935,7 @@ function drawArcadeRespawnShield(ctx2d, plane){
     ctx2d.strokeStyle = "rgba(190, 227, 255, 0.9)";
     ctx2d.lineWidth = 2;
     ctx2d.beginPath();
-    ctx2d.arc(plane.x, plane.y + shieldYOffset, baseSize * 0.45, 0, Math.PI * 2);
+    ctx2d.arc(cx, cy + shieldYOffset, baseSize * 0.45, 0, Math.PI * 2);
     ctx2d.stroke();
   }
 
@@ -49225,7 +49244,8 @@ function drawPlanesAndTrajectories(){
       targetCtx.strokeStyle = "rgba(255, 255, 255, 0.95)";
       targetCtx.lineWidth = 2;
       targetCtx.beginPath();
-      targetCtx.arc(p.x, p.y, POINT_RADIUS + 9, 0, Math.PI * 2);
+      const highlightAt = getPlaneRenderPosition(p);
+      targetCtx.arc(highlightAt.x, highlightAt.y, POINT_RADIUS + 9, 0, Math.PI * 2);
       targetCtx.stroke();
       targetCtx.restore();
     }
