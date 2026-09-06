@@ -48,7 +48,7 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 function makeStand({ relay = 'wss://relay.example', session = null } = {}){
   const log = [];
   const sandbox = {
-    Object, Array, Math, JSON, String, Number, Date, RegExp, decodeURIComponent, URLSearchParams,
+    Object, Array, Math, JSON, String, Number, Date, RegExp, decodeURIComponent, URLSearchParams, URL,
     console: { log: () => {}, warn: () => {} },
     onlineSession: session,
     onlineInbox: [],
@@ -72,7 +72,11 @@ function makeStand({ relay = 'wss://relay.example', session = null } = {}){
     source.match(/const ONLINE_ROOM_MAX_LENGTH = \d+;/)[0],
     'let onlinePresence = { blue: true, green: false };',
     'let onlineReady = { mine: true, theirs: true };',
+    source.match(/const ONLINE_RELAY_ALLOWED_HOSTS = Object\.freeze\(\[[^\]]*\]\);/)[0],
     extractFunctionSource(source, 'resolveOnlineRelayAddress'),
+    extractFunctionSource(source, 'isLocalPageOrigin'),
+    extractFunctionSource(source, 'getRelayHost'),
+    extractFunctionSource(source, 'isRelayAddressAllowed'),
     extractFunctionSource(source, 'getConfiguredRelayUrl'),
     extractFunctionSource(source, 'stopOnlineSession'),
     extractFunctionSource(source, 'normalizeOnlineRoomCode'),
@@ -80,7 +84,10 @@ function makeStand({ relay = 'wss://relay.example', session = null } = {}){
     'this.api = { normalizeOnlineRoomCode, joinOnlineRoomByCode,',
     '             session: () => onlineSession, presence: () => onlinePresence,',
     '             ready: () => onlineReady };',
-    'this.ONLINE_RELAY_URL = "";',
+    // Этот стенд про коды комнат, а не про разбор адресов: ретранслятор стенда и есть
+    // настроенный. Иначе его отвергнет проверка чужих адресов — она принимает из ссылки
+    // только свой собственный.
+    `this.ONLINE_RELAY_URL = ${JSON.stringify(relay || '')};`,
   ].join('\n'), sandbox);
   return { api: sandbox.api, log, sandbox };
 }

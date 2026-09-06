@@ -44,19 +44,21 @@ const markup = fs.readFileSync('index.html', 'utf8');
 const styles = fs.readFileSync('styles.css', 'utf8');
 
 // Стенд одного устройства: настоящий код лобби, последствия записываются.
-function makeSide(seat, { search = '', room = 'stand' } = {}){
+function makeSide(seat, { search = '', room = 'stand', origin = 'https://example.test', relayUrl = '' } = {}){
+  const parsedOrigin = new URL(origin);
   const log = [];
   const sent = [];
   const sandbox = {
-    Object, Array, Math, JSON, String, URLSearchParams,
+    Object, Array, Math, JSON, String, URLSearchParams, URL,
     console: { log: () => {}, warn: (...a) => log.push(['warn', ...a]) },
     gameMode: null,
     onlineSession: {
       seat, room,
       transport: { kind: 'stand', status: () => 'online' },
     },
-    window: { location: { origin: 'https://example.test', pathname: '/game/', search,
-                          protocol: 'https:', host: 'example.test' } },
+    window: { location: { origin, pathname: '/game/', search,
+                          protocol: parsedOrigin.protocol, host: parsedOrigin.host,
+                          hostname: parsedOrigin.hostname } },
     postOnlineEnvelope: (type, payload) => { sent.push({ type, payload }); return true; },
     handlePlayStart: () => log.push(['handlePlayStart']),
     hideOnlineLobby: () => log.push(['hideOnlineLobby']),
@@ -64,7 +66,7 @@ function makeSide(seat, { search = '', room = 'stand' } = {}){
     onlineLobbyDiv: null,
     onlineLobbyStatusEl: null,
     HTMLElement: function HTMLElement(){},
-    ONLINE_RELAY_URL: '',
+    ONLINE_RELAY_URL: relayUrl,
   };
   vm.createContext(sandbox);
   vm.runInContext([
@@ -72,7 +74,11 @@ function makeSide(seat, { search = '', room = 'stand' } = {}){
     source.match(/const ONLINE_ROOM_ID_ALPHABET = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_LENGTH = \d+;/)[0],
     'let onlinePresence = null; let onlineReady = { mine: false, theirs: false };',
+    source.match(/const ONLINE_RELAY_ALLOWED_HOSTS = Object\.freeze\(\[[^\]]*\]\);/)[0],
     extractFunctionSource(source, 'resolveOnlineRelayAddress'),
+    extractFunctionSource(source, 'isLocalPageOrigin'),
+    extractFunctionSource(source, 'getRelayHost'),
+    extractFunctionSource(source, 'isRelayAddressAllowed'),
     extractFunctionSource(source, 'getConfiguredRelayUrl'),
     extractFunctionSource(source, 'isOnlineAvailable'),
     extractFunctionSource(source, 'makeOnlineRoomId'),
@@ -85,6 +91,7 @@ function makeSide(seat, { search = '', room = 'stand' } = {}){
     extractFunctionSource(source, 'refreshOnlineLobbyUi'),
     extractFunctionSource(source, 'getOnlineLobbyStatusText'),
     'this.api = { isOnlineAvailable, makeOnlineRoomId, buildOnlineInviteLink,',
+    '             getConfiguredRelayUrl, isRelayAddressAllowed,',
     '             isOnlineTableFull, receiveOnlinePresence, receiveOnlineReady,',
     '             maybeStartOnlineMatch, getOnlineLobbyStatusText, refreshOnlineLobbyUi,',
     '             ready: () => onlineReady, presence: () => onlinePresence,',
@@ -100,12 +107,19 @@ function makeSide(seat, { search = '', room = 'stand' } = {}){
   assert(withoutRelay.api.isOnlineAvailable() === false,
     '1: без адреса ретранслятора онлайна нет');
 
+  // Чужой адрес из ссылки БОЛЬШЕ НЕ ПРИНИМАЕТСЯ. Подробнее — в проверке 1g ниже.
   const fromLink = makeSide('blue', { search: '?relay=wss://relay.example' });
-  assert(fromLink.api.isOnlineAvailable() === true,
-    '1b: адрес из ссылки включает онлайн');
+  assert(fromLink.api.isOnlineAvailable() === false,
+    '1b: чужой адрес из ссылки снова включает онлайн');
 
   const auto = makeSide('blue', { search: '?relay=auto' });
   assert(auto.api.isOnlineAvailable() === true, '1c: «auto» тоже адрес');
+
+  const configured = makeSide('blue', {
+    search: '?relay=wss://relay.example', relayUrl: 'wss://relay.example',
+  });
+  assert(configured.api.isOnlineAvailable() === true,
+    '1b2: свой собственный ретранслятор, названный в ссылке, перестал приниматься');
 
   // Кнопка выключается в разметке и включается кодом, а не наоборот: файл открывают и
   // без сервера, и лучше пусть она сразу выглядит недоступной.
@@ -115,6 +129,64 @@ function makeSide(seat, { search = '', room = 'stand' } = {}){
     '1e: включает её код — и только когда есть адрес');
   assert(/onlineBtn\.title = available/.test(source),
     '1f: и объясняет, почему выключена, если выключена');
+}
+
+// === 1g. ГЛАВНОЕ ПРО БЕЗОПАСНОСТЬ: чужой ретранслятор из ссылки не принимается ===
+//
+// Через ретранслятор едут настройки создателя комнаты и полные снимки партии. Пока
+// ?relay=wss://... принимался как есть, присланная кем-то ссылка «сыграем?» уводила чужую
+// партию на чужой сервер — и с виду всё работало.
+//
+// Разрешено ровно три вещи: свой настроенный адрес, «auto» (это адрес самой страницы, увести
+// он никуда не может) и список запасных. Плюс любой адрес, если страница открыта на своей
+// машине: подсунуть там ссылку некому, а разработчику она нужна — страница на одном порту,
+// ретранслятор на другом, и «auto» такую пару не сводит.
+{
+  const наСайте = (search, relayUrl = 'wss://relay.paperwings.test') =>
+    makeSide('blue', { search, relayUrl }).api;
+
+  // Спрашивать надо КУДА ПОДКЛЮЧИМСЯ, а не «доступен ли онлайн»: со своим настроенным
+  // ретранслятором онлайн доступен в любом случае, и по этому ответу подмены не видно.
+  assert(наСайте('?relay=wss://evil.example').getConfiguredRelayUrl() === 'wss://relay.paperwings.test',
+    '1g: чужой адрес из ссылки принят — это увод партии на чужой сервер');
+
+  assert(наСайте('?relay=wss://relay.paperwings.test').getConfiguredRelayUrl()
+      === 'wss://relay.paperwings.test',
+    '1g2: свой собственный адрес в ссылке отвергается — тогда ссылки перестанут работать');
+  assert(наСайте('?relay=wss://relay.paperwings.test/').getConfiguredRelayUrl()
+      === 'wss://relay.paperwings.test/',
+    '1g3: свой адрес со слэшем на конце считается чужим — это тот же самый ретранслятор');
+
+  // Без своего адреса подключаться просто некуда, и это видно по кнопке.
+  assert(наСайте('?relay=wss://evil.example', '').isOnlineAvailable() === false,
+    '1g4: чужой адрес включает онлайн там, где своего ретранслятора нет вовсе');
+
+  // На своей машине — можно что угодно: там некому подсунуть ссылку, а разработчику она
+  // нужна, страница и сервер живут на разных портах.
+  const местный = makeSide('blue', {
+    search: '?relay=ws://192.168.1.50:8787', origin: 'http://localhost:8000',
+  }).api;
+  assert(местный.getConfiguredRelayUrl() === 'ws://192.168.1.50:8787',
+    '1g5: на localhost произвольный адрес запрещён — так не отладить пару «страница + сервер» '
+    + 'на разных портах');
+
+  // И тот же адрес с обычной страницы — уже нельзя.
+  const публичный = makeSide('blue', {
+    search: '?relay=ws://192.168.1.50:8787', origin: 'https://example.test',
+  }).api;
+  assert(публичный.getConfiguredRelayUrl() === '',
+    '1g6: с обычной страницы адрес из локальной сети принимается');
+
+  // «auto» разрешено всегда: это адрес самой страницы, увести он никуда не может.
+  assert(наСайте('?relay=auto').getConfiguredRelayUrl() === 'wss://example.test',
+    '1g7: «auto» перестало работать — на нём держится и локальная сеть, и туннель');
+
+  // Отказ обязан быть слышен: молча оставшись на своём адресе, игра выглядела бы исправной,
+  // а человек не понял бы, почему его ссылка не сработала.
+  const side = makeSide('blue', { search: '?relay=wss://evil.example', relayUrl: 'wss://ok.test' });
+  side.api.getConfiguredRelayUrl();
+  assert(side.log.some(([kind, text]) => kind === 'warn' && /отклонён/.test(String(text))),
+    '1g8: об отказе нигде не сказано');
 }
 
 // === 2. Ссылка другу ведёт на СВОБОДНОЕ место ===
@@ -137,9 +209,20 @@ function makeSide(seat, { search = '', room = 'stand' } = {}){
   assert(new URLSearchParams(auto.api.buildOnlineInviteLink().split('?')[1]).get('relay') === 'auto',
     '2d: «auto» в ссылке остаётся «auto», а не превращается в наш собственный адрес');
 
-  const explicit = makeSide('blue', { search: '?relay=wss://relay.example' });
-  assert(new URLSearchParams(explicit.api.buildOnlineInviteLink().split('?')[1]).get('relay')
-      === 'wss://relay.example', '2e: явный адрес передаётся как есть');
+  // Явный адрес передаётся дальше, только если мы его САМИ приняли. Отклонённый поехал бы
+  // по цепочке приглашений, у каждого молча отвергался и у каждого выглядел бы как «друг
+  // открыл ссылку, и ничего не происходит».
+  const свой = makeSide('blue', {
+    search: '?relay=wss://relay.example', relayUrl: 'wss://relay.example',
+  });
+  assert(new URLSearchParams(свой.api.buildOnlineInviteLink().split('?')[1]).get('relay')
+      === 'wss://relay.example', '2e: свой адрес перестал передаваться другу');
+
+  const чужой = makeSide('blue', {
+    search: '?relay=wss://evil.example', relayUrl: 'wss://relay.example',
+  });
+  assert(new URLSearchParams(чужой.api.buildOnlineInviteLink().split('?')[1]).get('relay') === null,
+    '2e2: отклонённый адрес всё равно уезжает в ссылку другу');
 
   // Настроенный в коде адрес в ссылку не пишем: он и так у друга есть.
   const configured = makeSide('blue', { search: '' });
