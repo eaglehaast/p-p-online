@@ -7894,7 +7894,7 @@ function createBroadcastTransport(room){
 // требование. Игра про обрыв не знает вовсе: пока сокета нет, пакеты копятся здесь, а
 // после подключения уезжают в том же порядке. Пошаговой игре это ничего не стоит —
 // сопернику всё равно нечего показывать, пока ход не сделан.
-function createWebSocketTransport(room, relayUrl, seat, onStatusChange){
+function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey){
   if(typeof WebSocket !== "function" || !relayUrl) return null;
 
   const handlers = [];
@@ -7906,12 +7906,15 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange){
   // Первое подключение и обрыв — разные вещи, и говорить о них надо разное. Пока сокет
   // только открывается, «связь потеряна» — неправда: терять ещё нечего.
   let everOpened = false;
+  // Чем именно отказала комната: «место занято» и «не та версия» лечатся по-разному.
+  let rejectReason = "";
   const announce = () => {
     if(typeof onStatusChange === "function") onStatusChange();
   };
 
   const address = `${relayUrl.replace(/\/+$/, "")}/room/${encodeURIComponent(room)}`
-    + `?seat=${encodeURIComponent(seat)}&v=${ONLINE_PROTOCOL_VERSION}`;
+    + `?seat=${encodeURIComponent(seat)}&v=${ONLINE_PROTOCOL_VERSION}`
+    + `&key=${encodeURIComponent(seatKey || "")}`;
 
   const flush = () => {
     while(outbox.length > 0 && socket?.readyState === WebSocket.OPEN){
@@ -7951,7 +7954,8 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange){
       // с тем же адресом откажет и в следующий раз.
       if(event?.code === 4000){
         closedForGood = true;
-        console.error("[online] комната отказала", { причина: event.reason });
+        rejectReason = String(event.reason || "");
+        console.error("[online] комната отказала", { причина: rejectReason });
         announce();
         return;
       }
@@ -7970,6 +7974,8 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange){
       if(closedForGood) return "rejected";
       return everOpened ? "reconnecting" : "connecting";
     },
+    // Чем именно отказала комната: «место занято» и «не та версия» лечатся по-разному.
+    rejection: () => rejectReason,
     post(envelope){
       outbox.push(envelope);
       flush();
@@ -7997,7 +8003,8 @@ function startOnlineSession(options = {}){
       // Лобби показывает состояние связи, а состояние это меняется само по себе —
       // без нашего участия и в любой момент. Значит, о нём надо не спрашивать, а
       // узнавать: иначе на экране навсегда застывает то, что было в миг открытия.
-      ? createWebSocketTransport(room, seatInfo.relay, seatInfo.seat, refreshOnlineLobbyUi)
+      ? createWebSocketTransport(room, seatInfo.relay, seatInfo.seat, refreshOnlineLobbyUi,
+        resolveSeatKey(room, seatInfo.seat))
       : createBroadcastTransport(room));
   const transport = createTransport(seatInfo.room);
   if(!transport){
@@ -8353,14 +8360,93 @@ function isOnlineAvailable(){
   return Boolean(getConfiguredRelayUrl());
 }
 
+// Случайная строка, которую нельзя предсказать.
+//
+// Math.random() для имени комнаты и ключа места не годится: генератор в браузере не
+// криптографический, и по нескольким выданным значениям его состояние восстанавливается —
+// а значит, предсказываются и следующие. Для игры в кости это неважно, для «кто может
+// войти в комнату» — важно.
+//
+// Отбрасывание вместо остатка от деления: остаток даёт первым буквам алфавита чуть больше
+// шансов, если 256 не делится на длину алфавита нацело. На 32 буквах разницы нет, но
+// правило не должно ломаться от того, что кто-то добавит в алфавит букву.
+function makeRandomString(length, alphabet){
+  const source = typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function"
+    ? crypto
+    : null;
+  const limit = Math.floor(256 / alphabet.length) * alphabet.length;
+  let out = "";
+  while(out.length < length){
+    const need = length - out.length;
+    const bytes = new Uint8Array(need * 2);
+    if(source){
+      source.getRandomValues(bytes);
+    } else {
+      // Криптостойкого источника нет только в очень старом браузере. Игра там всё равно
+      // должна открыться, поэтому берём что есть — но молча это не оставляем.
+      for(let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    for(const byte of bytes){
+      if(byte >= limit) continue;
+      out += alphabet[byte % alphabet.length];
+      if(out.length === length) break;
+    }
+  }
+  return out;
+}
+
 function makeOnlineRoomId(){
   // Буквы, которые не путаются на слух и на глаз: без l/o/0/1 — ссылку могут и продиктовать.
-  let id = "";
-  for(let i = 0; i < ONLINE_ROOM_ID_LENGTH; i += 1){
-    const index = Math.floor(Math.random() * ONLINE_ROOM_ID_ALPHABET.length);
-    id += ONLINE_ROOM_ID_ALPHABET[index] ?? "x";
+  return makeRandomString(ONLINE_ROOM_ID_LENGTH, ONLINE_ROOM_ID_ALPHABET);
+}
+
+// Ключ места.
+//
+// Имя комнаты диктуют вслух и пересылают в чатах, поэтому оно отвечает только на вопрос
+// «какая комната», но не «кто ты за столом». Ключ отвечает на второй: с ним место можно
+// занять и вернуться на него после обрыва, без него — нельзя даже при известном имени.
+//
+// Длина 22 буквы из 32 — это 110 бит. Подбирать нечего.
+const ONLINE_SEAT_KEY_LENGTH = 22;
+const ONLINE_SEAT_KEY_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEF";
+
+function makeOnlineSeatKey(){
+  return makeRandomString(ONLINE_SEAT_KEY_LENGTH, ONLINE_SEAT_KEY_ALPHABET);
+}
+
+// Ключ переживает перезагрузку страницы: иначе вернувшийся игрок оказался бы для комнаты
+// посторонним и не смог бы сесть на своё же место.
+function seatKeyStorageKey(room, seat){
+  return `online.seatKey.${room}.${seat}`;
+}
+
+function rememberSeatKey(room, seat, key){
+  try {
+    window.localStorage?.setItem(seatKeyStorageKey(room, seat), key);
+  } catch(_error){
+    // Приватный режим: ключ проживёт до перезагрузки, и это всё же лучше, чем ничего.
   }
-  return id;
+}
+
+function recallSeatKey(room, seat){
+  try {
+    return window.localStorage?.getItem(seatKeyStorageKey(room, seat)) || "";
+  } catch(_error){
+    return "";
+  }
+}
+
+// Ключ для этого места: свой прежний, если он есть, иначе новый.
+//
+// В ссылку приглашения ключ НЕ кладётся, и это нарочно: ссылку пересылают в чатах, и
+// вложенный в неё ключ достался бы всякому, кто её видел. Пусть лучше место займёт тот,
+// кто первым по ней придёт, — а второму комната честно откажет.
+function resolveSeatKey(room, seat){
+  const remembered = recallSeatKey(room, seat);
+  if(remembered) return remembered;
+  const key = makeOnlineSeatKey();
+  rememberSeatKey(room, seat, key);
+  return key;
 }
 
 // Ссылка для друга: та же страница, но место — свободное.
@@ -8511,7 +8597,13 @@ function hideOnlineLobby(){
 function getOnlineLobbyStatusText(){
   if(!onlineSession) return "";
   const connection = onlineSession.transport.status?.() ?? "online";
-  if(connection === "rejected") return "Room refused the connection. Reload the page.";
+  if(connection === "rejected"){
+    // «Место занято» перезагрузкой не лечится: там сидит другой человек, и советовать
+    // обновить страницу — значит гонять его по кругу.
+    return onlineSession.transport.rejection?.() === "seat_taken"
+      ? "This seat is already taken. Ask your friend for a new link."
+      : "Room refused the connection. Reload the page.";
+  }
   if(connection === "connecting") return "Connecting…";
   if(connection !== "online") return "Connection lost. Retrying…";
   if(!onlinePresence) return "Room created. Connecting…";

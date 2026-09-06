@@ -27,7 +27,29 @@ export const RELAY_ERRORS = Object.freeze({
   BAD_SEAT: "bad_seat",
   BAD_VERSION: "bad_version",
   TOO_LARGE: "message_too_large",
+  BAD_KEY: "bad_key",
+  SEAT_TAKEN: "seat_taken",
 });
+
+// Ключ места.
+//
+// Раньше место защищало только имя комнаты, а имя комнаты диктуют вслух и пересылают в
+// чатах. Кто его знал, тот мог сесть за ЛЮБОЕ из двух мест — и не просто сесть, а
+// ВЫТЕСНИТЬ того, кто там сидит: вытеснение сделано нарочно, ради возвращения после
+// обрыва, и отличить вернувшегося от постороннего комната не могла.
+//
+// Теперь может: у места есть ключ, и вытеснить сидящего вправе только тот, кто предъявит
+// тот же самый. Ключ придумывает тот, кто занял место первым, — комната его просто
+// запоминает и дальше сверяет.
+export const RELAY_SEAT_KEY_MIN_LENGTH = 16;
+export const RELAY_SEAT_KEY_MAX_LENGTH = 128;
+
+export function isValidSeatKey(key){
+  return typeof key === "string"
+    && key.length >= RELAY_SEAT_KEY_MIN_LENGTH
+    && key.length <= RELAY_SEAT_KEY_MAX_LENGTH
+    && /^[A-Za-z0-9_-]+$/.test(key);
+}
 
 // Предел на размер пакета.
 //
@@ -62,6 +84,8 @@ export function isMessageTooLarge(message){
 export function createRoom(){
   return {
     seats: { blue: null, green: null },
+    // Ключ места: кто занял первым, тот его и назначил. Живёт, пока живёт комната.
+    seatKeys: { blue: null, green: null },
     kept: Object.create(null),
     joinCount: 0,
   };
@@ -69,19 +93,36 @@ export function createRoom(){
 
 // Сесть за место.
 //
-// Занятое место НЕ отказывает, а вытесняет прежнее соединение — и это главное решение
-// здесь. Оборвавшийся сокет сервер замечает не сразу: игрок уже перезагрузил страницу, а
-// его прошлое соединение всё ещё числится живым. Отказ означал бы «подождите минуту,
-// пока мы заметим, что вас нет», то есть ровно тот случай, ради которого всё и делается.
+// Со СВОИМ ключом занятое место не отказывает, а вытесняет прежнее соединение — и это
+// главное решение здесь. Оборвавшийся сокет сервер замечает не сразу: игрок уже
+// перезагрузил страницу, а его прошлое соединение всё ещё числится живым. Отказ означал бы
+// «подождите минуту, пока мы заметим, что вас нет», то есть ровно тот случай, ради
+// которого всё и делается.
+//
+// С ЧУЖИМ ключом — отказ. Раньше ключей не было вовсе, и вытеснение работало для любого,
+// кто знал имя комнаты: то самое имя, которое диктуют вслух и пересылают в чатах.
 //
 // Вытесненное соединение возвращается наружу: закрыть его — дело вызывающего, комната
 // сокетов не знает.
-export function joinRoom(room, { seat, version, connection }){
+export function joinRoom(room, { seat, version, connection, key }){
   if(!RELAY_SEATS.includes(seat)){
     return { ok: false, error: RELAY_ERRORS.BAD_SEAT };
   }
   if(version !== RELAY_PROTOCOL_VERSION){
     return { ok: false, error: RELAY_ERRORS.BAD_VERSION };
+  }
+  if(!isValidSeatKey(key)){
+    return { ok: false, error: RELAY_ERRORS.BAD_KEY };
+  }
+
+  const known = room.seatKeys[seat];
+  if(known === null || known === undefined){
+    // Место свободно с самого начала: первый пришедший его и называет своим.
+    room.seatKeys[seat] = key;
+  } else if(known !== key){
+    // Чужой с чужим ключом. Отказ, а не вытеснение: именно этим посторонний и отличается
+    // от вернувшегося.
+    return { ok: false, error: RELAY_ERRORS.SEAT_TAKEN };
   }
 
   const evicted = room.seats[seat];
@@ -99,7 +140,7 @@ export function joinRoom(room, { seat, version, connection }){
     .filter((envelope) => envelope !== undefined)
     .map((envelope) => ({ ...envelope, replay: true }));
 
-  return { ok: true, evicted: evicted === connection ? null : evicted, replay };
+  return { ok: true, evicted: evicted === connection ? null : evicted, replay, seatKeys: { ...room.seatKeys } };
 }
 
 // Куда переслать пакет и надо ли его придержать.
@@ -180,5 +221,6 @@ export function parseJoinRequest(url){
     room: match ? decodeURIComponent(match[1]) : null,
     seat: (parsed.searchParams.get("seat") || "").trim().toLowerCase(),
     version: Number(parsed.searchParams.get("v")),
+    key: (parsed.searchParams.get("key") || "").trim(),
   };
 }

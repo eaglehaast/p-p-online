@@ -167,7 +167,8 @@ const server = http.createServer(serveFile);
 
 server.on("upgrade", (request, socket) => {
   const key = request.headers["sec-websocket-key"];
-  const { room: roomName, seat, version } = parseJoinRequest(`ws://local${request.url}`);
+  // seatKey, а не key: key здесь уже занят ключом рукопожатия WebSocket.
+  const { room: roomName, seat, version, key: seatKey } = parseJoinRequest(`ws://local${request.url}`);
 
   if(!key || !roomName){
     socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
@@ -185,7 +186,7 @@ server.on("upgrade", (request, socket) => {
 
   const connection = createConnection(socket);
   const room = getRoom(roomName);
-  const joined = joinRoom(room, { seat, version, connection });
+  const joined = joinRoom(room, { seat, version, connection, key: seatKey });
   if(!joined.ok){
     console.log(`  отказ: комната ${roomName}, место ${seat} — ${joined.error}`);
     connection.close(4000, joined.error);

@@ -12,6 +12,7 @@ import {
   RELAY_PROTOCOL_VERSION,
   RELAY_KEPT_TYPES,
   RELAY_ERRORS,
+  RELAY_SEATS,
   isMessageTooLarge,
   createRoom,
   joinRoom,
@@ -68,14 +69,22 @@ export class Room {
       for(const [type, envelope] of stored){
         this.room.kept[type] = envelope;
       }
+
+      // Ключи мест — тоже в хранилище. Без них проснувшаяся комната считала бы место
+      // ничьим, и первый постучавший занял бы чужое: ровно то, от чего ключ и заведён.
+      const keys = await state.storage.get(RELAY_SEATS.map((seat) => `key:${seat}`));
+      for(const seat of RELAY_SEATS){
+        const key = keys.get(`key:${seat}`);
+        if(key) this.room.seatKeys[seat] = key;
+      }
     });
   }
 
   async fetch(request){
-    const { seat, version } = parseJoinRequest(request.url);
+    const { seat, version, key } = parseJoinRequest(request.url);
     const [client, server] = Object.values(new WebSocketPair());
 
-    const joined = joinRoom(this.room, { seat, version, connection: server });
+    const joined = joinRoom(this.room, { seat, version, connection: server, key });
     if(!joined.ok){
       server.accept();
       server.close(4000, joined.error);
@@ -88,6 +97,11 @@ export class Room {
     // Сам спящий режим здесь не оптимизация, а условие бесплатности: пошаговая игра
     // молчит минутами, и без него платить пришлось бы за круглосуточно висящий сокет.
     this.state.acceptWebSocket(server, [seat]);
+
+    // Ключ запоминаем ПОСЛЕ успешного входа: joinRoom мог его и отвергнуть.
+    this.state.storage.put(`key:${seat}`, this.room.seatKeys[seat]).catch((error) => {
+      console.warn("[room] не удалось запомнить ключ места", { seat, error });
+    });
 
     // Прежнее соединение на этом месте закрываем ПОСЛЕ того, как новое принято: иначе
     // закрытие успело бы сработать как «игрок ушёл» и освободить только что занятое место.

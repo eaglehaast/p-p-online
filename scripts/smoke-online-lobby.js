@@ -49,7 +49,7 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
   const log = [];
   const sent = [];
   const sandbox = {
-    Object, Array, Math, JSON, String, URLSearchParams, URL,
+    Object, Array, Math, JSON, String, URLSearchParams, URL, Uint8Array, crypto,
     console: { log: () => {}, warn: (...a) => log.push(['warn', ...a]) },
     gameMode: null,
     onlineSession: {
@@ -81,6 +81,7 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
     extractFunctionSource(source, 'isRelayAddressAllowed'),
     extractFunctionSource(source, 'getConfiguredRelayUrl'),
     extractFunctionSource(source, 'isOnlineAvailable'),
+    extractFunctionSource(source, 'makeRandomString'),
     extractFunctionSource(source, 'makeOnlineRoomId'),
     extractFunctionSource(source, 'buildOnlineInviteLink'),
     extractFunctionSource(source, 'isOnlineTableFull'),
