@@ -123,7 +123,9 @@ const indexHtml = fs.readFileSync('index.html', 'utf8');
 // Шесть обработчиков ввода начинались с проверки «не идёт ли ядерный удар». Она всегда
 // возвращала false, но стояла первой строкой в самых горячих путях.
 {
-  for(const fn of ['function handleStart(', 'function handleAAPlacement(', 'function getGrabRejectReason(']){
+  // handleAAPlacement был третьим в этом списке; вместе с механикой ПВО он удалён,
+  // и на его месте здесь стоит другой живой обработчик ввода.
+  for(const fn of ['function handleStart(', 'function onCanvasPointerDown(', 'function getGrabRejectReason(']){
     const start = script.indexOf(fn);
     assert(start > 0, `6: обработчик ${fn} не найден — проверка устарела`);
     const body = script.slice(start, start + 400);
