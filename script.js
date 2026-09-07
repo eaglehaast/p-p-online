@@ -7839,11 +7839,135 @@ function syncMenuPlaneSides(){
   }
 }
 
+// Перелёт при смене стороны.
+//
+// Картинки меняются местами МГНОВЕННО: модель и меню не должны расходиться ни на кадр,
+// даже если игрок сразу после клика нажмёт «Играть». Поэтому перелёт устроен наоборот —
+// он не ведёт к новой картинке, а догоняет её. Каждый самолётик начинает движение в позе
+// СОСЕДА и приезжает в свою: в первом кадре на экране в точности прежняя картинка, в
+// последнем — новая, а между ними видно, как они меняются местами.
+//
+// Из этого же следует, что перелёт можно прервать в любой момент: он всегда кончается
+// там, где самолётик и так стоит.
+const MENU_SIDE_SWAP_MS = 420;
+// Дуга, чтобы самолёты разошлись, а не прошли сквозь друг друга: один поверху, другой понизу.
+const MENU_SIDE_SWAP_ARC_PX = 16;
+const MENU_SIDE_SWAP_EASING = "cubic-bezier(0.45, 0.05, 0.25, 1)";
+const menuSideSwapAnimations = new Set();
+
+function isReducedMotionPreferred(){
+  return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches === true;
+}
+
+function getMenuPlaneInner(plane){
+  const inner = plane?.querySelector?.(".mm-plane__inner");
+  return inner instanceof HTMLElement ? inner : null;
+}
+
+// Разворот самолётика задан в стилях (--mm-plane-rotation: +90° слева, -90° справа).
+// Читаем его оттуда, а не помним наизусть: иначе перелёт и покой разъедутся молча.
+function getMenuPlaneBaseRotationDeg(inner, fallbackDeg){
+  if(!(inner instanceof HTMLElement) || typeof window?.getComputedStyle !== "function"){
+    return fallbackDeg;
+  }
+  const raw = window.getComputedStyle(inner).getPropertyValue("--mm-plane-rotation");
+  const deg = Number.parseFloat(raw);
+  return Number.isFinite(deg) ? deg : fallbackDeg;
+}
+
+function stopMenuSideSwapAnimations(){
+  for(const animation of menuSideSwapAnimations){
+    try { animation.cancel(); } catch(_error) { /* уже завершилась */ }
+  }
+  menuSideSwapAnimations.clear();
+}
+
+// Один самолётик: летит из позы соседа в свою.
+//
+// Промежуточный разворот задаётся отдельно, а не считается серединой между началом и
+// концом: он выбирает, В КАКУЮ СТОРОНУ самолётик разворачивается, и должен совпадать с
+// его дугой. Иначе выходит самолёт, ныряющий вниз носом вверх.
+function playMenuPlaneSwapFlight(inner, fromDx, fromRotDeg, viaRotDeg, toRotDeg, arcPx){
+  if(!inner || typeof inner.animate !== "function") return;
+  const animation = inner.animate([
+    { transform: `translate(${fromDx}px, 0px) rotate(${fromRotDeg}deg)` },
+    { transform: `translate(${fromDx / 2}px, ${arcPx}px) rotate(${viaRotDeg}deg) scale(1.12)`,
+      offset: 0.5 },
+    { transform: `translate(0px, 0px) rotate(${toRotDeg}deg)` },
+  ], { duration: MENU_SIDE_SWAP_MS, easing: MENU_SIDE_SWAP_EASING, fill: "none" });
+  menuSideSwapAnimations.add(animation);
+  const forget = () => menuSideSwapAnimations.delete(animation);
+  animation.addEventListener?.("finish", forget);
+  animation.addEventListener?.("cancel", forget);
+}
+
+// Пара самолётиков меню: левый уезжает вправо, правый влево — и разворачиваются они в одну
+// сторону, каждый по своей дуге. Носом вперёд: в начале движения самолётик смотрит туда,
+// куда летит, а приезжает уже в свою домашнюю позу.
+function playMenuPlaneSwapPair(leftPlane, rightPlane, target){
+  const leftInner = getMenuPlaneInner(leftPlane);
+  const rightInner = getMenuPlaneInner(rightPlane);
+  if(!leftInner || !rightInner) return;
+
+  const span = Number(target?.rightX) - Number(target?.leftX);
+  if(!Number.isFinite(span) || span === 0) return;
+
+  const leftRot = getMenuPlaneBaseRotationDeg(leftInner, 90);
+  const rightRot = getMenuPlaneBaseRotationDeg(rightInner, -90);
+
+  // Правый разворачивается через ДРУГУЮ сторону, чем левый: тот идёт через нос вверх,
+  // этот — через нос вниз, каждый по своей дуге. Иначе оба проходят одни и те же позы, и
+  // перелёт читается как сдвиг картинки, а не как манёвр.
+  //
+  // Для этого его конечный угол берётся с соседнего оборота: те же -90°, но дойти до них
+  // надо через 180°, а не через 0°.
+  const rightTurnEnd = rightRot + (rightRot < leftRot ? 360 : -360);
+
+  // Левый начинает там, где стоял правый, и едет к себе — влево и ПОВЕРХУ, разворачиваясь
+  // через нос вверх: -90 -> 0 -> +90.
+  playMenuPlaneSwapFlight(leftInner, span, rightRot, (rightRot + leftRot) / 2, leftRot,
+    -MENU_SIDE_SWAP_ARC_PX);
+  // Правый — оттуда, где стоял левый, вправо и ПОНИЗУ: +90 -> 180 -> 270.
+  playMenuPlaneSwapFlight(rightInner, -span, leftRot, (leftRot + rightTurnEnd) / 2, rightTurnEnd,
+    MENU_SIDE_SWAP_ARC_PX);
+}
+
+let menuSideSwapToken = 0;
+
+function playMenuSideSwapAnimation(){
+  if(isReducedMotionPreferred()) return;
+  stopMenuSideSwapAnimations();
+
+  // На время перелёта самолётики поднимаются НАД кнопками: в покое они лежат под ними
+  // (z-index 2 против 3), и по дороге между краями кнопки самолётик уходил бы за её
+  // подпись — то есть исчезал ровно на середине пути.
+  const planes = [leftModePlane, rightModePlane, leftRulesPlane, rightRulesPlane];
+  for(const plane of planes) plane?.classList?.add?.("is-swapping");
+
+  playMenuPlaneSwapPair(leftModePlane, rightModePlane, lastModePlaneTarget);
+  playMenuPlaneSwapPair(leftRulesPlane, rightRulesPlane, lastRulesPlaneTarget);
+
+  // Опускаем обратно по времени, а не по событию анимации: перелётов четыре, любой из них
+  // может не начаться (нет геометрии, нет элемента), и ждать их всех значило бы иногда
+  // не дождаться никогда. Метка защищает от того, чтобы прежний перелёт опустил самолётики
+  // посреди нового.
+  const token = ++menuSideSwapToken;
+  const lower = () => {
+    if(token !== menuSideSwapToken) return;
+    for(const plane of planes) plane?.classList?.remove?.("is-swapping");
+  };
+  if(typeof window?.setTimeout === "function") window.setTimeout(lower, MENU_SIDE_SWAP_MS);
+  else lower();
+}
+
 // Обе пары меняются разом: они изображают одну и ту же пару соперников, просто в двух
 // местах меню, и разъехавшись показывали бы разное про одно и то же.
 function toggleBoardViewSeat(){
   setBoardViewSeat(getOpposingSeat());
   syncMenuPlaneSides();
+  playMenuSideSwapAnimation();
   console.log("[side] свой край снизу:", getBoardViewSeat());
 }
 
