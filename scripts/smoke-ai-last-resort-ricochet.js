@@ -147,6 +147,11 @@ const context = {
   AI_SELF_SABOTAGE_LANDING_PENALTY: 400,
   tryBuildAiFlagDeliveryPlan: () => null, // no flag carrier in these scenarios
   getBaseAnchor: () => ({ x: 50, y: 100 }),
+  // Край обычный: компьютер синий, человек зелёный.
+  getAiPlayerColor: () => 'blue',
+  getAiEnemyColor: () => 'green',
+  getAiHomeBaseAnchor: () => ({ x: 50, y: 100 }),
+  getAiEnemyBaseAnchor: () => ({ x: 50, y: 100 }),
   getAvailableFlagsByColor: () => [],
   isPlaneLaunchStateReady: () => true,
   isPlaneTargetable: () => true,

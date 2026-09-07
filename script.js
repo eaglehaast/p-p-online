@@ -8002,6 +8002,28 @@ function getAiPlayerColor(){
   return getOpposingSeat();
 }
 
+// Сторона, ПРОТИВ которой играет компьютер, — то есть сторона человека.
+//
+// Заводится отдельным именем, потому что в планировании ИИ этих двух понятий поровну:
+// «мои самолёты», «моя база», «мой инвентарь» — и «вражеские самолёты», «вражеская база»,
+// «вражеский флаг». Пока сторона ИИ была прибита намертво, и то и другое писали цветом:
+// синий свой, зелёный чужой. С выбором края такие места молча начинают работать за
+// соперника — и именно поэтому ИИ переставал ходить вовсе.
+function getAiEnemyColor(){
+  return getBoardViewSeat();
+}
+
+// База своя и база чужая — с точки зрения компьютера. Через них ходит всё планирование:
+// «лететь домой», «давить на чужую базу», «не подставить свою». Обе стороны тут
+// вычисляются, а не пишутся цветом.
+function getAiHomeBaseAnchor(){
+  return getBaseAnchor(getAiPlayerColor());
+}
+
+function getAiEnemyBaseAnchor(){
+  return getBaseAnchor(getAiEnemyColor());
+}
+
 function getColorController(color){
   if(color !== "blue" && color !== "green") return COLOR_CONTROLLERS.LOCAL;
   // Онлайн решает первым: если мы сели за стол, то за столом два человека, и ИИ там
@@ -11189,7 +11211,7 @@ function doesCargoIntersectBeneficialZoneAlongPath(cargo, plane, path){
 }
 
 function getAiCargoHomeBase(context){
-  return context?.homeBase || getBaseAnchor("blue");
+  return context?.homeBase || getAiHomeBaseAnchor();
 }
 
 function getAiCargoLongCarryDistance(plane, cargo, targetAnchor){
@@ -13250,7 +13272,7 @@ function aiFailFastBuildSnapshot(source, details, stage){
       focusPlane = aiLaunchSession.plane;
     }
     if(!focusPlane && Array.isArray(flyingPoints) && flyingPoints.length > 0){
-      const aiFlying = flyingPoints.find((fp) => fp?.plane?.color === "blue");
+      const aiFlying = flyingPoints.find((fp) => fp?.plane?.color === getAiPlayerColor());
       if(aiFlying?.plane) focusPlane = aiFlying.plane;
     }
     const decisionsLog = (typeof getBufferedAiDecisionEvents === "function")
@@ -17611,7 +17633,7 @@ function tryBuildAiFlagDeliveryPlan(plane, options = {}){
     return null;
   }
   const carriedFlag = plane.carriedFlagId ? getFlagById(plane.carriedFlagId) : null;
-  if(!carriedFlag || carriedFlag.color !== "green") return null;
+  if(!carriedFlag || carriedFlag.color !== getAiEnemyColor()) return null;
 
   const homeAnchor = getBaseAnchor(plane.color);
   const baseTarget = getBaseInteractionTarget(plane.color);
@@ -17795,10 +17817,11 @@ function tryBuildAiFlagFuelCapturePlan(plane, options = {}){
 }
 
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
+  // Ход ИИ — это ход ЕГО стороны, а не «ход синего»: сторона зависит от выбранного края.
   if(
     isGameOver
     || gameMode !== "computer"
-    || turnColors?.[turnIndex] !== "blue"
+    || turnColors?.[turnIndex] !== getAiPlayerColor()
   ){
     return { ok: false, reasonCode: "ai_not_applicable_for_current_turn" };
   }
@@ -17817,7 +17840,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     if(
       isGameOver
       || gameMode !== "computer"
-      || turnColors?.[turnIndex] !== "blue"
+      || turnColors?.[turnIndex] !== getAiPlayerColor()
     ){
       aiMoveScheduled = false;
       return;
@@ -17825,12 +17848,14 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
     aiCoopResetBudget();
 
+    const aiTurnColor = getAiPlayerColor();
+    const aiTurnEnemyColor = getAiEnemyColor();
     const launchReadyPlanes = points.filter((plane) => {
-      if(!plane || plane.color !== "blue") return false;
+      if(!plane || plane.color !== aiTurnColor) return false;
       if(!isPlaneLaunchStateReady(plane)) return false;
       return !flyingPoints.some((fp) => fp.plane === plane);
     });
-    const enemyPlanes = points.filter((plane) => plane?.color === "green" && isPlaneTargetable(plane));
+    const enemyPlanes = points.filter((plane) => plane?.color === aiTurnEnemyColor && isPlaneTargetable(plane));
 
     // Включаем animating cargo: cargo.x/y — уже финальные координаты с момента создания
     // (спавн через spawnCargoForTurn задаёт x: candidate.x, y: candidate.targetY).
@@ -17839,8 +17864,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     const aiExecutionContext = {
       aiPlanes: launchReadyPlanes,
       enemies: enemyPlanes,
-      homeBase: getBaseAnchor("blue"),
-      availableEnemyFlags: typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("green") : [],
+      homeBase: getBaseAnchor(aiTurnColor),
+      availableEnemyFlags: typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor(aiTurnEnemyColor) : [],
       // Настройки с именем flagsMode не существует — режим флагов включает
       // settings.flagsEnabled, а каноничный доступ к нему — isFlagsModeEnabled()
       // (он же гасит флаги в дуэли). Из-за неверного имени shouldUseFlagsMode был
@@ -23697,7 +23722,7 @@ function applyAiMinLaunchScale(scale, details = {}){
 
   const targetX = Number.isFinite(details?.targetX) ? details.targetX : null;
   const targetY = Number.isFinite(details?.targetY) ? details.targetY : null;
-  const enemyBase = getBaseAnchor("green");
+  const enemyBase = getAiEnemyBaseAnchor();
   const targetNearEnemyBase = Boolean(enemyBase)
     && Number.isFinite(targetX)
     && Number.isFinite(targetY)
@@ -26477,7 +26502,7 @@ function evaluateInventoryState(color){
 }
 
 function evaluateBlueInventoryState(){
-  return evaluateInventoryState("blue");
+  return evaluateInventoryState(getAiPlayerColor());
 }
 
 function hasBlueDynamiteAvailable(){
@@ -26956,7 +26981,7 @@ async function buildDynamiteReplannedMoveAsync(plane, plannedMoveLike, context, 
     : null;
   if(targetBrick && Array.isArray(dynamiteState)){
     const slotTaken = dynamiteState.some((entry) => {
-      if(!entry || entry.owner !== "blue" || entry.brickRemoved) return false;
+      if(!entry || entry.owner !== getAiPlayerColor() || entry.brickRemoved) return false;
       const sameSpriteId = targetBrick.id != null && entry.spriteId != null && entry.spriteId === targetBrick.id;
       const sameSpriteRef = targetBrick.spriteRef != null && entry.spriteRef != null && entry.spriteRef === targetBrick.spriteRef;
       return sameSpriteId || sameSpriteRef;
@@ -27977,10 +28002,10 @@ function getAiLongShotPenaltyMultiplier(distanceToTarget, targetPriority = "norm
 
 function getAiTargetPriority(enemy, context){
   if(!enemy) return "normal";
-  const homeBase = context?.homeBase || getBaseAnchor("blue");
+  const homeBase = context?.homeBase || getAiHomeBaseAnchor();
   const isFlagCarrier = Boolean(
     context?.stolenBlueFlagCarrier
-    && context.stolenBlueFlagCarrier.color !== "blue"
+    && context.stolenBlueFlagCarrier.color !== getAiPlayerColor()
     && context.stolenBlueFlagCarrier === enemy
   );
   const isNearBlueBase = Boolean(homeBase) && dist(enemy, homeBase) <= ATTACK_RANGE_PX * 1.2;
@@ -27994,15 +28019,15 @@ function getAiTargetPriority(enemy, context){
 
 function getBluePriorityEnemy(context){
   const carrier = context?.stolenBlueFlagCarrier;
-  if(carrier && carrier.color !== "blue"){
+  if(carrier && carrier.color !== getAiPlayerColor()){
     return carrier;
   }
-  const blueFlagCarrier = getFlagCarrierForColor("blue");
-  if(blueFlagCarrier && blueFlagCarrier.color !== "blue"){
+  const blueFlagCarrier = getFlagCarrierForColor(getAiPlayerColor());
+  if(blueFlagCarrier && blueFlagCarrier.color !== getAiPlayerColor()){
     return blueFlagCarrier;
   }
   const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
-  const blueBase = getBaseAnchor("blue");
+  const blueBase = getAiHomeBaseAnchor();
   return enemies.reduce((best, enemy) => {
     if(!enemy) return best;
     if(!best) return enemy;
@@ -28032,7 +28057,7 @@ function getCriticalBlueBaseThreat(context){
   const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
   if(!enemies.length) return null;
 
-  const blueBase = getBaseAnchor("blue");
+  const blueBase = getAiHomeBaseAnchor();
   const criticalDistance = ATTACK_RANGE_PX * 1.15;
   const fastAttackDistance = ATTACK_RANGE_PX * 1.05;
 
@@ -28062,13 +28087,13 @@ function getCriticalBlueFlagThreat(context){
   if(!enemies.length) return null;
 
   const availableBlueFlags = typeof getAvailableFlagsByColor === "function"
-    ? getAvailableFlagsByColor("blue")
+    ? getAvailableFlagsByColor(getAiPlayerColor())
     : [];
   if(!availableBlueFlags.length) return null;
 
   const blueFlag = availableBlueFlags[0];
   const blueFlagAnchor = getFlagAnchor(blueFlag);
-  const greenHomeBase = getBaseAnchor("green");
+  const greenHomeBase = getAiEnemyBaseAnchor();
   if(!blueFlagAnchor || !greenHomeBase) return null;
 
   let bestThreat = null;
@@ -28181,7 +28206,7 @@ function getEarlyBaseWarningThreat(context){
   if(!enemies.length) return null;
   if(turnAdvanceCount > AI_OPENING_CENTER_TURN_LIMIT) return null;
 
-  const blueBase = getBaseAnchor("blue");
+  const blueBase = getAiHomeBaseAnchor();
   const warningDistance = ATTACK_RANGE_PX * 1.7;
   const criticalDistance = ATTACK_RANGE_PX * 1.15;
   const nearCriticalDistance = criticalDistance + ATTACK_RANGE_PX * 0.2;
@@ -28226,10 +28251,10 @@ function getBlueDefensivePriority(context){
   const shouldUseFlagsMode = Boolean(context?.shouldUseFlagsMode);
   const directBaseThreat = getCriticalBlueBaseThreat(context);
   const quickFlagPickupThreat = shouldUseFlagsMode ? getCriticalBlueFlagThreat(context) : null;
-  const enemyFlagCarrier = shouldUseFlagsMode && context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.color !== "blue"
+  const enemyFlagCarrier = shouldUseFlagsMode && context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.color !== getAiPlayerColor()
     ? context.stolenBlueFlagCarrier
     : null;
-  const homeBase = context?.homeBase || getBaseAnchor("blue");
+  const homeBase = context?.homeBase || getAiHomeBaseAnchor();
   const flagCarrierThreat = enemyFlagCarrier && homeBase
     ? {
         enemy: enemyFlagCarrier,
@@ -28371,7 +28396,7 @@ function placeBlueDynamiteAt(boardX, boardY){
   const targetBrick = findMapSpriteForDynamiteDrop({ boardX, boardY });
   if(!targetBrick) return false;
   const hasActiveBlueDynamiteOnSameSprite = Array.isArray(dynamiteState) && dynamiteState.some((entry) => {
-    if(!entry || entry.owner !== "blue" || entry.brickRemoved) return false;
+    if(!entry || entry.owner !== getAiPlayerColor() || entry.brickRemoved) return false;
     const sameSpriteId = targetBrick.id != null && entry.spriteId != null && entry.spriteId === targetBrick.id;
     const sameSpriteRef = targetBrick.spriteRef != null && entry.spriteRef != null && entry.spriteRef === targetBrick.spriteRef;
     return sameSpriteId || sameSpriteRef;
@@ -28379,7 +28404,7 @@ function placeBlueDynamiteAt(boardX, boardY){
   if(hasActiveBlueDynamiteOnSameSprite) return false;
   const dynamiteEntry = {
     id: `dynamite-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    owner: "blue",
+    owner: getAiPlayerColor(),
     x: targetBrick.cx,
     y: targetBrick.cy,
     // См. комментарий выше: в горизонтали заряд стоит на правом краю кирпича.
@@ -28403,7 +28428,7 @@ function withTemporaryBlueMine(placement, callback){
   const mineArray = Array.isArray(mines) ? mines : null;
   const simulatedMine = {
     id: `sim-mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    owner: "blue",
+    owner: getAiPlayerColor(),
     x: placement.x,
     y: placement.y,
     cellX: placement.cellX,
@@ -28431,7 +28456,7 @@ function withTemporaryBlueMines(placements, callback){
     if(!placement || !Number.isFinite(placement.x) || !Number.isFinite(placement.y)) continue;
     const simulatedMine = {
       id: `sim-mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      owner: "blue",
+      owner: getAiPlayerColor(),
       x: placement.x,
       y: placement.y,
       cellX: placement.cellX,
@@ -28582,7 +28607,7 @@ function evaluateMineFriendlyRisk(context, plannedMove, placement, options = {})
     if(!Number.isFinite(ally.x) || !Number.isFinite(ally.y)) continue;
     const allyDistance = Math.hypot(placement.x - ally.x, placement.y - ally.y);
     if(allyDistance <= mineDangerRadius) nearbyAllyCount += 1;
-    const allyTarget = getBaseAnchor("blue") || landingPoint || null;
+    const allyTarget = getAiHomeBaseAnchor() || landingPoint || null;
     if(allyTarget && isPathClear(ally.x, ally.y, allyTarget.x, allyTarget.y)){
       const lineDistance = distancePointToSegment(placement.x, placement.y, ally.x, ally.y, allyTarget.x, allyTarget.y);
       if(lineDistance <= MINE_TRIGGER_RADIUS * 0.85) allyCorridorBlockCount += 1;
@@ -28663,7 +28688,7 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
 
   function getHighPriorityFriendlyDefenseTargets(){
     const targets = [];
-    const blueFlags = typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("blue") : [];
+    const blueFlags = typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor(getAiPlayerColor()) : [];
     for(let i = 0; i < blueFlags.length; i += 1){
       const anchor = typeof getFlagAnchor === "function" ? getFlagAnchor(blueFlags[i]) : null;
       if(anchor){
@@ -28736,7 +28761,7 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
 
   function getEnemyObjectiveTargets(enemy, nearestThreat){
     const targets = [];
-    const blueBase = getBaseAnchor("blue");
+    const blueBase = getAiHomeBaseAnchor();
     if(blueBase) targets.push({ x: blueBase.x, y: blueBase.y, name: "to_blue_base", weight: 1.2 });
     if(landingPoint) targets.push({ x: landingPoint.x, y: landingPoint.y, name: "to_current_landing", weight: 1 });
     if(nearestThreat?.plane){
@@ -28816,7 +28841,7 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
       }
     }
 
-    const blueBase = getBaseAnchor("blue");
+    const blueBase = getAiHomeBaseAnchor();
     if(blueBase){
       const baseLaneDistance = distancePointToSegment(mineX, mineY, enemy.x, enemy.y, blueBase.x, blueBase.y);
       const baseLaneIsClear = isPathClear(enemy.x, enemy.y, blueBase.x, blueBase.y);
@@ -28870,8 +28895,8 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
       return { ...point, name: `escape_${index}` };
     }));
 
-    const enemyBase = getBaseAnchor("green");
-    const enemyFlags = typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("green") : [];
+    const enemyBase = getAiEnemyBaseAnchor();
+    const enemyFlags = typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor(getAiEnemyColor()) : [];
     const enemyFlagTargets = enemyFlags.map((flag, index) => {
       const anchor = typeof getFlagAnchor === "function" ? getFlagAnchor(flag) : null;
       return anchor ? { x: anchor.x, y: anchor.y, name: `flag_${index}` } : null;
@@ -29053,7 +29078,7 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
   const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove, options);
   const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
   const strategicGoalName = plannedMove?.goalName || aiRoundState?.currentGoal || "";
-  const enemyBase = getBaseAnchor("green");
+  const enemyBase = getAiEnemyBaseAnchor();
   if(!enemyBase){
     if(options?.evaluateOnly && options?.withDiagnostics){
       return { plan: null, rejectReason: "no_install_window", details: { missingEnemyBase: true } };
@@ -29084,7 +29109,7 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
 
   function buildRouteFallbackCandidates(){
     const routeTargets = [];
-    const blueBase = getBaseAnchor("blue");
+    const blueBase = getAiHomeBaseAnchor();
     if(blueBase) routeTargets.push(blueBase);
     const blueFlag = getFlagAnchor("blue");
     if(blueFlag) routeTargets.push(blueFlag);
@@ -29202,7 +29227,7 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
   if(!bestCandidate) return false;
 
   placeMine({
-    owner: "blue",
+    owner: getAiPlayerColor(),
     x: bestCandidate.placement.x,
     y: bestCandidate.placement.y,
     cellX: bestCandidate.placement.cellX,
@@ -29487,7 +29512,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
   }
 
   placeMine({
-    owner: "blue",
+    owner: getAiPlayerColor(),
     x: bestPlacement.x,
     y: bestPlacement.y,
     cellX: bestPlacement.cellX,
@@ -29783,7 +29808,7 @@ async function tryPlaceBlueDefensiveMineAsync(context, plannedMove, options = {}
   }
 
   placeMine({
-    owner: "blue",
+    owner: getAiPlayerColor(),
     x: bestPlacement.x,
     y: bestPlacement.y,
     cellX: bestPlacement.cellX,
@@ -29837,7 +29862,7 @@ function getAiStrategicTargetPoint(context, plannedMove){
   }
 
   if(!rawTarget && (goal === "return_with_flag" || goal === "protect_home_flag")){
-    rawTarget = context?.homeBase || getBaseAnchor("blue");
+    rawTarget = context?.homeBase || getAiHomeBaseAnchor();
   }
 
   if(!rawTarget && goal === "eliminate_flag_carrier"){
@@ -30074,7 +30099,7 @@ function classifyAiMoveForStrategicDynamite(plannedMove, context = null){
   const routeClass = `${plannedMove?.routeClass || ""}`.toLowerCase();
   const moveScore = Number.isFinite(plannedMove?.score) ? plannedMove.score : 0;
   const landingPoint = getAiMoveLandingPoint(plannedMove);
-  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  const enemyBase = typeof getBaseAnchor === "function" ? getAiEnemyBaseAnchor() : null;
   const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
   const flagTargets = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
     ? context.availableEnemyFlags.map((flag) => getFlagAnchor(flag)).filter(Boolean)
@@ -30146,7 +30171,7 @@ function describeStrategicDynamiteFollowUp(target, plannedMove, context = null){
   const planeId = plannedMove?.plane?.id ?? null;
   const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
   const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
-  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  const enemyBase = typeof getBaseAnchor === "function" ? getAiEnemyBaseAnchor() : null;
   const flagAnchors = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
     ? context.availableEnemyFlags.map((flag) => ({ flagId: flag?.id ?? null, anchor: getFlagAnchor(flag) })).filter((entry) => entry.anchor)
     : [];
@@ -30234,8 +30259,8 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
   const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
   if(spriteEntries.length === 0) return null;
 
-  const homeBase = context?.homeBase || getBaseAnchor("blue");
-  const enemyBase = getBaseAnchor("green");
+  const homeBase = context?.homeBase || getAiHomeBaseAnchor();
+  const enemyBase = getAiEnemyBaseAnchor();
   const priorityEnemy = getBluePriorityEnemy(context);
   const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
   const landingPoint = getAiMoveLandingPoint(plannedMove) || plane;
@@ -33392,7 +33417,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       const plane = plannedMove?.plane || null;
       if(!plane) return null;
       const localLandingPoint = getAiMoveLandingPoint(plannedMove) || null;
-      const enemyBaseAnchor = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+      const enemyBaseAnchor = typeof getBaseAnchor === "function" ? getAiEnemyBaseAnchor() : null;
       const nearestEnemy = Array.isArray(context?.enemies) && context.enemies.length > 0
         ? context.enemies
             .map((enemy) => ({ enemy, d: dist(plane, enemy) }))
@@ -34374,7 +34399,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       if(alivePlane) return alivePlane;
     }
     if(typeof points !== "undefined" && Array.isArray(points)){
-      const standbyPlane = points.find((plane) => plane && plane.color === "blue" && plane.isAlive !== false);
+      const standbyPlane = points.find((plane) => plane && plane.color === getAiPlayerColor() && plane.isAlive !== false);
       if(standbyPlane) return standbyPlane;
     }
     return null;
@@ -34712,7 +34737,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         const sameCollider = intent?.colliderId && entry?.spriteRef?.collider?.id === intent.colliderId;
         const samePoint = Number.isFinite(intent?.x) && Number.isFinite(intent?.y)
           && Math.hypot((entry?.x ?? Infinity) - intent.x, (entry?.y ?? Infinity) - intent.y) <= 0.6;
-        if(entry?.owner === "blue" && (sameSprite || sameCollider || samePoint || i === dynamiteState.length - 1)){
+        if(entry?.owner === getAiPlayerColor() && (sameSprite || sameCollider || samePoint || i === dynamiteState.length - 1)){
           dynamiteState.splice(i, 1);
           removedDynamitePlacement = true;
           break;
@@ -34722,7 +34747,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
     const dynamiteInventoryItem = INVENTORY_ITEMS.find((item) => item?.type === INVENTORY_ITEM_TYPES.DYNAMITE) ?? null;
     if(dynamiteInventoryItem){
-      addItemToInventory("blue", dynamiteInventoryItem);
+      addItemToInventory(getAiPlayerColor(), dynamiteInventoryItem);
     }
 
     logAiDecision("dynamite_plan_desync_prevented", {
@@ -34759,7 +34784,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   if(effectiveItemUsed){
     if(consumedItemTypes.length > 0){
       for(const consumedType of consumedItemTypes){
-        playInventoryConsumeFx("blue", consumedType);
+        playInventoryConsumeFx(getAiPlayerColor(), consumedType);
       }
     } else {
       logAiDecision("inventory_fx_played", {
@@ -35462,7 +35487,7 @@ function getDistanceToSegment(pointX, pointY, startX, startY, endX, endY){
 function rankBluePlanesForHomeDefense(context = {}, overrides = {}){
   const aiPlanes = Array.isArray(overrides?.aiPlanes) ? overrides.aiPlanes.filter(Boolean) : (Array.isArray(context?.aiPlanes) ? context.aiPlanes.filter(Boolean) : []);
   const enemies = Array.isArray(overrides?.enemies) ? overrides.enemies.filter((enemy) => enemy?.isAlive !== false) : (Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive !== false) : []);
-  const homeBase = overrides?.homeBase || context?.homeBase || getBaseAnchor("blue");
+  const homeBase = overrides?.homeBase || context?.homeBase || getAiHomeBaseAnchor();
   const groundedPlanes = aiPlanes.filter((plane) => plane && !flyingPoints.some((fp) => fp.plane === plane));
 
   let nearestEnemy = null;
@@ -35532,7 +35557,7 @@ function rankBluePlanesForHomeDefense(context = {}, overrides = {}){
 function evaluateFlagHomeDefensePressure(context = {}, overrides = {}){
   const aiPlanes = Array.isArray(overrides?.aiPlanes) ? overrides.aiPlanes.filter(Boolean) : (Array.isArray(context?.aiPlanes) ? context.aiPlanes.filter(Boolean) : []);
   const enemies = Array.isArray(overrides?.enemies) ? overrides.enemies.filter((enemy) => enemy?.isAlive !== false) : (Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive !== false) : []);
-  const homeBase = overrides?.homeBase || context?.homeBase || getBaseAnchor("blue");
+  const homeBase = overrides?.homeBase || context?.homeBase || getAiHomeBaseAnchor();
   const defensivePriority = overrides?.defensivePriority || context?.defensivePriority || getBlueDefensivePriority(context);
   const immediateThreatMeta = homeBase && typeof getImmediateResponseThreatMeta === "function"
     ? getImmediateResponseThreatMeta({ ...context, enemies }, homeBase.x, homeBase.y, null)
@@ -35756,15 +35781,15 @@ function evaluateFlagPickupContinuation(plane, pickupPoint, options = {}){
 
 function shouldAiBluePlanePickUpEnemyFlag(plane, flag){
   if(gameMode !== "computer") return true;
-  if(plane?.color !== "blue") return true;
-  if(flag?.color !== "green") return true;
+  if(plane?.color !== getAiPlayerColor()) return true;
+  if(flag?.color !== getAiEnemyColor()) return true;
   const pickupPoint = getFlagInteractionTarget(flag);
   if(!pickupPoint || !Number.isFinite(pickupPoint.x) || !Number.isFinite(pickupPoint.y)) return true;
   const enemies = Array.isArray(points)
-    ? points.filter((enemy) => enemy?.color === "green" && enemy?.isAlive && !enemy?.burning)
+    ? points.filter((enemy) => enemy?.color === getAiEnemyColor() && enemy?.isAlive && !enemy?.burning)
     : [];
   const continuation = evaluateFlagPickupContinuation(plane, pickupPoint, {
-    homeBase: getBaseAnchor("blue"),
+    homeBase: getAiHomeBaseAnchor(),
     enemies,
     context: { enemies },
     goalName: "auto_flag_pickup_guard",
@@ -35773,7 +35798,7 @@ function shouldAiBluePlanePickUpEnemyFlag(plane, flag){
   const mineInventory = evaluateBlueInventoryState?.()?.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0;
   const mineEnabledContinuation = mineInventory > 0
     ? evaluateMineEnabledFlagPickupContinuation(plane, pickupPoint, {
-        homeBase: getBaseAnchor("blue"),
+        homeBase: getAiHomeBaseAnchor(),
         enemies,
         context: { enemies },
         goalName: "auto_flag_pickup_guard",
@@ -35806,7 +35831,7 @@ function evaluateFlagPressureOpportunity(context = {}){
   const aiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes.filter(Boolean) : [];
   const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive !== false) : [];
   const availableEnemyFlags = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags.filter(Boolean) : [];
-  const homeBase = context?.homeBase || getBaseAnchor("blue");
+  const homeBase = context?.homeBase || getAiHomeBaseAnchor();
   const blueInventoryCount = Number.isFinite(context?.blueInventoryCount) ? context.blueInventoryCount : 0;
   const readyCargoCount = Array.isArray(cargoState)
     ? cargoState.reduce((count, cargo) => count + (cargo?.state === "ready" ? 1 : 0), 0)
@@ -36816,7 +36841,7 @@ function assignAiRolesForTurn(context){
   const homeDefenseReserve = context?.homeDefenseReserve || evaluateFlagHomeDefensePressure(context, {
     aiPlanes: groundedAiPlanes,
     enemies: Array.isArray(context?.enemies) ? context.enemies : [],
-    homeBase: context?.homeBase || getBaseAnchor("blue"),
+    homeBase: context?.homeBase || getAiHomeBaseAnchor(),
     defensivePriority: context?.defensivePriority || null,
   });
   const requiredHomeDefenders = Math.max(0, Number.isFinite(homeDefenseReserve?.minDefendersRequired) ? homeDefenseReserve.minDefendersRequired : 0);
@@ -36831,7 +36856,7 @@ function assignAiRolesForTurn(context){
     ? groundedAiPlanes.find((plane) => {
         if(!plane?.carriedFlagId) return false;
         const carriedFlag = getFlagById(plane.carriedFlagId);
-        return carriedFlag?.color === "green";
+        return carriedFlag?.color === getAiEnemyColor();
       })
     : null;
   claimPlaneForRole("runner", flagCarrier);
@@ -37011,12 +37036,12 @@ function planRoleDrivenAiMove(context, rolePack){
     const runner = roles.runner;
     const isFlagCarrierRunner = Boolean(
       runner.carriedFlagId
-      && getFlagById(runner.carriedFlagId)?.color === "green"
+      && getFlagById(runner.carriedFlagId)?.color === getAiEnemyColor()
     );
     const runnerTargets = [];
     if(runner.carriedFlagId){
       const carriedFlag = getFlagById(runner.carriedFlagId);
-      if(carriedFlag?.color === "green"){
+      if(carriedFlag?.color === getAiEnemyColor()){
         runnerTargets.push(context.homeBase);
       }
     }
@@ -37587,7 +37612,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   const flagCaptureDefensePressure = evaluateFlagHomeDefensePressure(options?.context || {}, {
     aiPlanes: groundedPlanes,
     enemies: Array.isArray(options?.enemies) ? options.enemies : (Array.isArray(options?.context?.enemies) ? options.context.enemies : []),
-    homeBase: options?.homeBase || getBaseAnchor("blue"),
+    homeBase: options?.homeBase || getAiHomeBaseAnchor(),
     defensivePriority: options?.context?.defensivePriority || null,
   });
 
@@ -37683,7 +37708,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
 
   function enrichFlagCaptureCandidate(candidate, pickupPoint){
     const continuationOptions = {
-      homeBase: options?.homeBase || getBaseAnchor("blue"),
+      homeBase: options?.homeBase || getAiHomeBaseAnchor(),
       enemies: Array.isArray(options?.enemies) ? options.enemies : [],
       context: options?.context || { enemies: Array.isArray(options?.enemies) ? options.enemies : [] },
       goalName: baseGoalName,
@@ -38398,7 +38423,7 @@ function planModeDrivenAiMove(context){
   const carrier = shouldUseFlagsMode ? groundedAiPlanes.find(p => {
     if(!p.carriedFlagId) return false;
     const carriedFlag = getFlagById(p.carriedFlagId);
-    return carriedFlag?.color === "green";
+    return carriedFlag?.color === getAiEnemyColor();
   }) : null;
   if(carrier){
     const carrierMineSummary = getMineControlSummaryForPlane(carrier, context, {
@@ -39125,7 +39150,7 @@ function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies)
   if(typeof planPathToPoint !== "function" || !fallbackAiPlanes.length) return null;
   const allowedMoveRisk = getAiAllowedMoveRisk(context);
   const availableEnemyFlags = typeof getAvailableFlagsByColor === "function"
-    ? getAvailableFlagsByColor("green")
+    ? getAvailableFlagsByColor(getAiEnemyColor())
     : [];
   const fallbackFlag = Array.isArray(availableEnemyFlags) && availableEnemyFlags.length > 0
     ? availableEnemyFlags[0]
@@ -39133,7 +39158,7 @@ function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies)
   const flagAnchor = typeof getFlagAnchor === "function"
     ? getFlagAnchor(fallbackFlag)
     : null;
-  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  const enemyBase = typeof getBaseAnchor === "function" ? getAiEnemyBaseAnchor() : null;
   if(!enemyBase || !flagAnchor || !Number.isFinite(flagAnchor?.x) || !Number.isFinite(flagAnchor?.y)) return null;
 
   let bestCandidate = null;
@@ -39593,7 +39618,7 @@ function getFallbackAiMove(context){
   const carrier = shouldUseFlagsMode ? aiPlanes.find(p => {
     if(!p.carriedFlagId) return false;
     const carriedFlag = getFlagById(p.carriedFlagId);
-    return carriedFlag?.color === "green" && !flyingPoints.some(fp=>fp.plane===p);
+    return carriedFlag?.color === getAiEnemyColor() && !flyingPoints.some(fp=>fp.plane===p);
   }) : null;
   if(carrier){
     const move = planPathToPoint(carrier, homeBase.x, homeBase.y);
@@ -39603,15 +39628,15 @@ function getFallbackAiMove(context){
   }
 
   let targetEnemies = enemies;
-  const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
-  if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== "blue"){
+  const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor(getAiPlayerColor()) : null;
+  if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== getAiPlayerColor()){
     targetEnemies = enemies.filter(e=>e===stolenBlueFlagCarrier);
   } else if(availableEnemyFlags.length && (riskProfile === "comeback" || riskProfile === "balanced")){
     let bestCap = null;
     const capCandidates = buildFlagCaptureBaseCandidates(aiPlanes, availableEnemyFlags, {
       goalName: "capture_enemy_flag",
       decisionReason: "fallback_flag_pressure",
-      homeBase: getBaseAnchor("blue"),
+      homeBase: getAiHomeBaseAnchor(),
       enemies,
       context,
     });
@@ -40323,7 +40348,7 @@ function getFallbackAiMove(context){
 function getFailSafeMinimalTargetedMove(context = {}){
   const contextAiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes : null;
   const aiPlanes = (contextAiPlanes || points).filter((plane) => (
-    plane?.color === "blue"
+    plane?.color === getAiPlayerColor()
     && isPlaneLaunchStateReady(plane)
     && !flyingPoints.some((fp) => fp.plane === plane)
   ));
@@ -40331,7 +40356,7 @@ function getFailSafeMinimalTargetedMove(context = {}){
 
   const contextEnemies = Array.isArray(context?.enemies) ? context.enemies : null;
   const enemies = (contextEnemies || points).filter((plane) => (
-    plane?.color === "green"
+    plane?.color === getAiEnemyColor()
     && isPlaneTargetable(plane)
   ));
   if(enemies.length === 0) return null;
@@ -46915,7 +46940,7 @@ function runAiInventorySequenceTick(now = performance.now()){
     }
     if(result?.executed){
       state.consumedItemTypes.push(result.itemType);
-      try { playInventoryConsumeFx("blue", result.itemType); } catch (e) { /* UI fx is best-effort */ }
+      try { playInventoryConsumeFx(getAiPlayerColor(), result.itemType); } catch (e) { /* UI fx is best-effort */ }
       // Per-item delay tied to that item's FX so the next application doesn't visually
       // overlap. perItemDelayFn returns ms based on itemType.
       state.nextItemAtMs = now + state.perItemDelayFn(result.itemType);
@@ -47311,13 +47336,13 @@ function tryRecoverAiFailSafeWithEmergencyLaunch(details = {}){
 
   if(Array.isArray(points)){
     points
-      .filter((plane) => plane && plane.color === "blue" && plane.isAlive === true && !plane.burning)
+      .filter((plane) => plane && plane.color === getAiPlayerColor() && plane.isAlive === true && !plane.burning)
       .forEach(pushPlaneCandidate);
   }
 
   const fallbackRejectReasons = [];
   const enemies = Array.isArray(points)
-    ? points.filter((plane) => plane && plane.color === "green" && plane.isAlive === true && !plane.burning)
+    ? points.filter((plane) => plane && plane.color === getAiEnemyColor() && plane.isAlive === true && !plane.burning)
     : [];
 
   const directionSeeds = [
