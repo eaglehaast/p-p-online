@@ -219,6 +219,10 @@ function setBoardViewSeat(seat, { persist = true } = {}){
   if(next === boardViewSeat) return next;
   boardViewSeat = next;
   syncBoardFlipClass();
+  // Полосы инвентаря меняются краями вместе с половинами поля, но их раскладка стоит
+  // инлайновыми left/top — сама она не пересчитается. До сих пор это не всплывало только
+  // потому, что край меняют в меню, а вход в игру раскладывает всё заново.
+  if(typeof refreshInventoryContainerLayouts === "function") refreshInventoryContainerLayouts();
   if(persist){
     try {
       window.localStorage?.setItem(BOARD_VIEW_SEAT_STORAGE_KEY, next);
@@ -2021,7 +2025,9 @@ function getInventoryTooltipLandscapeRect(color, slotIndex, width, height){
   // Плашка развёрнута на -90° вокруг своего центра (см. styles.css), поэтому по осям
   // КАДРА её габариты меняются местами: вдоль X кадра она занимает height, вдоль Y —
   // width. Считаем именно по развёрнутому следу, иначе подсказка накрывает слоты.
-  const shift = INVENTORY_LANDSCAPE_SHIFT_PX[color] ?? 0;
+  // Тот же сдвиг, что и у самой полосы, и по тому же краю: подсказка считает центр слота
+  // по координатам полосы, и разойдясь с ней уехала бы от предмета.
+  const shift = INVENTORY_LANDSCAPE_SHIFT_PX[getHudEdgeSeat(color)] ?? 0;
   // Полоса ужата вокруг своего начала (transform-origin: left top), поэтому смещение
   // слота внутри неё тоже ужимается, а само начало остаётся на месте.
   const slotCenterX = container.x + shift
@@ -4808,6 +4814,12 @@ function validateInventoryCssSizing(host){
 // последних кирпичей. Зелёная начинается на 50 — у первых кирпичей — и идёт вниз,
 // не доходя до воробья. При ширине полосы 300 (см. INVENTORY_LANDSCAPE_SCALE) обе
 // отступают от своей морды одинаково, на 6px.
+//
+// Сдвиг принадлежит МЕСТУ полосы, а не её цвету: он подгоняет полосу к своей грани поля и
+// к своей морде. Поэтому берут его по краю, тем же getHudEdgeSeat, что и саму геометрию.
+// Пока сторона была прибита намертво, край и цвет совпадали, и разницы не было; при своём
+// крае снизу полосы меняются краями, и цветной сдвиг тянул каждую к чужому углу — прямо
+// на морду.
 const INVENTORY_LANDSCAPE_SHIFT_PX = Object.freeze({ blue: 42, green: -18 });
 
 // В горизонтали полосы инвентаря на экране крупнее, чем в портрете: масштаб кадра там
@@ -4824,7 +4836,7 @@ function applyInventoryContainerLayout(color, host){
   const containerConfig = INVENTORY_UI_CONFIG.containers[getHudEdgeSeat(color)] ?? null;
   if(!containerConfig) return;
   const shift = isBoardLandscapeActive()
-    ? (INVENTORY_LANDSCAPE_SHIFT_PX[color] ?? 0)
+    ? (INVENTORY_LANDSCAPE_SHIFT_PX[getHudEdgeSeat(color)] ?? 0)
     : 0;
   host.style.left = `${containerConfig.x + shift}px`;
   host.style.top = `${containerConfig.y}px`;
