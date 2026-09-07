@@ -45,6 +45,11 @@ const context = {
   ATTACK_RANGE_PX: 100,
   turnAdvanceCount: 0,
   getBaseAnchor: () => ({ x: 0, y: 0 }),
+  // Край обычный: компьютер синий, человек зелёный.
+  getAiPlayerColor: () => 'blue',
+  getAiEnemyColor: () => 'green',
+  getAiHomeBaseAnchor: () => ({ x: 0, y: 0 }),
+  getAiEnemyBaseAnchor: () => ({ x: 0, y: 0 }),
   dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
   isPathClear: () => true,
 };

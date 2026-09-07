@@ -47,6 +47,12 @@ const context = {
   AI_FLAG_FUEL_CAPTURE_MIN_ADVANCE_PX: 120,
   getFlagById: (id) => flags[id] || null,
   getBaseAnchor: () => ({ x: 0, y: 0 }),
+  // Сторона компьютера теперь зависит от выбранного края поля. Здесь край обычный:
+  // компьютер синий, человек зелёный — как и было, пока сторона была прибита намертво.
+  getAiPlayerColor: () => 'blue',
+  getAiEnemyColor: () => 'green',
+  getAiHomeBaseAnchor: () => ({ x: 0, y: 0 }),
+  getAiEnemyBaseAnchor: () => ({ x: 0, y: 0 }),
   getBaseInteractionTarget: () => ({ anchor: { x: 0, y: 0 }, radius: 40 }),
   getAiMoveLandingPoint: (move) => move?.landing || null,
   // base zone hit = the (fake) plane at the landing is within the base radius.
