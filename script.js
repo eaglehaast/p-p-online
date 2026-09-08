@@ -17364,6 +17364,132 @@ const aiThinkHoof = (() => {
   return { arm, onAimingStarted, onTurnEnded };
 })();
 
+// Жест задумчивости живого игрока.
+//
+// У компьютера такой жест уже есть: копыто вылезает, когда он долго думает над ходом.
+// Здесь то же копыто и та же анимация, но правило другое, и разница не косметическая.
+// У ИИ жест ОДНОРАЗОВЫЙ: окно раздумий кончается само, как только он начинает целиться,
+// и второго раза за ход не бывает. Человек же может думать сколько угодно, поэтому у
+// него жест ПОВТОРЯЕТСЯ: десять секунд без действия — копыто, ещё десять — снова.
+//
+// Считается именно бездействие, а не время хода: любое нажатие сбрасывает отсчёт.
+// Иначе копыто вылезало бы посреди затянувшегося прицеливания, когда игрок как раз
+// занят делом, — а смысл жеста ровно обратный.
+//
+// Жест ставится у морды ТОГО, кто думает, и морда эта переезжает вместе со своей
+// половиной поля (см. .turn-indicator в styles.css). Поэтому угол спрашивается у
+// getHudEdgeSeat, а не пишется цветом: при своём крае снизу синий сидит внизу.
+// Изменяемая, как и порог у ИИ: число подбирается на ощупь, и менять его вживую из
+// консоли удобнее, чем перезагружать партию.
+let PLAYER_THINK_GESTURE_IDLE_MS = 10000;
+const playerThinkGesture = (() => {
+  let el = null;
+  let timer = 0;
+  let phase = "idle"; // idle | armed | entering | fidgeting | leaving
+  let wired = false;
+  let activeColor = null;
+
+  function getEl(){
+    if(el === null) el = document.getElementById("playerThinkHoof") || false;
+    return el || null;
+  }
+  function setPhaseClass(node, cls){
+    node.classList.remove("is-entering", "is-fidgeting", "is-leaving");
+    if(cls) node.classList.add(cls);
+  }
+  function wire(node){
+    if(wired) return;
+    wired = true;
+    // Тот же маршрутизатор фаз, что у копыта ИИ: кадры и их имена общие, потому что
+    // общий и набор ключевых кадров в стилях.
+    node.addEventListener("animationend", (e) => {
+      switch(e.animationName){
+        case "aiHoofSlideIn":
+          if(phase !== "entering") return;
+          phase = "fidgeting";
+          setPhaseClass(node, "is-fidgeting");
+          break;
+        case "aiHoofFidgetOpen":
+          if(phase !== "fidgeting") return;
+          phase = "leaving";
+          setPhaseClass(node, "is-leaving");
+          break;
+        case "aiHoofSlideOut":
+          if(phase !== "leaving") return;
+          phase = "idle";
+          setPhaseClass(node, null);
+          // Жест кончился — заводим отсчёт заново. Отсчёт идёт от КОНЦА жеста, а не от
+          // его начала: иначе на длинном раздумье копыта наезжали бы друг на друга.
+          arm();
+          break;
+      }
+    });
+  }
+  function placeAtThinkerCorner(node){
+    // Верхний угол кадра занимает та сторона, чья половина сейчас сверху.
+    const north = typeof getHudEdgeSeat === "function"
+      ? getHudEdgeSeat(activeColor) === "blue"
+      : activeColor === "blue";
+    node.classList.toggle("is-north", north);
+    node.classList.toggle("is-south", !north);
+  }
+  function enter(){
+    const node = getEl();
+    if(!node) return;
+    wire(node);
+    placeAtThinkerCorner(node);
+    phase = "entering";
+    setPhaseClass(node, "is-entering");
+  }
+  function clearTimer(){
+    if(timer){ clearTimeout(timer); timer = 0; }
+  }
+  function arm(){
+    clearTimer();
+    if(!activeColor) return;
+    phase = "armed";
+    timer = setTimeout(() => { timer = 0; enter(); }, PLAYER_THINK_GESTURE_IDLE_MS);
+  }
+  function stop(){
+    clearTimer();
+    activeColor = null;
+    const node = getEl();
+    if(node && phase !== "idle") setPhaseClass(node, null);
+    phase = "idle";
+  }
+  // Ход перешёл к кому-то другому — или к тому же, но партия только началась.
+  function sync(color){
+    const наЭкране = typeof document !== "undefined"
+      && document.body?.classList?.contains("screen--game");
+    const свой = typeof isLocalColor === "function" ? isLocalColor(color) : true;
+    if(!наЭкране || !свой){
+      if(activeColor) stop();
+      return;
+    }
+    if(color === activeColor) return;
+    stop();
+    activeColor = color;
+    arm();
+  }
+  // Игрок что-то сделал: отсчёт с начала. Пока копыто на экране, ничего не трогаем —
+  // оно доиграет и заведёт отсчёт само.
+  function poke(){
+    if(!activeColor) return;
+    if(phase !== "armed") return;
+    arm();
+  }
+  return { sync, poke, stop };
+})();
+
+if(typeof document !== "undefined"){
+  // Действием считается нажатие, а не движение мыши: водить курсором над полем и думать
+  // — это и есть думать. Слушаем на всплытии документа, чтобы не зависеть от того, по
+  // какому именно слою игрок попал.
+  for(const событие of ["pointerdown", "pointerup", "keydown"]){
+    document.addEventListener(событие, () => playerThinkGesture.poke(), { passive: true });
+  }
+}
+
 // --- Console tuning kit for the thinking hoof ----------------------------
 // In the browser console:
 //   hoofStats()       -> summary of collected AI thinking-window durations and
@@ -51197,6 +51323,10 @@ function updateTurnIndicators(){
   // Верхняя морда (козёл) принадлежит синему, нижняя (воробей) — зелёному.
   mantisIndicator.classList.toggle('active', isBlueTurn);
   goatIndicator.classList.toggle('active', !isBlueTurn);
+  // Отсюда же заводится жест задумчивости живого игрока: это единственное место,
+  // которое знает «чей сейчас ход» и вызывается на каждой перерисовке счёта, то есть
+  // переживёт любую смену хода — хоть по выстрелу, хоть по загрузке партии.
+  playerThinkGesture.sync(color);
 }
 
 function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
