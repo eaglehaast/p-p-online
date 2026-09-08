@@ -548,9 +548,13 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     return Number.parseFloat(match[1]);
   };
 
+  // Копыт теперь два — у ИИ и у игрока, — и общее у них вынесено на класс: размер,
+  // фазы, кадры. По id осталось только МЕСТО. Поэтому габариты читаются с класса, а
+  // портретное место — с правила самого копыта ИИ.
+  const общее = ruleBody('.think-hoof {');
   const base = ruleBody('#aiThinkHoof {');
-  const hoofW = px(base, 'width');
-  const hoofH = px(base, 'height');
+  const hoofW = px(общее, 'width');
+  const hoofH = px(общее, 'height');
   const land = ruleBody('html.is-board-landscape #aiThinkHoof {');
   const left = px(land, 'left');
   const top = px(land, 'top');
@@ -632,14 +636,18 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     const body = frames.slice(0, frames.indexOf('\n}'));
     const steps = body.match(/transform:\s*[^;]+;/g) || [];
     assert(steps.length >= 4, `12l: в ${name} должны остаться все шаги, найдено ${steps.length}`);
-    assert(steps.every((step) => /rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) translateX\(/.test(step)),
-      `12m: каждый кадр ${name} держит разворот и отражение и ставит их ПЕРЕД сдвигом`);
+    assert(steps.every((step) => /rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) scaleY\(var\(--hoof-flip-y\)\)\s*translateX\(/.test(step)),
+      `12m: каждый кадр ${name} держит разворот и оба отражения и ставит их ПЕРЕД сдвигом`);
   }
-  const restRule = ruleBody('#aiThinkHoof.is-fidgeting {');
-  assert(/rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) translateX\(0\)/.test(restRule),
+  const restRule = ruleBody('.think-hoof.is-fidgeting {');
+  assert(/rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) scaleY\(var\(--hoof-flip-y\)\)\s*translateX\(0\)/
+    .test(restRule),
     '12n: в топтании копыто тоже держит разворот');
-  assert(/--hoof-rot:\s*0deg/.test(base) && /--hoof-flip:\s*1/.test(base),
-    '12o: в портрете переменные нейтральны — рисунок там не меняется');
+  assert(/--hoof-rot:\s*0deg/.test(общее) && /--hoof-flip:\s*1/.test(общее),
+    '12o: по умолчанию переменные нейтральны — в портрете у копыта ИИ рисунок не меняется');
+  assert(!/--hoof-rot|--hoof-flip/.test(base),
+    '12p: место копыта ИИ снова задаёт развороты — они принадлежат общему классу и '
+    + 'правилам ориентации, иначе второе копыто унаследует чужой разворот');
 }
 
 // === 13. Кнопка поворота: спрайт из ассетов на пересечении средних линий ===

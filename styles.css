@@ -2531,34 +2531,56 @@ html.is-board-flipped #goatIndicator {
   filter: grayscale(0) drop-shadow(0 0 6px rgba(127, 142, 64, 0.6));
 }
 
-/* --- "AI is thinking" goat hoof -----------------------------------------
-   Lives in the #gameContainer 460x800 world (scales with the board). The goat
-   is the TOP-LEFT (blue) player, so the hoof peeks in near the top-left corner.
-   Resting spot is the asset's final position: x = -15 (15px stays off the left
-   edge so it only half-peeks), y = 85 from the top of the frame. Tweak left/top
-   here to re-aim it; tweak the threshold in script.js
-   (AI_THINK_HOOF_THRESHOLD_MS) to change how long the AI must deliberate before
-   the hoof bothers to appear. */
-#aiThinkHoof {
-  /* Разворот и отражение вынесены в переменные, а не в отдельный набор кадров:
+/* --- Копыто «думаю» ------------------------------------------------------
+   Живёт в мире 460x800 внутри #gameContainer и масштабируется вместе с доской.
+   Копыт два: одно у ИИ (#aiThinkHoof), второе у живого игрока
+   (#playerThinkHoof). Кадры, фазы и анимации у них общие — отличается только
+   МЕСТО, поэтому всё общее собрано на классе, а left/top стоят по id.
+
+   Место копыта ИИ — это угол козла: x = -15 (15 точек остаются за левой гранью,
+   чтобы копыто только выглядывало), y = 85 от верха кадра, то есть чуть ниже
+   бороды. Порог, после которого копыто вылезает, задан в script.js:
+   AI_THINK_HOOF_THRESHOLD_MS для ИИ и PLAYER_THINK_GESTURE_IDLE_MS для игрока. */
+.think-hoof {
+  /* Развороты и отражения вынесены в переменные, а не в отдельные наборы кадров:
      маршрутизатор фаз в script.js переключается по ИМЕНИ анимации, поэтому имена
-     обязаны быть одни и те же в обеих ориентациях. Горизонталь переопределяет
-     только эти две переменные (см. блок html.is-board-landscape в конце файла). */
+     обязаны быть одни и те же во всех углах и ориентациях. Правила по месту
+     переопределяют только эти переменные. */
   --hoof-rot: 0deg;
   --hoof-flip: 1;
+  --hoof-flip-y: 1;
   position: absolute;
-  left: -15px;
-  top: 85px;
   width: 47px;
   height: 49px;
   z-index: 36; /* just above the goat indicator (35) */
   pointer-events: none;
   visibility: hidden;
-  transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-44px); /* parked fully off-screen */
+  transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y))
+             translateX(-44px); /* parked fully off-screen */
   will-change: transform;
 }
 
-#aiThinkHoof .ai-think-hoof__frame {
+/* Копыто ИИ стоит у морды козла — она же верхняя, пока доска не перевёрнута. */
+#aiThinkHoof {
+  left: -15px;
+  top: 85px;
+}
+
+/* Копыто игрока переезжает к той морде, которая сейчас думает. Верхний угол —
+   тот же, что у ИИ. Нижний — зеркало по вертикали: копыто выглядывает из той же
+   левой грани, но тянется вверх, к морде под ним. */
+#playerThinkHoof.is-north {
+  left: -15px;
+  top: 85px;
+}
+
+#playerThinkHoof.is-south {
+  left: -15px;
+  top: 666px; /* 800 - 85 - 49: то же место, отмеренное от нижней грани */
+  --hoof-flip-y: -1;
+}
+
+.think-hoof .ai-think-hoof__frame {
   position: absolute;
   inset: 0;
   background-repeat: no-repeat;
@@ -2566,47 +2588,47 @@ html.is-board-flipped #goatIndicator {
   background-size: 47px 49px;
 }
 
-#aiThinkHoof .ai-think-hoof__frame--close {
+.think-hoof .ai-think-hoof__frame--close {
   background-image: url("ui_gamescreen/gamescreen_outside/goat_close.png");
   opacity: 1;
 }
 
-#aiThinkHoof .ai-think-hoof__frame--open {
+.think-hoof .ai-think-hoof__frame--open {
   background-image: url("ui_gamescreen/gamescreen_outside/goat_open.png");
   opacity: 0;
 }
 
 /* Entering: stepped slide-in (deliberately jerky, old-school). */
-#aiThinkHoof.is-entering {
+.think-hoof.is-entering {
   visibility: visible;
   animation: aiHoofSlideIn 0.8s steps(1, end) forwards;
 }
 
 @keyframes aiHoofSlideIn {
-  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-44px); }
-  25%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-30px); }
-  50%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-18px); }
-  75%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-8px); }
-  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(0); }
+  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-44px); }
+  25%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-30px); }
+  50%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-18px); }
+  75%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-8px); }
+  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(0); }
 }
 
 /* Fidgeting: parked at rest, alternating closed/open frames = lateral squeeze
    (reads as a hoof teasing a beard, not an in-out pump). Opacity animation so
    it composites and survives the AI's heavy sync chunks. */
-#aiThinkHoof.is-fidgeting {
+.think-hoof.is-fidgeting {
   visibility: visible;
-  transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(0);
+  transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(0);
 }
 
 /* Both frames run in counter-phase so exactly one is ever visible — otherwise
    the narrower closed hoof shows through from behind the spread-open one.
    Slow, calm rhythm: the closed (rest) frame is held longer than the open
    squeeze, so it reads as unhurried beard-stroking, not a nervous twitch. */
-#aiThinkHoof.is-fidgeting .ai-think-hoof__frame--close {
+.think-hoof.is-fidgeting .ai-think-hoof__frame--close {
   animation: aiHoofFidgetClose 1.5s steps(1, end) 2;
 }
 
-#aiThinkHoof.is-fidgeting .ai-think-hoof__frame--open {
+.think-hoof.is-fidgeting .ai-think-hoof__frame--open {
   animation: aiHoofFidgetOpen 1.5s steps(1, end) 2;
 }
 
@@ -2621,20 +2643,20 @@ html.is-board-flipped #goatIndicator {
 }
 
 /* Leaving: stepped slide-out, retracts showing the closed hoof. */
-#aiThinkHoof.is-leaving {
+.think-hoof.is-leaving {
   visibility: visible;
   animation: aiHoofSlideOut 0.75s steps(1, end) forwards;
 }
 
 @keyframes aiHoofSlideOut {
-  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(0); }
-  33%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-12px); }
-  66%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-28px); }
-  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) translateX(-44px); }
+  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(0); }
+  33%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-12px); }
+  66%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-28px); }
+  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-44px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #aiThinkHoof { display: none; }
+  .think-hoof { display: none; }
 }
 
 
@@ -3929,6 +3951,32 @@ html.is-board-landscape #aiThinkHoof {
   top: -16px;
   /* Сразу под подбородком начинается полоса инвентаря (#inventoryLayer,
      z-index 60), и копыто ушло бы под неё. Пусть перекрывает — так задумано. */
+  z-index: 61;
+}
+
+/* Копыто игрока в горизонтали. Верхний угол — тот же, что у ИИ, до последнего
+   числа: это одно и то же место у одной и той же морды.
+
+   Нижний угол в горизонтали — не зеркало по вертикали, как в портрете, а
+   ПРОТИВОПОЛОЖНЫЙ угол кадра: морды в горизонтали сидят в (0,0) и (460,800).
+   Поэтому и копыто переносится поворотом на 180°: место отражается через центр
+   кадра (460-86-47 = 327 и 800+16-49 = 767), а к развороту добавляется те же
+   180°. Отражения при этом не меняются — поворот на 180° их не трогает. */
+html.is-board-landscape #playerThinkHoof.is-north {
+  --hoof-rot: -90deg;
+  --hoof-flip: -1;
+  --hoof-flip-y: 1;
+  left: 86px;
+  top: -16px;
+  z-index: 61;
+}
+
+html.is-board-landscape #playerThinkHoof.is-south {
+  --hoof-rot: 90deg;
+  --hoof-flip: -1;
+  --hoof-flip-y: 1;
+  left: 327px;
+  top: 767px;
   z-index: 61;
 }
 

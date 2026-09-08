@@ -167,7 +167,15 @@
             <!-- "AI is thinking" goat hoof: peeks in from the left only while the
                  AI deliberates past a threshold, fidgets (stroking-its-beard
                  squeeze), then jerks back out the moment the move is ready. -->
-            <div id="aiThinkHoof" aria-hidden="true">
+            <div id="aiThinkHoof" class="think-hoof" aria-hidden="true">
+              <div class="ai-think-hoof__frame ai-think-hoof__frame--close"></div>
+              <div class="ai-think-hoof__frame ai-think-hoof__frame--open"></div>
+            </div>
+
+            <!-- Тот же жест, но для живого игрока: вылезает у ЕГО морды, когда он
+                 засиделся над ходом. Один узел на обоих: думает всегда кто-то один,
+                 а у чьей морды вылезти — решает класс is-north / is-south. -->
+            <div id="playerThinkHoof" class="think-hoof" aria-hidden="true">
               <div class="ai-think-hoof__frame ai-think-hoof__frame--close"></div>
               <div class="ai-think-hoof__frame ai-think-hoof__frame--open"></div>
             </div>
