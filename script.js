@@ -17388,10 +17388,29 @@ const playerThinkGesture = (() => {
   let phase = "idle"; // idle | armed | entering | fidgeting | leaving
   let wired = false;
   let activeColor = null;
+  let позаНа = null; // морда, которой сейчас подставлена поза раздумья
 
   function getEl(){
     if(el === null) el = document.getElementById("playerThinkHoof") || false;
     return el || null;
+  }
+
+  // Поза раздумья — второй рисунок той же морды: голова поднята. Подставляется на время
+  // жеста и снимается вместе с ним, поэтому узел запоминается: пока копыто на экране, ход
+  // может перейти к сопернику, и снимать позу придётся уже не с той морды, что сейчас
+  // думает. Рисунок пока один, для козла внизу; остальным класс тоже достаётся, но
+  // правил для них нет и меняться нечему.
+  function надетьПозу(){
+    снятьПозу();
+    const морда = document.getElementById(activeColor === "blue" ? "mantisIndicator" : "goatIndicator");
+    if(!морда) return;
+    морда.classList.add("is-thinking");
+    позаНа = морда;
+  }
+  function снятьПозу(){
+    if(!позаНа) return;
+    позаНа.classList.remove("is-thinking");
+    позаНа = null;
   }
   function setPhaseClass(node, cls){
     node.classList.remove("is-entering", "is-fidgeting", "is-leaving");
@@ -17418,6 +17437,7 @@ const playerThinkGesture = (() => {
           if(phase !== "leaving") return;
           phase = "idle";
           setPhaseClass(node, null);
+          снятьПозу();
           // Жест кончился — заводим отсчёт заново. Отсчёт идёт от КОНЦА жеста, а не от
           // его начала: иначе на длинном раздумье копыта наезжали бы друг на друга.
           arm();
@@ -17432,12 +17452,17 @@ const playerThinkGesture = (() => {
       : activeColor === "blue";
     node.classList.toggle("is-north", north);
     node.classList.toggle("is-south", !north);
+    // Козёл — это синий, и внизу он оказывается только при перевёрнутой доске. Там ему
+    // подставляется поза раздумья, и борода в ней висит не там, где у воробья: копыто
+    // встаёт по своему месту.
+    node.classList.toggle("is-goat-south", activeColor === "blue" && !north);
   }
   function enter(){
     const node = getEl();
     if(!node) return;
     wire(node);
     placeAtThinkerCorner(node);
+    надетьПозу();
     phase = "entering";
     setPhaseClass(node, "is-entering");
   }
@@ -17452,6 +17477,7 @@ const playerThinkGesture = (() => {
   }
   function stop(){
     clearTimer();
+    снятьПозу();
     activeColor = null;
     const node = getEl();
     if(node && phase !== "idle") setPhaseClass(node, null);
