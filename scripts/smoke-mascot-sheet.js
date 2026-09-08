@@ -36,7 +36,8 @@
 // ориентации на два края на две морды плюс поза раздумья.
 
 const fs = require('fs');
-const zlib = require('zlib');
+const { читатьАльфу, рамка: рамкаЛиста, полосы: полосыЛиста, ПОРОГ_АЛЬФЫ: ПОРОГ } =
+  require('./sprite-alpha-utils.js');
 
 function assert(condition, message){
   if(!condition) throw new Error(message);
@@ -46,76 +47,8 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 const source = fs.readFileSync('script.js', 'utf8');
 const ЛИСТ = 'ui_gamescreen/gamescreen_outside/goat_and_sparrow.png';
 
-// === Чтение png: только альфа, только 8 бит RGBA без чересстрочности ===
-function читатьАльфу(путь){
-  const buf = fs.readFileSync(путь);
-  assert(buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
-    'это не png: ' + путь);
-  let pos = 8;
-  let width = 0, height = 0;
-  const данные = [];
-  while(pos < buf.length){
-    const len = buf.readUInt32BE(pos);
-    const тип = buf.slice(pos + 4, pos + 8).toString('latin1');
-    const тело = buf.slice(pos + 8, pos + 8 + len);
-    if(тип === 'IHDR'){
-      width = тело.readUInt32BE(0);
-      height = тело.readUInt32BE(4);
-      assert(тело[8] === 8 && тело[9] === 6 && тело[12] === 0,
-        'лист морд перестал быть 8-битным RGBA без чересстрочности — читалка теста рассчитана '
-        + 'только на такой');
-    } else if(тип === 'IDAT'){
-      данные.push(тело);
-    } else if(тип === 'IEND'){
-      break;
-    }
-    pos += 12 + len;
-  }
-  const raw = zlib.inflateSync(Buffer.concat(данные));
-  const bpp = 4;
-  const строка = width * bpp;
-  const alpha = new Uint8Array(width * height);
-  let prev = Buffer.alloc(строка);
-  for(let y = 0; y < height; y += 1){
-    const фильтр = raw[y * (строка + 1)];
-    const cur = Buffer.from(raw.slice(y * (строка + 1) + 1, y * (строка + 1) + 1 + строка));
-    for(let i = 0; i < строка; i += 1){
-      const a = i >= bpp ? cur[i - bpp] : 0;
-      const b = prev[i];
-      const c = i >= bpp ? prev[i - bpp] : 0;
-      let v = cur[i];
-      if(фильтр === 1) v += a;
-      else if(фильтр === 2) v += b;
-      else if(фильтр === 3) v += (a + b) >> 1;
-      else if(фильтр === 4){
-        const p = a + b - c;
-        const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
-        v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
-      }
-      cur[i] = v & 0xff;
-    }
-    for(let x = 0; x < width; x += 1) alpha[y * width + x] = cur[x * bpp + 3];
-    prev = cur;
-  }
-  return { width, height, alpha };
-}
-
+// Чтение png и замеры — общие с проверкой листов жестов, см. sprite-alpha-utils.
 const лист = читатьАльфу(ЛИСТ);
-const ПОРОГ = 16;
-
-function рамка(x0, y0, x1, y1){
-  let minX = Infinity, minY = Infinity, maxX = -1, maxY = -1;
-  for(let y = y0; y < y1; y += 1){
-    for(let x = x0; x < x1; x += 1){
-      if(лист.alpha[y * лист.width + x] <= ПОРОГ) continue;
-      if(x < minX) minX = x;
-      if(y < minY) minY = y;
-      if(x > maxX) maxX = x;
-      if(y > maxY) maxY = y;
-    }
-  }
-  return maxX < 0 ? null : { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1 };
-}
 
 // === 1. Лист на месте и головы лежат по углам ===
 assert(лист.width === 460 && лист.height === 800,
@@ -123,25 +56,9 @@ assert(лист.width === 460 && лист.height === 800,
 
 // Головы ищутся ПОЛОСАМИ непустых строк, а не по четвертям: в правой колонке их три, и
 // деление пополам склеило бы позу раздумья со спокойной головой в одну рамку.
-function полосы(x0, x1){
-  const найдено = [];
-  let нач = null;
-  for(let y = 0; y <= лист.height; y += 1){
-    let есть = false;
-    for(let x = x0; x < x1 && !есть; x += 1){
-      if(лист.alpha[y * лист.width + x] > ПОРОГ) есть = true;
-    }
-    if(есть && нач === null) нач = y;
-    if((!есть || y === лист.height) && нач !== null){
-      найдено.push(рамка(x0, нач, x1, y));
-      нач = null;
-    }
-  }
-  return найдено;
-}
-
-const слева = полосы(0, 230);
-const справа = полосы(230, 460);
+const рамка = (x0, y0, x1, y1) => рамкаЛиста(лист, x0, y0, x1, y1);
+const слева = полосыЛиста(лист, 0, 230);
+const справа = полосыЛиста(лист, 230, 460);
 assert(слева.length === 2,
   `1b: в левой колонке ${слева.length} голов вместо двух — лист перерисован, вырезы устарели`);
 assert(справа.length === 3,

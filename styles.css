@@ -2566,6 +2566,12 @@ html.is-board-flipped #mantisIndicator.is-thinking {
   --hoof-rot: 0deg;
   --hoof-flip: 1;
   --hoof-flip-y: 1;
+  /* Откуда жест въезжает. У копыта это «сбоку из-за грани кадра», поэтому сдвиг
+     чисто горизонтальный; у воробьиной лапы — вдоль своей же ноги, наискось. Вектор
+     вынесен в переменные, чтобы кадры анимации остались одни на все жесты: они берут
+     от него доли, а не свои числа. */
+  --park-x: -44px;
+  --park-y: 0px;
   position: absolute;
   width: 47px;
   height: 49px;
@@ -2573,7 +2579,7 @@ html.is-board-flipped #mantisIndicator.is-thinking {
   pointer-events: none;
   visibility: hidden;
   transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y))
-             translateX(-44px); /* parked fully off-screen */
+             translate(var(--park-x), var(--park-y)); /* parked fully off-screen */
   will-change: transform;
 }
 
@@ -2612,6 +2618,65 @@ html.is-board-flipped #mantisIndicator.is-thinking {
   top: 776px;
 }
 
+/* --- Воробей наверху: своя лапа --------------------------------------------
+   При перевёрнутой доске зелёный воробей сидит наверху, и козье копыто ему не
+   годится — у него своя лапа, отдельным файлом в два кадра.
+
+   Лапа нарисована под ЛИСТ, где воробей смотрит влево, а в игре голова отражена
+   (правая колонка листа уложена зеркально). Поэтому отражается и лапа: без этого
+   пальцы смотрят от головы, а нога заходит поперёк клюва, а не от груди.
+
+   Кадры в файле 55x153 совмещаются по месту, где нога упирается в правую грань:
+   у сомкнутого это строки 60..70, у раскрытого 130..140 — ровно 70 точек разницы.
+   Значит ячейка одна, 41x67 от (14,4), а раскрытый кадр — та же ячейка на 70 ниже.
+   Рамки самих кадров при этом разные (33x61 и 41x67): в раскрытом пальцы расходятся
+   выше и левее, и ячейка взята по объединению.
+
+   Хват — та точка, где сходятся пальцы: (19, 22) в ячейке, после отражения (22, 22).
+   Ставится он на клюв, в (42, 48) точек кадра. Ниже нога вылезает из-под груди на поле,
+   выше пальцы заходят на глаз; отсюда нога кончается ровно у края груди (26+67=93 при
+   теле до 92).
+
+   Парковка идёт вдоль ноги, наискось вниз-влево по экрану, а не вбок: лапа своя, она
+   поднимается от груди, а не въезжает из-за грани. */
+#playerThinkHoof.is-north.is-sparrow-north {
+  width: 41px;
+  height: 67px;
+  left: 20px;  /* 42 - 22 */
+  top: 26px;   /* 48 - 22 */
+  --hoof-flip: -1;
+  /* Отражение переворачивает знак X: чтобы уехать вниз-влево по экрану, сдвиг по X
+     задаётся положительным. */
+  --park-x: 26px;
+  --park-y: 26px;
+}
+
+/* Воробьиная лапа в горизонтали. Морда наверху там сидит в углу кадра (0,0), и её
+   отражения гасят друг друга: голова показывается как нарисована на листе, клювом
+   влево. Значит и лапу отражать не надо — она и нарисована под лист. Встречные -90°
+   гасят поворот кадра, и оси лапы снова экранные: числа парковки те же.
+
+   Место пересчитано в оси кадра: хват на экране приходится на (758, 48) от левого
+   верхнего угла повёрнутого кадра, что даёт left/top 26 и 7. */
+html.is-board-landscape #playerThinkHoof.is-north.is-sparrow-north {
+  --hoof-rot: -90deg;
+  --hoof-flip: 1;
+  --hoof-flip-y: 1;
+  left: 26px;
+  top: 7px;
+  z-index: 61;
+}
+
+#playerThinkHoof.is-sparrow-north .ai-think-hoof__frame {
+  background-size: 55px 153px;
+  background-position: -14px -4px;
+  background-image: url("ui_gamescreen/gamescreen_outside/sparrows_hands.png");
+}
+
+#playerThinkHoof.is-sparrow-north .ai-think-hoof__frame--open {
+  background-position: -14px -74px;
+}
+
 .think-hoof .ai-think-hoof__frame {
   position: absolute;
   inset: 0;
@@ -2637,11 +2702,11 @@ html.is-board-flipped #mantisIndicator.is-thinking {
 }
 
 @keyframes aiHoofSlideIn {
-  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-44px); }
-  25%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-30px); }
-  50%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-18px); }
-  75%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-8px); }
-  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(0); }
+  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(var(--park-x), var(--park-y)); }
+  25%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(calc(var(--park-x) * 0.68), calc(var(--park-y) * 0.68)); }
+  50%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(calc(var(--park-x) * 0.41), calc(var(--park-y) * 0.41)); }
+  75%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(calc(var(--park-x) * 0.18), calc(var(--park-y) * 0.18)); }
+  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(0, 0); }
 }
 
 /* Fidgeting: parked at rest, alternating closed/open frames = lateral squeeze
@@ -2649,7 +2714,7 @@ html.is-board-flipped #mantisIndicator.is-thinking {
    it composites and survives the AI's heavy sync chunks. */
 .think-hoof.is-fidgeting {
   visibility: visible;
-  transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(0);
+  transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(0, 0);
 }
 
 /* Both frames run in counter-phase so exactly one is ever visible — otherwise
@@ -2681,10 +2746,10 @@ html.is-board-flipped #mantisIndicator.is-thinking {
 }
 
 @keyframes aiHoofSlideOut {
-  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(0); }
-  33%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-12px); }
-  66%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-28px); }
-  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-44px); }
+  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(0, 0); }
+  33%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(calc(var(--park-x) * 0.27), calc(var(--park-y) * 0.27)); }
+  66%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(calc(var(--park-x) * 0.64), calc(var(--park-y) * 0.64)); }
+  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(var(--park-x), var(--park-y)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
