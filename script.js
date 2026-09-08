@@ -17456,6 +17456,9 @@ const playerThinkGesture = (() => {
     // подставляется поза раздумья, и борода в ней висит не там, где у воробья: копыто
     // встаёт по своему месту.
     node.classList.toggle("is-goat-south", activeColor === "blue" && !north);
+    // Воробей — зелёный, и наверху он тоже оказывается только при перевороте. У него
+    // не копыто, а своя лапа: другой рисунок, другое место и другой заход.
+    node.classList.toggle("is-sparrow-north", activeColor === "green" && north);
   }
   function enter(){
     const node = getEl();

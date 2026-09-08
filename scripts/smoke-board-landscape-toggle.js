@@ -636,11 +636,11 @@ assert(/if\(typeof refreshInventoryTooltip === "function"\) refreshInventoryTool
     const body = frames.slice(0, frames.indexOf('\n}'));
     const steps = body.match(/transform:\s*[^;]+;/g) || [];
     assert(steps.length >= 4, `12l: в ${name} должны остаться все шаги, найдено ${steps.length}`);
-    assert(steps.every((step) => /rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) scaleY\(var\(--hoof-flip-y\)\)\s*translateX\(/.test(step)),
+    assert(steps.every((step) => /rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) scaleY\(var\(--hoof-flip-y\)\)\s*translate\(/.test(step)),
       `12m: каждый кадр ${name} держит разворот и оба отражения и ставит их ПЕРЕД сдвигом`);
   }
   const restRule = ruleBody('.think-hoof.is-fidgeting {');
-  assert(/rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) scaleY\(var\(--hoof-flip-y\)\)\s*translateX\(0\)/
+  assert(/rotate\(var\(--hoof-rot\)\) scaleX\(var\(--hoof-flip\)\) scaleY\(var\(--hoof-flip-y\)\)\s*translate\(0, 0\)/
     .test(restRule),
     '12n: в топтании копыто тоже держит разворот');
   assert(/--hoof-rot:\s*0deg/.test(общее) && /--hoof-flip:\s*1/.test(общее),
