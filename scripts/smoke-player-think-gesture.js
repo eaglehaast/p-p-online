@@ -56,18 +56,25 @@ function кусок(начало){
 
 // === Стенд: поддельный узел, поддельные часы ===
 function стенд({ локальные = ['blue', 'green'], край = (c) => c, экран = true } = {}){
-  const классы = new Set();
   let слушатель = null;
-  const node = {
-    className: '',
-    classList: {
-      add: (...c) => c.forEach((x) => классы.add(x)),
-      remove: (...c) => c.forEach((x) => классы.delete(x)),
-      contains: (c) => классы.has(c),
-      toggle: (c, on) => { if(on) классы.add(c); else классы.delete(c); },
-    },
-    addEventListener: (тип, fn) => { if(тип === 'animationend') слушатель = fn; },
-  };
+  function узел(){
+    const набор = new Set();
+    return {
+      набор,
+      className: '',
+      classList: {
+        add: (...c) => c.forEach((x) => набор.add(x)),
+        remove: (...c) => c.forEach((x) => набор.delete(x)),
+        contains: (c) => набор.has(c),
+        toggle: (c, on) => { if(on) набор.add(c); else набор.delete(c); },
+      },
+      addEventListener: (тип, fn) => { if(тип === 'animationend') слушатель = fn; },
+    };
+  }
+  const node = узел();
+  const классы = node.набор;
+  // Морды — тоже узлы: жест подставляет им позу раздумья.
+  const морды = { mantisIndicator: узел(), goatIndicator: узел() };
 
   let времени = 0;
   const таймеры = new Map();
@@ -75,7 +82,7 @@ function стенд({ локальные = ['blue', 'green'], край = (c) => 
 
   const sandbox = {
     document: {
-      getElementById: (id) => (id === 'playerThinkHoof' ? node : null),
+      getElementById: (id) => (id === 'playerThinkHoof' ? node : (морды[id] || null)),
       body: { classList: { contains: (c) => (c === 'screen--game' ? экран : false) } },
       addEventListener: () => {},
     },
@@ -97,6 +104,8 @@ function стенд({ локальные = ['blue', 'green'], край = (c) => 
     жест: sandbox.playerThinkGesture,
     порог: sandbox.PLAYER_THINK_GESTURE_IDLE_MS,
     классы,
+    поза: (id) => морды[id].набор.has('is-thinking'),
+    позаУ: () => Object.keys(морды).filter((id) => морды[id].набор.has('is-thinking')),
     // Класс угла (is-north / is-south) остаётся на узле и после жеста — это место, а не
     // фаза. Поэтому «копыта нет» проверяется по фазовым классам, а не по пустоте.
     фаза: () => ['is-entering', 'is-fidgeting', 'is-leaving'].find((c) => классы.has(c)) || null,
@@ -213,6 +222,44 @@ assert(Number.isFinite(ПОРОГ) && ПОРОГ >= 3000 && ПОРОГ <= 60000,
   с.жест.sync('blue');
   с.ждать(ПОРОГ * 2);
   assert(!с.фаза(), '6: копыто вылезло в меню');
+}
+
+// === 6b. Поза раздумья надевается и СНИМАЕТСЯ ===
+//
+// Жест подставляет морде второй рисунок — голову с поднятой мордой. Забыть снять её
+// хуже, чем не надеть: голова так и останется поднятой до конца партии, а виноватым
+// будет выглядеть лист.
+{
+  const с = стенд();
+  с.жест.sync('blue');
+  assert(с.позаУ().length === 0, '6b: поза надета до того, как жест начался');
+  с.ждать(ПОРОГ + 1);
+  assert(с.поза('mantisIndicator'), '6c: жест не подставил позу раздумья');
+  assert(!с.поза('goatIndicator'), '6d: поза досталась и чужой морде');
+  с.доиграть();
+  assert(с.позаУ().length === 0,
+    `6e: после жеста поза осталась на ${с.позаУ().join(', ')} — голова так и будет стоять поднятой`);
+
+  // Зелёному — своей морде.
+  const з = стенд();
+  з.жест.sync('green');
+  з.ждать(ПОРОГ + 1);
+  assert(з.поза('goatIndicator') && !з.поза('mantisIndicator'),
+    '6f: поза надета не той морде, которая думает');
+}
+
+// === 6g. Ход сменился посреди жеста — поза снимается с ПРЕЖНЕЙ морды ===
+//
+// Копыто живёт несколько секунд, и за это время ход может уйти к сопернику. Снимать
+// позу надо с той морды, которой её надели, а не с той, которая думает сейчас.
+{
+  const с = стенд();
+  с.жест.sync('blue');
+  с.ждать(ПОРОГ + 1);
+  assert(с.поза('mantisIndicator'), '6g: поза не надета');
+  с.жест.sync('green');
+  assert(!с.поза('mantisIndicator'),
+    '6h: ход ушёл к сопернику, а прежняя морда осталась с поднятой головой');
 }
 
 // === 7. Разметка и стили: копыта делят один набор кадров ===
