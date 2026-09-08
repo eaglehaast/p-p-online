@@ -214,6 +214,9 @@
 }
 
 :root {
+  /* Наклон козла в нижнем углу и разворот его копыта считаются от одного числа:
+     разъедутся — копыто повиснет мимо бороды. */
+  --goat-south-tilt: -14deg;
   --design-w: 460;
   --design-h: 800;
 
@@ -2493,8 +2496,23 @@ body, button {
   --turn: 0deg;
   --nudge-x: 0px;
   --nudge-y: 0px;
+  /* Наклон морды. Нужен ровно одной из четырёх — козлу внизу: там борода упирается в
+     нижнюю грань кадра, и прежний жест (копыто заходит сбоку и сжимает кончик) до неё
+     не дотягивается. Наклон отводит кончик от грани, и жест снова работает — свой
+     набор кадров под этот угол не нужен.
+
+     Крутится морда вокруг СВОЕЙ головы, а не вокруг центра окна: окно в портрете
+     высотой в пол-кадра, и поворот вокруг его центра унёс бы голову за грань. Пара
+     translate до и после как раз переносит центр вращения в голову. Наклон стоит
+     ПОСЛЕ разворота ориентации и ДО отражения — то есть считается уже в экранных
+     осях, и одно число работает в обеих ориентациях. */
+  --tilt: 0deg;
+  --tilt-x: 0px;
+  --tilt-y: 0px;
   transform-origin: 50% 50%;
   transform: translate(var(--nudge-x), var(--nudge-y)) rotate(var(--turn))
+             translate(var(--tilt-x), var(--tilt-y)) rotate(var(--tilt))
+             translate(calc(-1 * var(--tilt-x)), calc(-1 * var(--tilt-y)))
              scaleX(calc(var(--mascot-flip) * var(--corner-flip)));
 }
 
@@ -2515,6 +2533,11 @@ html.is-board-flipped #mantisIndicator {
   top: 400px;
   background-position: right bottom;
   --mascot-flip: -1;
+  /* Голова козла лежит в окне центром на (27.5, 354.5), центр самого окна — (32, 200);
+     разница и переносит вращение в голову. */
+  --tilt: var(--goat-south-tilt);
+  --tilt-x: -4.5px;
+  --tilt-y: 154.5px;
 }
 
 html.is-board-flipped #goatIndicator {
@@ -2578,6 +2601,23 @@ html.is-board-flipped #goatIndicator {
   left: -15px;
   top: 666px; /* 800 - 85 - 49: то же место, отмеренное от нижней грани */
   --hoof-flip-y: -1;
+}
+
+/* Козёл внизу. Жест тот же самый, что у морды наверху, — копыто заходит сбоку и
+   сжимает кончик бороды; отдельных кадров под этот угол нет и не нужно. Работает это
+   только потому, что сама морда наклонена (см. --goat-south-tilt): без наклона кончик
+   упирается в нижнюю грань кадра и сжимать его нечем.
+
+   Место посчитано от бороды, а не подобрано: кончик лежит в (24, 797), голова
+   крутится вокруг (27.5, 754.5), после наклона кончик уезжает в (34.4, 796.6).
+   Копытца сидят в спрайте на (35, 10), центр спрайта — (23.5, 24.5); повёрнутые на
+   тот же угол, они приходятся на (31.2, 7.7) от угла копыта. Отсюда и left/top. */
+#playerThinkHoof.is-south.is-goat-south {
+  --hoof-rot: var(--goat-south-tilt);
+  --hoof-flip: 1;
+  --hoof-flip-y: 1;
+  left: 3px;
+  top: 789px;
 }
 
 .think-hoof .ai-think-hoof__frame {
@@ -2653,115 +2693,6 @@ html.is-board-flipped #goatIndicator {
   33%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-12px); }
   66%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-28px); }
   100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translateX(-44px); }
-}
-
-/* --- Козёл внизу: расчёсывание бороды ------------------------------------
-
-   Когда доска перевёрнута, козёл сидит внизу, и общее копыто «въехал сбоку —
-   потоптался — уехал» там ни к чему не относится: борода висит под подбородком
-   и уходит за нижнюю грань кадра. Поэтому у этого угла свой жест — копыто
-   заходит СНИЗУ и расчёсывает бороду сверху вниз.
-
-   Борода снята с листа: идёт от (30, 772) вниз к (24, 800), то есть вниз с
-   небольшим завалом влево, и обрезается нижней гранью кадра. Середина, за
-   которую копыто берётся, — около (27, 786) в точках кадра.
-
-   Ход жеста: раскрытое копыто выезжает снизу чуть по диагонали, у середины
-   бороды сжимается, сжатым тянет вниз по ходу бороды, там разжимается,
-   поднимается обратно раскрытым, сжимается на том же месте — и уходит вниз
-   сжатым, так что уход читается третьим движением расчёски.
-
-   Смещения заданы в осях САМОГО копыта, а не экрана, и это не мелочь: встречный
-   разворот в горизонтали как раз и приводит оси копыта к экранным, поэтому одни
-   и те же числа дают одно и то же движение в обеих ориентациях.
-
-   Отражений тут нет ни одного, и это не упущение. Копыто нарисовано ногой
-   вниз-влево (0..16, 32..47 в спрайте 47x49), а копытцами вверх-вправо
-   (24..47, 0..20) — то есть ровно так, как оно и должно заходить снизу к
-   бороде. Любое отражение развернуло бы копытца ОТ бороды. */
-#playerThinkHoof.is-south.is-beard-comb {
-  /* Копытца ставятся на середину бороды (27, 786), нога уходит за нижнюю грань
-     кадра — оттуда копыто и заходит. Центр копытец в спрайте — (35, 10),
-     отсюда и место: 27-35 и 786-10. */
-  --hoof-rot: 0deg;
-  --hoof-flip: 1;
-  --hoof-flip-y: 1;
-  left: -8px;
-  top: 776px;
-}
-
-html.is-board-landscape #playerThinkHoof.is-south.is-beard-comb {
-  /* Та же борода, пересчитанная в оси кадра: в горизонтали она лежит в
-     (446, 773). Разворот -90° гасит поворот самого кадра и приводит оси копыта
-     к экранным — те же, что в портрете, поэтому кадры движения общие. */
-  --hoof-rot: -90deg;
-  --hoof-flip: 1;
-  --hoof-flip-y: 1;
-  left: 437px;
-  top: 760px;
-  z-index: 61;
-}
-
-#playerThinkHoof.is-beard-comb.is-entering {
-  animation: goatCombIn 0.55s ease-out forwards;
-}
-
-#playerThinkHoof.is-beard-comb.is-entering .ai-think-hoof__frame--close { opacity: 0; }
-#playerThinkHoof.is-beard-comb.is-entering .ai-think-hoof__frame--open { opacity: 1; }
-
-#playerThinkHoof.is-beard-comb.is-fidgeting {
-  animation: goatCombStroke 2.6s ease-in-out forwards;
-}
-
-#playerThinkHoof.is-beard-comb.is-fidgeting .ai-think-hoof__frame--close {
-  animation: goatCombGrip 2.6s steps(1, end) forwards;
-}
-
-#playerThinkHoof.is-beard-comb.is-fidgeting .ai-think-hoof__frame--open {
-  animation: goatCombRelease 2.6s steps(1, end) forwards;
-}
-
-#playerThinkHoof.is-beard-comb.is-leaving {
-  animation: goatCombOut 0.5s ease-in forwards;
-}
-
-#playerThinkHoof.is-beard-comb.is-leaving .ai-think-hoof__frame--close { opacity: 1; }
-#playerThinkHoof.is-beard-comb.is-leaving .ai-think-hoof__frame--open { opacity: 0; }
-
-/* Заход снизу и чуть слева — «чуть диагонально». */
-@keyframes goatCombIn {
-  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(-14px, 40px); }
-  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(0, 0); }
-}
-
-/* Движение: взялся — потянул вниз — отпустил — поднялся — взялся снова. */
-@keyframes goatCombStroke {
-  0%,   6%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(0, 0); }
-  40%, 46%  { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(-3px, 12px); }
-  80%, 100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(0, 0); }
-}
-
-/* Уход вниз сжатым — по ходу бороды, как последнее движение расчёски. */
-@keyframes goatCombOut {
-  0%   { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(0, 0); }
-  100% { transform: rotate(var(--hoof-rot)) scaleX(var(--hoof-flip)) scaleY(var(--hoof-flip-y)) translate(-14px, 40px); }
-}
-
-/* Кадры копыта идут в противофазе с движением: сжато — пока тянет вниз, раскрыто
-   — пока поднимается. Ровно один кадр виден в любой момент, иначе узкое сжатое
-   копыто просвечивает из-под раскрытого. */
-@keyframes goatCombGrip {
-  0%,  5.9%   { opacity: 0; }
-  6%,  39.9%  { opacity: 1; }
-  40%, 79.9%  { opacity: 0; }
-  80%, 100%   { opacity: 1; }
-}
-
-@keyframes goatCombRelease {
-  0%,  5.9%   { opacity: 1; }
-  6%,  39.9%  { opacity: 0; }
-  40%, 79.9%  { opacity: 1; }
-  80%, 100%   { opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3908,6 +3839,9 @@ html.is-board-flipped.is-board-landscape #mantisIndicator {
   --nudge-x: -20px;
   --nudge-y: 20px;
   --corner-flip: 1;
+  /* Тот же наклон и тот же центр вращения — окно здесь ниже (104 вместо 400), поэтому
+     от его центра до головы всего 6.5 точек. Угол общий: он задан в экранных осях. */
+  --tilt-y: 6.5px;
 }
 
 html.is-board-flipped.is-board-landscape #goatIndicator {
@@ -4086,6 +4020,19 @@ html.is-board-landscape #playerThinkHoof.is-south {
   --hoof-flip-y: 1;
   left: 327px;
   top: 767px;
+  z-index: 61;
+}
+
+/* Тот же кончик бороды, пересчитанный в оси кадра: в горизонтали он лежит в (457, 776),
+   голова крутится вокруг (414.5, 772.5), после наклона кончик — в (456.6, 765.6).
+   Разворот копыта складывается из встречных -90° (они гасят поворот кадра и приводят
+   оси копыта к экранным) и того же наклона: одно число на обе ориентации. */
+html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
+  --hoof-rot: calc(-90deg + var(--goat-south-tilt));
+  --hoof-flip: 1;
+  --hoof-flip-y: 1;
+  left: 450px;
+  top: 749px;
   z-index: 61;
 }
 
