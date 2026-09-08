@@ -5486,7 +5486,7 @@ const GAME_SCREEN_ASSETS = [
   // Game field background
   "ui_gamescreen/paperwithred2.webp",
   "ui_gamescreen/gamescreen_outside/gs_background.webp",
-  "ui_gamescreen/gamescreen_outside/goat and sparrow.png",
+  "ui_gamescreen/gamescreen_outside/goat_and_sparrow.png",
 
   // Game maps
   "ui_gamescreen/bricks/brick_1_default.png",
@@ -51194,7 +51194,7 @@ function drawHudDebugLayout(ctx, scaleX, scaleY) {
 function updateTurnIndicators(){
   const color = turnColors[turnIndex];
   const isBlueTurn = color === 'blue';
-  // Top (sparrow) mascot belongs to the blue player, bottom (goat) to green.
+  // Верхняя морда (козёл) принадлежит синему, нижняя (воробей) — зелёному.
   mantisIndicator.classList.toggle('active', isBlueTurn);
   goatIndicator.classList.toggle('active', !isBlueTurn);
 }
