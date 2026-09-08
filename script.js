@@ -17382,6 +17382,18 @@ const aiThinkHoof = (() => {
 // Изменяемая, как и порог у ИИ: число подбирается на ощупь, и менять его вживую из
 // консоли удобнее, чем перезагружать партию.
 let PLAYER_THINK_GESTURE_IDLE_MS = 10000;
+// Какая фаза кончилась — решает ИМЯ отыгравших кадров. Наборов кадров столько, сколько
+// жестов: общее копыто у любой морды и расчёсывание бороды у козла внизу. Имена обязаны
+// совпадать с @keyframes в стилях — разъедутся, и жест замрёт на первой же фазе,
+// потому что маршрутизатор не узнает, что она кончилась.
+const GESTURE_PHASE_BY_KEYFRAMES = Object.freeze({
+  aiHoofSlideIn: "entering",
+  aiHoofFidgetOpen: "fidgeting",
+  aiHoofSlideOut: "leaving",
+  goatCombIn: "entering",
+  goatCombStroke: "fidgeting",
+  goatCombOut: "leaving",
+});
 const playerThinkGesture = (() => {
   let el = null;
   let timer = 0;
@@ -17400,28 +17412,25 @@ const playerThinkGesture = (() => {
   function wire(node){
     if(wired) return;
     wired = true;
-    // Тот же маршрутизатор фаз, что у копыта ИИ: кадры и их имена общие, потому что
-    // общий и набор ключевых кадров в стилях.
+    // Маршрутизатор фаз переключается по ИМЕНИ кадров, а наборов кадров теперь два:
+    // общее копыто и расчёсывание бороды у козла внизу. Поэтому имена не перечисляются
+    // по месту, а собраны в таблицу — добавить жест значит дописать в неё три строки,
+    // а не трогать сам маршрутизатор.
     node.addEventListener("animationend", (e) => {
-      switch(e.animationName){
-        case "aiHoofSlideIn":
-          if(phase !== "entering") return;
-          phase = "fidgeting";
-          setPhaseClass(node, "is-fidgeting");
-          break;
-        case "aiHoofFidgetOpen":
-          if(phase !== "fidgeting") return;
-          phase = "leaving";
-          setPhaseClass(node, "is-leaving");
-          break;
-        case "aiHoofSlideOut":
-          if(phase !== "leaving") return;
-          phase = "idle";
-          setPhaseClass(node, null);
-          // Жест кончился — заводим отсчёт заново. Отсчёт идёт от КОНЦА жеста, а не от
-          // его начала: иначе на длинном раздумье копыта наезжали бы друг на друга.
-          arm();
-          break;
+      const откуда = GESTURE_PHASE_BY_KEYFRAMES[e.animationName];
+      if(!откуда || откуда !== phase) return;
+      if(phase === "entering"){
+        phase = "fidgeting";
+        setPhaseClass(node, "is-fidgeting");
+      } else if(phase === "fidgeting"){
+        phase = "leaving";
+        setPhaseClass(node, "is-leaving");
+      } else if(phase === "leaving"){
+        phase = "idle";
+        setPhaseClass(node, null);
+        // Жест кончился — заводим отсчёт заново. Отсчёт идёт от КОНЦА жеста, а не от
+        // его начала: иначе на длинном раздумье копыта наезжали бы друг на друга.
+        arm();
       }
     });
   }
@@ -17432,6 +17441,10 @@ const playerThinkGesture = (() => {
       : activeColor === "blue";
     node.classList.toggle("is-north", north);
     node.classList.toggle("is-south", !north);
+    // Козёл — это синий. Внизу он оказывается только при перевёрнутой доске, и там у
+    // него свой жест: борода висит под подбородком и уходит за нижнюю грань кадра,
+    // поэтому копыто заходит снизу и расчёсывает её, а не топчется сбоку.
+    node.classList.toggle("is-beard-comb", activeColor === "blue" && !north);
   }
   function enter(){
     const node = getEl();
