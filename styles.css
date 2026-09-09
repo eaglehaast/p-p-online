@@ -2693,25 +2693,72 @@ html.is-board-landscape #playerThinkHoof.is-north.is-sparrow-north {
   z-index: 61;
 }
 
-#playerThinkHoof.is-sparrow-north .ai-think-hoof__frame {
+/* --- Воробей внизу: та же лапа, но заходит снизу ---------------------------
+   На обычной доске зелёный воробей сидит внизу слева. Морда там та же, что наверху, но
+   свободного места вокруг неё нет: снизу её обрезает нижняя грань кадра, слева — левая.
+   Значит лапе некуда зайти, кроме как СНИЗУ, справа от груди — и потому она развёрнута,
+   а не просто отражена, как наверху.
+
+   Угол выставлен на стенде по живому экрану: -39° в портрете. Нога после этого уходит
+   вниз-вправо за нижнюю грань, пальцы тянутся вверх-влево к горлу. В горизонтали тот же
+   разворот на экране даёт -134°: кадр там повёрнут на +90°, и элементу остаётся разница.
+   Пять градусов между ними — не ошибка пересчёта, а разные числа со стенда: ставилось
+   каждое своими глазами.
+
+   Парковка идёт вдоль ноги, вниз-вправо по экрану. Числа местные и потому одни на обе
+   ориентации: оси лапы едут вместе с ней. */
+#playerThinkHoof.is-south.is-sparrow-south {
+  width: 55px;
+  height: 71px;
+  left: 22px;
+  top: 760px;
+  --hoof-rot: -39deg;
+  --hoof-flip: -1;
+  --hoof-flip-y: 1;
+  --park-x: 18px;
+  --park-y: 32px;
+}
+
+/* Место считается по СЕРЕДИНЕ коробки — она не зависит от того, как элемент повёрнут
+   внутри себя: экран (cx, cy) = (800 - top - h/2, left + w/2). Для середины (48.5, 453.5)
+   и коробки 55x71: left = 426, top = 716. */
+html.is-board-landscape #playerThinkHoof.is-south.is-sparrow-south {
+  --hoof-rot: -134deg;
+  left: 426px;
+  top: 716px;
+  z-index: 61;
+}
+
+#playerThinkHoof.is-sparrow-north .ai-think-hoof__frame,
+#playerThinkHoof.is-sparrow-south .ai-think-hoof__frame {
   background-size: 55px 153px;
   background-position: 0 -3px;
   background-image: url("ui_gamescreen/gamescreen_outside/sparrows_hands.png");
 }
 
-#playerThinkHoof.is-sparrow-north .ai-think-hoof__frame--open {
+#playerThinkHoof.is-sparrow-north .ai-think-hoof__frame--open,
+#playerThinkHoof.is-sparrow-south .ai-think-hoof__frame--open {
   background-position: 0 -71px;
 }
 
-/* Сдвиг сомкнутого кадра относительно раскрытого — то самое движение. По экрану он в
-   обеих ориентациях одинаков, вниз и на две точки в сторону головы, но пишется в
-   местных осях кадра: в портрете лапа отражена, и знак X у сдвига обратный. */
+/* Сдвиг сомкнутого кадра относительно раскрытого — то самое движение. По экрану он
+   маленький, точки на четыре, но пишется в МЕСТНЫХ осях кадра, а они едут вместе с
+   разворотом и отражением лапы. Отсюда и дробные числа у нижнего воробья: экранный
+   сдвиг там целый, а вот в осях повёрнутой лапы он на целые не ложится. */
 #playerThinkHoof.is-sparrow-north .ai-think-hoof__frame--close {
   transform: translate(-2px, 2px);
 }
 
 html.is-board-landscape #playerThinkHoof.is-sparrow-north .ai-think-hoof__frame--close {
   transform: translate(-2px, 3px);
+}
+
+#playerThinkHoof.is-sparrow-south .ai-think-hoof__frame--close {
+  transform: translate(-4.37px, 0.96px);
+}
+
+html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame--close {
+  transform: translate(-4.27px, 1.34px);
 }
 
 .think-hoof .ai-think-hoof__frame {

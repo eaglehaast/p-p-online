@@ -17459,6 +17459,9 @@ const playerThinkGesture = (() => {
     // Воробей — зелёный, и наверху он тоже оказывается только при перевороте. У него
     // не копыто, а своя лапа: другой рисунок, другое место и другой заход.
     node.classList.toggle("is-sparrow-north", activeColor === "green" && north);
+    // Внизу воробей сидит на ОБЫЧНОЙ доске, то есть чаще всего. Лапа та же, но заходит
+    // не сбоку, а снизу, из-под нижней грани, и потому развёрнута — своё правило.
+    node.classList.toggle("is-sparrow-south", activeColor === "green" && !north);
   }
   function enter(){
     const node = getEl();
