@@ -123,13 +123,17 @@ function разложить(seat, landscape, color){
 {
   for(const имя of ['applyInventoryContainerLayout', 'getInventoryTooltipLandscapeRect']){
     const тело = extractFn(source, имя);
-    assert(/INVENTORY_LANDSCAPE_SHIFT_PX\[getHudEdgeSeat\(color\)\]/.test(тело),
+    // Край можно взять и в переменную — важно, что он берётся, и что цвет в ключе не
+    // всплывает обратно.
+    assert(/getHudEdgeSeat\(color\)/.test(тело) && /INVENTORY_LANDSCAPE_SHIFT_PX\[/.test(тело),
       `4: ${имя} берёт сдвиг полосы по цвету, а не по краю`);
-    assert(!/INVENTORY_LANDSCAPE_SHIFT_PX\[color\]/.test(тело),
+    assert(!/INVENTORY_LANDSCAPE_SHIFT_PX\[\s*color\s*\]/.test(тело),
       `4b: ${имя} где-то ещё берёт сдвиг по цвету`);
+    assert(!/INVENTORY_UI_CONFIG\.containers\[\s*color\s*\]/.test(тело),
+      `4c: ${имя} берёт саму полосу по цвету — на перевёрнутой доске это чужая полоса`);
   }
-  assert(/INVENTORY_UI_CONFIG\.containers\[getHudEdgeSeat\(color\)\]/.test(source),
-    '4c: сама геометрия полосы перестала браться по краю');
+  assert(/INVENTORY_UI_CONFIG\.containers\[(getHudEdgeSeat\(color\)|edgeSeat)\]/.test(source),
+    '4d: сама геометрия полосы перестала браться по краю');
 }
 
 // === 5. Смена края пересчитывает раскладку ===
