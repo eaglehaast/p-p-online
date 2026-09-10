@@ -53139,6 +53139,18 @@ function applyPinchTransform() {
   uiFrameInner.style.transform = `translate(${pinchPanX}px, ${pinchPanY}px) scale(${pinchScale})`;
 }
 
+// Панорамирование при зуме задаётся ЭКРАННЫМ сдвигом пальца, а ложится на #uiFrameInner,
+// то есть в оси КАДРА. В портрете это одно и то же, а в горизонтали кадр повёрнут на 90°
+// (styles.css, html.is-board-landscape #uiFrame) — и сдвиг поворачивался вместе с ним:
+// ведёшь пальцем вверх, картинка едет вправо.
+//
+// Перевод тот же, что у toDesignCoords, только без начала координат: точка кадра (u,v)
+// видна в (H - v, u), значит экранный сдвиг (dx, dy) — это сдвиг кадра (dy, -dx).
+function panFromScreenDelta(dx, dy) {
+  if (!isBoardLandscapeActive()) return { x: dx, y: dy };
+  return { x: dy, y: -dx };
+}
+
 function isPinchTransformEffectivelyActive() {
   const resolvedScale = getEffectivePinchScale();
   const runtimeScale = Number.isFinite(pinchScale) ? pinchScale : 1;
@@ -53246,8 +53258,9 @@ window.addEventListener('wheel', (event) => {
   if (pinchActive && event.ctrlKey !== true) {
     if (pinchScale > PINCH_MIN) {
       clearPinchResetAnimation();
-      pinchPanX = pinchPanX - event.deltaX;
-      pinchPanY = pinchPanY - event.deltaY;
+      const сдвиг = panFromScreenDelta(-event.deltaX, -event.deltaY);
+      pinchPanX = pinchPanX + сдвиг.x;
+      pinchPanY = pinchPanY + сдвиг.y;
       applyPinchTransform();
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -53311,14 +53324,26 @@ function getTouchDistance(touchA, touchB) {
   return Math.hypot((touchB.clientX - touchA.clientX), (touchB.clientY - touchA.clientY));
 }
 
+// Точка, вокруг которой растёт щипок. Проценты уходят на #uiFrameInner, а он живёт в осях
+// КАДРА — тогда как rect у повёрнутого кадра это его габаритная коробка на экране, 800x460.
+// Пока проценты считались прямо по ней, в горизонтали зум расходился не от пальцев: замер
+// на щипке вокруг (300, 300) показывал промах на 822 точки по X и 128 по Y.
+//
+// Перевод тот же, что у toDesignCoords: доля вдоль экранного Y — это доля вдоль оси u
+// кадра, а доля вдоль экранного X идёт по оси v в обратную сторону.
 function getTouchCenterInPercents(touchA, touchB, rect) {
   const centerX = (touchA.clientX + touchB.clientX) / 2;
   const centerY = (touchA.clientY + touchB.clientY) / 2;
   let originX = 50;
   let originY = 50;
   if (rect.width > 0 && rect.height > 0) {
-    originX = clamp(((centerX - rect.left) / rect.width) * 100, 0, 100);
-    originY = clamp(((centerY - rect.top) / rect.height) * 100, 0, 100);
+    const вдольX = (centerX - rect.left) / rect.width;
+    const вдольY = (centerY - rect.top) / rect.height;
+    const доли = isBoardLandscapeActive()
+      ? { x: вдольY, y: 1 - вдольX }
+      : { x: вдольX, y: вдольY };
+    originX = clamp(доли.x * 100, 0, 100);
+    originY = clamp(доли.y * 100, 0, 100);
   }
   return { originX, originY };
 }
@@ -53390,8 +53415,10 @@ function installTouchPinchZoom() {
       pinchScale = clamp(touchPinchState.startScale * ratio, PINCH_MIN, PINCH_MAX);
       const center = getTouchCenterClient(touchA, touchB);
       if (pinchScale > PINCH_MIN) {
-        pinchPanX = touchPinchState.startPanX + (center.x - touchPinchState.startCenterX);
-        pinchPanY = touchPinchState.startPanY + (center.y - touchPinchState.startCenterY);
+        const сдвиг = panFromScreenDelta(center.x - touchPinchState.startCenterX,
+          center.y - touchPinchState.startCenterY);
+        pinchPanX = touchPinchState.startPanX + сдвиг.x;
+        pinchPanY = touchPinchState.startPanY + сдвиг.y;
       } else {
         pinchPanX = 0;
         pinchPanY = 0;
@@ -53404,8 +53431,10 @@ function installTouchPinchZoom() {
 
     if (touchPinchState.panActive && event.touches.length === 1 && pinchScale > PINCH_MIN) {
       const touch = event.touches[0];
-      pinchPanX = touchPinchState.panBaseX + (touch.clientX - touchPinchState.panStartX);
-      pinchPanY = touchPinchState.panBaseY + (touch.clientY - touchPinchState.panStartY);
+      const сдвиг = panFromScreenDelta(touch.clientX - touchPinchState.panStartX,
+        touch.clientY - touchPinchState.panStartY);
+      pinchPanX = touchPinchState.panBaseX + сдвиг.x;
+      pinchPanY = touchPinchState.panBaseY + сдвиг.y;
       applyPinchTransform();
       event.preventDefault();
       event.stopImmediatePropagation();
