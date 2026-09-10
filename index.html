@@ -48,10 +48,39 @@
               <span class="visually-hidden">Advanced Settings</span>
             </button>
 
-            <!-- Подпись автора в свободной полосе под меню. Пока это метка, а не кнопка:
-                 нажимать нечему, дерево ссылок за ней ещё не заведено. Поэтому div, а не
-                 button — в фокус не попадёт и читалке не соврёт. -->
-            <div id="menuSignature" class="mode-menu__signature" aria-hidden="true"></div>
+            <!-- Подпись автора в свободной полосе под меню. Она же кнопка: за ней окошко
+                 со ссылками. Рисунок лежит фоном, поэтому кнопка пустая, а имя для
+                 читалки задано aria-label. -->
+            <button id="menuSignature" class="mode-menu__signature" type="button"
+                    aria-label="eaglehaast — author links"
+                    aria-haspopup="dialog" aria-expanded="false" aria-controls="authorLinks">
+            </button>
+
+            <!-- Ссылки автора. Затемнение — оно же и способ закрыть: нажатие мимо окошка
+                 сворачивает его, отдельной крестик тут лишний. Порядок в разметке важен:
+                 затемнение лежит НИЖЕ окошка и выше остального меню, поэтому оно же и
+                 перехватывает нажатия по кнопкам под собой. -->
+            <div id="authorLinksBackdrop" class="author-links__backdrop" hidden></div>
+            <div id="authorLinks" class="author-links" role="dialog" aria-modal="true"
+                 aria-labelledby="authorLinksTitle" hidden>
+              <p id="authorLinksTitle" class="author-links__title">eaglehaast</p>
+              <!-- Строка без адреса не показывается: пустой href — это ссылка в никуда,
+                   а мёртвая строка в таком окошке хуже отсутствующей. Появится адрес —
+                   строка зажжётся сама. -->
+              <a class="author-links__row" href="" target="_blank" rel="noopener noreferrer">
+                <span class="author-links__name">Instagram</span>
+                <span class="author-links__where"></span>
+              </a>
+              <a class="author-links__row" href="https://github.com/eaglehaast/p-p-online"
+                 target="_blank" rel="noopener noreferrer">
+                <span class="author-links__name">Source code</span>
+                <span class="author-links__where"></span>
+              </a>
+              <a class="author-links__row" href="" target="_blank" rel="noopener noreferrer">
+                <span class="author-links__name">Support</span>
+                <span class="author-links__where"></span>
+              </a>
+            </div>
 
             <div id="onlineLobby" class="online-lobby" hidden aria-live="polite">
               <p id="onlineLobbyStatus" class="online-lobby__status">Creating room…</p>

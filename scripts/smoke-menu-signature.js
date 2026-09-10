@@ -46,18 +46,13 @@ const ПУНКТЫ = [
 ].map(коробка);
 const ПОДПИСЬ = коробка('mode-menu__signature');
 
-// === 1. Подпись есть, и она не кнопка ===
+// === 1. Подпись на месте, и это кнопка ===
 //
-// Нажимать за ней пока нечему: дерево ссылок не заведено. Кнопка тут соврала бы и
-// читалке, и клавиатуре — в фокус попадёт, а нажатие не сделает ничего.
+// За ней окошко со ссылками автора. Раскладку проверяем здесь, поведение — в
+// smoke-author-links.
 {
-  assert(/<div id="menuSignature" class="mode-menu__signature" aria-hidden="true">/.test(html),
-    '1: в меню нет подписи автора — элемент #menuSignature с классом mode-menu__signature');
-  assert(!/<button[^>]*mode-menu__signature/.test(html),
-    '1b: подпись стала кнопкой, а нажимать за ней нечему — пока это метка');
-  assert(/pointer-events:\s*none/.test(
-    /#menuLayer #modeMenu \.mode-menu__signature\s*\{([^}]*)\}/.exec(styles)[1]),
-    '1c: подпись ловит нажатия — она лежит поверх меню и будет их воровать');
+  assert(/<button id="menuSignature" class="mode-menu__signature"/.test(html),
+    '1: в меню нет подписи автора — кнопка #menuSignature с классом mode-menu__signature');
 
   const файл = /background-image:\s*url\('([^']+)'\)/.exec(
     /#menuLayer #modeMenu \.mode-menu__signature\s*\{([^}]*)\}/.exec(styles)[1]);
