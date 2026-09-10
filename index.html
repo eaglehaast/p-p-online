@@ -48,6 +48,11 @@
               <span class="visually-hidden">Advanced Settings</span>
             </button>
 
+            <!-- Подпись автора в свободной полосе под меню. Пока это метка, а не кнопка:
+                 нажимать нечему, дерево ссылок за ней ещё не заведено. Поэтому div, а не
+                 button — в фокус не попадёт и читалке не соврёт. -->
+            <div id="menuSignature" class="mode-menu__signature" aria-hidden="true"></div>
+
             <div id="onlineLobby" class="online-lobby" hidden aria-live="polite">
               <p id="onlineLobbyStatus" class="online-lobby__status">Creating room…</p>
 
