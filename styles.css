@@ -3225,10 +3225,15 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
   background-image: url('ui_mainmenu/mm_online.png');
 }
 
+/* Нижний блок меню — Play, Classic Rules, Advanced Settings — поднят на 36 точек: под ним
+   освобождается полоса под подпись автора. Ритм внутри блока при этом не тронут, сдвинуты
+   все три на одно и то же число, и промежутки между пунктами остались прежними.
+
+   По горизонтали числа не менялись: они и так ровно по середине кадра (460 - ширина) / 2. */
 #menuLayer #modeMenu .mode-menu__btn--play {
   width: 196px;
   height: 64px;
-  top: 476px;
+  top: 440px;
   left: 132px;
   background-image: url('ui_mainmenu/mm_playbutton.png');
 }
@@ -3240,7 +3245,7 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 #menuLayer #modeMenu .mode-menu__btn--classic {
   width: 241px;
   height: 31px;
-  top: 592px;
+  top: 556px;
   left: 109px;
   background-image: url('ui_mainmenu/mm_classicrules.png');
 }
@@ -3252,13 +3257,39 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 #menuLayer #modeMenu .mode-menu__btn--advanced {
   width: 214px;
   height: 65px;
-  top: 647px;
+  top: 611px;
   left: 123px;
   background-image: url('ui_mainmenu/mm_advancedsettings.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--advanced.selected {
   background-image: url('ui_mainmenu/mm_advancedsettings.png');
+}
+
+/* Подпись автора. Место снято с макета: коробка 133x44 в точке (175, 712) при 70%
+   непрозрачности. Полоса под неё — та, что осталась после подъёма нижнего блока: низ
+   Advanced Settings приходится на 676, край зелёного поля — на 758, и подпись 712..756
+   умещается в неё целиком, ни на что не наезжая.
+
+   Рисунок в файле лежит не по середине: слева 21 точка пустоты, справа 54. Поэтому
+   видимая подпись стоит примерно на пять точек правее середины кадра — это место с
+   макета, а не промах вырезки; ровно по центру ей соответствовал бы left: 170.
+
+   Не кнопка: нажимать пока нечему. Отсюда pointer-events: none — чтобы не перехватывать
+   нажатия у того, что окажется под ней. */
+#menuLayer #modeMenu .mode-menu__signature {
+  position: absolute;
+  left: 175px;
+  top: 712px;
+  width: 133px;
+  height: 44px;
+  background-image: url('ui_mainmenu/mm_signature.png');
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 3;
 }
 
 #menuLayer #modeMenu .mode-menu__btn--editor {
