@@ -2730,6 +2730,19 @@ html.is-board-landscape #playerThinkHoof.is-south.is-sparrow-south {
   z-index: 61;
 }
 
+/* Цвет лапы. Рисунок ярче самого воробья, и вытянут он ФИЛЬТРОМ, а не переделкой png:
+   перерисовка утащила бы за собой рамки кадров, а по ним выставлены все четыре места и
+   оба разворота — пришлось бы начинать со стенда заново. Числа подобраны там же, поверх
+   настоящего экрана; контраст и оттенок пробовали и оставили родными, поэтому их тут нет.
+
+   Фильтр висит на самой лапе, а не на кадрах: кадра два, видно всегда один, и общий
+   фильтр не даст им разойтись по цвету. Копыто козла он не задевает — оно рисуется своими
+   файлами и под эти классы не подпадает. */
+#playerThinkHoof.is-sparrow-north,
+#playerThinkHoof.is-sparrow-south {
+  filter: brightness(75%) saturate(92%);
+}
+
 #playerThinkHoof.is-sparrow-north .ai-think-hoof__frame,
 #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame {
   background-size: 55px 153px;
