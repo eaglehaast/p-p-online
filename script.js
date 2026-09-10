@@ -7720,6 +7720,71 @@ if(mapsErrorNoticeReloadBtn instanceof HTMLElement){
     window.location.reload();
   });
 }
+// --- Ссылки автора -------------------------------------------------------
+//
+// Окошко за подписью внизу меню. Закрывается нажатием мимо, и это не украшение, а весь
+// механизм: затемнение растянуто на кадр и перехватывает нажатие, которое иначе досталось
+// бы кнопкам под ним. Отдельного крестика поэтому нет.
+//
+// Строки без адреса не показываются. Ссылка в никуда хуже отсутствующей строки: она
+// выглядит рабочей и молча ничего не делает.
+(function ссылкиАвтора(){
+  const кнопка = document.getElementById("menuSignature");
+  const окно = document.getElementById("authorLinks");
+  const затемнение = document.getElementById("authorLinksBackdrop");
+  if(!(кнопка instanceof HTMLElement) || !(окно instanceof HTMLElement)
+     || !(затемнение instanceof HTMLElement)) return;
+
+  const строки = Array.from(окно.querySelectorAll(".author-links__row"));
+  for(const строка of строки){
+    const адрес = строка.getAttribute("href") || "";
+    строка.hidden = адрес.trim() === "";
+    if(строка.hidden) continue;
+    // Куда ведёт — показываем домом, а не целым адресом: это про доверие, а не про точность.
+    const куда = строка.querySelector(".author-links__where");
+    if(куда){
+      try {
+        куда.textContent = new URL(адрес, window.location.href).hostname.replace(/^www\./, "");
+      } catch(_error){
+        куда.textContent = "";
+      }
+    }
+  }
+
+  const живые = () => строки.filter((строка) => !строка.hidden);
+  let открыто = false;
+
+  function показать(да){
+    открыто = да;
+    окно.hidden = !да;
+    затемнение.hidden = !да;
+    кнопка.setAttribute("aria-expanded", String(да));
+    if(да){
+      const первая = живые()[0];
+      if(первая) первая.focus();
+    } else {
+      кнопка.focus();
+    }
+  }
+
+  кнопка.addEventListener("click", (event) => {
+    event.preventDefault();
+    показать(!открыто);
+  });
+  затемнение.addEventListener("click", () => показать(false));
+  // Нажатие по самому окошку не должно закрывать: до затемнения оно и не дойдёт, но
+  // ссылка внутри уводит в новую вкладку, а окно пусть закроется — вернувшись, игрок
+  // увидит меню, а не забытую панель.
+  окно.addEventListener("click", (event) => {
+    if(event.target.closest(".author-links__row")) показать(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if(!открыто || event.key !== "Escape") return;
+    event.preventDefault();
+    показать(false);
+  });
+})();
+
 const swapSidesBtn = document.getElementById("swapSidesBtn");
 const leftModePlane = document.getElementById("mm_plane_left_mode");
 const rightModePlane = document.getElementById("mm_plane_right_mode");

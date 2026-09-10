@@ -3282,8 +3282,8 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
    кадра. Отсюда 183: 230 + 0.0511*105 - 105/2, где 0.0511 — перекос рисунка в долях
    ширины. По вертикали низ рисунка оставлен там же, где стоял.
 
-   Не кнопка: нажимать пока нечему. Отсюда pointer-events: none — чтобы не перехватывать
-   нажатия у того, что окажется под ней. */
+   Это кнопка: за ней окошко со ссылками автора. Рисунок лежит фоном, сама кнопка пустая,
+   а имя для читалки задано в разметке. */
 #menuLayer #modeMenu .mode-menu__signature {
   position: absolute;
   left: 183px;
@@ -3295,8 +3295,115 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
   background-size: contain;
   background-position: center;
   opacity: 0.88;
-  pointer-events: none;
+  border: none;
+  padding: 0;
+  background-color: transparent;
+  cursor: pointer;
   z-index: 3;
+}
+
+/* Зона касания. Рисунок мелкий нарочно, а палец — нет: пустая накладка растягивает место
+   нажатия до 44 точек по высоте, ничего при этом не рисуя. Сама коробка кнопки не растёт,
+   поэтому и подпись остаётся ровно там, где её выставили. */
+#menuLayer #modeMenu .mode-menu__signature::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  right: -18px;
+  top: -6px;
+  bottom: -6px;
+}
+
+/* Отклик на нажатие — то же проседание, что у пунктов меню. На телефоне именно оно и
+   объясняет, что подпись нажимаемая: там не наводят курсор. */
+#menuLayer #modeMenu .mode-menu__signature:active {
+  transform: translateY(1px) scale(0.98);
+  opacity: 1;
+}
+
+#menuLayer #modeMenu .mode-menu__signature[aria-expanded="true"] {
+  opacity: 1;
+}
+
+/* --- Ссылки автора -------------------------------------------------------
+   Окошко в том же голосе, что лобби онлайна и сообщение об ошибке карт: та же бумага, та
+   же ширина, тот же угол. Третьего оформления на этом экране заводить незачем.
+
+   Закрывается нажатием мимо. Поэтому затемнение — не украшение, а сам механизм: оно
+   растянуто на весь кадр и ловит нажатие, которое иначе досталось бы кнопкам под ним. */
+#menuLayer #modeMenu .author-links__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 16, 8, 0.58);
+  z-index: 8;
+}
+
+#menuLayer #modeMenu .author-links__backdrop[hidden] { display: none; }
+
+#menuLayer #modeMenu .author-links {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: 356px;
+  max-width: calc(100% - 32px);
+  padding: 12px 14px 10px;
+  border-radius: 10px;
+  background: rgba(253, 250, 240, 0.96);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  color: #2b2b2b;
+  font-family: inherit;
+  z-index: 9;
+}
+
+#menuLayer #modeMenu .author-links[hidden] { display: none; }
+
+#menuLayer #modeMenu .author-links__title {
+  margin: 0 0 8px;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  color: #6b6257;
+}
+
+/* Строка во всю ширину и высотой в 44 точки: это кнопка под палец, а не строчка текста. */
+#menuLayer #modeMenu .author-links__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 8px;
+  background: #f3ede0;
+  color: #2b2b2b;
+  text-decoration: none;
+  font-size: 15px;
+}
+
+#menuLayer #modeMenu .author-links__row + .author-links__row { margin-top: 8px; }
+
+#menuLayer #modeMenu .author-links__row:hover { background: #ece4d3; }
+
+#menuLayer #modeMenu .author-links__row:active {
+  transform: translateY(1px);
+  background: #e5dcc7;
+}
+
+#menuLayer #modeMenu .author-links__row[hidden] { display: none; }
+
+#menuLayer #modeMenu .author-links__name { font-weight: 600; }
+
+/* Куда ведёт — мелко и вторым планом. Строка уводит из игры, и честно показать куда
+   дешевле, чем объяснять словами. */
+#menuLayer #modeMenu .author-links__where {
+  font-size: 12px;
+  color: #7a7166;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #menuLayer #modeMenu .mode-menu__btn--editor {
