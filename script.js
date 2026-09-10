@@ -2017,7 +2017,11 @@ const INVENTORY_TOOLTIP_LANDSCAPE_EDGE_PAD_PX = 4;
 
 function getInventoryTooltipLandscapeRect(color, slotIndex, width, height){
   if(!isBoardLandscapeActive()) return null;
-  const container = INVENTORY_UI_CONFIG.containers[getHudEdgeSeat(color)];
+  // Всё место считается по КРАЮ, а не по цвету: полосы инвентаря меняются краями вместе с
+  // половинами поля, и подсказка обязана ехать за своей полосой. По цвету она оставалась
+  // на прежней стороне и при перевороте выносилась за грань поля.
+  const edgeSeat = getHudEdgeSeat(color);
+  const container = INVENTORY_UI_CONFIG.containers[edgeSeat];
   const slotType = INVENTORY_UI_CONFIG.slotOrder[slotIndex];
   const slotFrame = INVENTORY_UI_CONFIG.slots[slotType]?.frame;
   if(!container || !slotFrame) return null;
@@ -2027,7 +2031,7 @@ function getInventoryTooltipLandscapeRect(color, slotIndex, width, height){
   // width. Считаем именно по развёрнутому следу, иначе подсказка накрывает слоты.
   // Тот же сдвиг, что и у самой полосы, и по тому же краю: подсказка считает центр слота
   // по координатам полосы, и разойдясь с ней уехала бы от предмета.
-  const shift = INVENTORY_LANDSCAPE_SHIFT_PX[getHudEdgeSeat(color)] ?? 0;
+  const shift = INVENTORY_LANDSCAPE_SHIFT_PX[edgeSeat] ?? 0;
   // Полоса ужата вокруг своего начала (transform-origin: left top), поэтому смещение
   // слота внутри неё тоже ужимается, а само начало остаётся на месте.
   const slotCenterX = container.x + shift
@@ -2043,7 +2047,7 @@ function getInventoryTooltipLandscapeRect(color, slotIndex, width, height){
   const gap = INVENTORY_TOOLTIP_LANDSCAPE_GAP_PX;
   // У синей полосы отступ считается от ДАЛЬНЕГО края, а он тоже ужат масштабом —
   // иначе зазор до подсказки вырастает на съеденные пиксели.
-  const centerY = color === "green"
+  const centerY = edgeSeat === "green"
     ? container.y - gap - width / 2
     : container.y + container.h * INVENTORY_LANDSCAPE_SCALE + gap + width / 2;
   return {
@@ -2470,7 +2474,9 @@ function refreshInventoryTooltip(){
   const slotIndexRaw = Number.parseInt(slot.dataset.slotIndex ?? "", 10);
   const slotIndex = Number.isFinite(slotIndexRaw) ? slotIndexRaw : 0;
   const slotColor = target.color;
-  const fixedRectConfig = INVENTORY_TOOLTIP_FIXED_RECT[slotColor];
+  // Та же беда, что и в горизонтали, только заметнее: место подсказки бралось по цвету, и
+  // при перевёрнутой доске подсказка нижнего игрока выезжала наверху — в чужой половине.
+  const fixedRectConfig = INVENTORY_TOOLTIP_FIXED_RECT[getHudEdgeSeat(slotColor)];
   const slotX = Number(fixedRectConfig?.xBySlotIndex?.[slotIndex]);
   const tooltipWidth = Number.isFinite(fixedRectConfig?.width) ? fixedRectConfig.width : 166;
   const tooltipHeight = Number.isFinite(fixedRectConfig?.height) ? fixedRectConfig.height : 48;
