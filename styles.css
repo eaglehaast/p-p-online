@@ -238,6 +238,19 @@
   --round-banner-border: var(--inventory-tooltip-border);
   --round-banner-box-shadow: var(--inventory-tooltip-box-shadow);
   --round-banner-padding: 14px 20px;
+
+  /* Ссылки автора. Палитра общая с подсказками инвентаря: это единственная «бумага»,
+     которую игра показывает поверх поля, и заводить ей вторую расцветку незачем. Строки
+     светлее самой карточки — чтобы читались приподнятыми, а не вырезанными. */
+  --author-links-background: var(--inventory-tooltip-background);
+  --author-links-color: var(--inventory-tooltip-color);
+  --author-links-font-family: var(--inventory-tooltip-font-family);
+  --author-links-border-radius: var(--inventory-tooltip-border-radius);
+  --author-links-border: var(--inventory-tooltip-border);
+  --author-links-box-shadow: var(--inventory-tooltip-box-shadow);
+  --author-links-row-background: rgba(232,216,180,0.97);
+  --author-links-row-background-hover: rgba(240,227,196,0.98);
+  --author-links-row-background-active: rgba(219,200,161,0.98);
 }
 
 body, button {
@@ -3340,67 +3353,89 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 
 #menuLayer #modeMenu .author-links__backdrop[hidden] { display: none; }
 
+/* По центру кадра, а не у нижней грани: окошко перекрывает меню целиком и читается как
+   отдельный экран, а не как выехавшая снизу полка. Заодно и палец до него дотягивается
+   одинаково с любого края телефона. */
 #menuLayer #modeMenu .author-links {
   position: absolute;
   left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  width: 356px;
-  max-width: calc(100% - 32px);
-  padding: 12px 14px 10px;
-  border-radius: 10px;
-  background: rgba(253, 250, 240, 0.96);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-  color: #2b2b2b;
-  font-family: inherit;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  max-width: calc(100% - 40px);
+  padding: 14px 14px 12px;
+  border-radius: var(--author-links-border-radius, 6px);
+  background: var(--author-links-background, rgba(210,190,150,0.97));
+  border: var(--author-links-border, 1px solid rgba(90,65,40,0.35));
+  box-shadow: var(--author-links-box-shadow, 0 8px 18px rgba(0,0,0,0.18));
+  color: var(--author-links-color, #251d14);
+  font-family: var(--author-links-font-family, "Palatino Linotype", Palatino, "Book Antiqua", serif);
   z-index: 9;
 }
 
 #menuLayer #modeMenu .author-links[hidden] { display: none; }
 
 #menuLayer #modeMenu .author-links__title {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   text-align: center;
   font-size: 13px;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: lowercase;
-  color: #6b6257;
+  opacity: 0.72;
 }
 
-/* Строка во всю ширину и высотой в 44 точки: это кнопка под палец, а не строчка текста. */
+/* Строка во всю ширину и высотой в 44 точки: это кнопка под палец, а не строчка текста.
+   Слева оставлено место под значок: файлы ещё рисуются, и пусть лучше они приедут в готовую
+   раскладку, чем строки потом поедут. */
 #menuLayer #modeMenu .author-links__row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid rgba(0, 0, 0, 0.16);
-  border-radius: 8px;
-  background: #f3ede0;
-  color: #2b2b2b;
+  border: var(--author-links-border, 1px solid rgba(90,65,40,0.35));
+  border-radius: var(--author-links-border-radius, 6px);
+  background: var(--author-links-row-background, rgba(232,216,180,0.97));
+  color: inherit;
   text-decoration: none;
   font-size: 15px;
+  font-weight: 700;
 }
+
+/* Значок строки. Картинки пока нет ни у одной — место под неё держится пустым, чтобы
+   подписи стояли в столбик уже сейчас. Появится файл — добавится одно правило с url. */
+#menuLayer #modeMenu .author-links__icon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+}
+
+#menuLayer #modeMenu .author-links__name { flex: 1 1 auto; }
 
 #menuLayer #modeMenu .author-links__row + .author-links__row { margin-top: 8px; }
 
-#menuLayer #modeMenu .author-links__row:hover { background: #ece4d3; }
+#menuLayer #modeMenu .author-links__row:hover {
+  background: var(--author-links-row-background-hover, rgba(240,227,196,0.98));
+}
 
 #menuLayer #modeMenu .author-links__row:active {
   transform: translateY(1px);
-  background: #e5dcc7;
+  background: var(--author-links-row-background-active, rgba(219,200,161,0.98));
 }
 
 #menuLayer #modeMenu .author-links__row[hidden] { display: none; }
 
-#menuLayer #modeMenu .author-links__name { font-weight: 600; }
-
 /* Куда ведёт — мелко и вторым планом. Строка уводит из игры, и честно показать куда
    дешевле, чем объяснять словами. */
 #menuLayer #modeMenu .author-links__where {
-  font-size: 12px;
-  color: #7a7166;
+  flex: none;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.62;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
