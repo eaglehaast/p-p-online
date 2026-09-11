@@ -247,14 +247,13 @@
      доски — и тенью: лист лежит НА доске.
 
      Чернила синеватые, из семейства клетки, а не чёрные: на этой бумаге пишут ручкой. */
-  --author-links-paper: url("ui_gamescreen/paperwithred2.webp");
-  --author-links-paper-size: 360px auto;
+  --author-links-paper: url("ui_mainmenu/mm_links_paper.png");
   --author-links-color: #1e2a3a;
   --author-links-font-family: var(--inventory-tooltip-font-family);
-  --author-links-border-radius: 2px;
-  --author-links-border: 1px solid rgba(90,65,40,0.45);
-  --author-links-box-shadow: 0 12px 28px rgba(0,0,0,0.45);
-  --author-links-rule: rgba(60,110,180,0.45);
+  /* Тень идёт фильтром, а не box-shadow: у листа рваные края, и прямоугольная тень
+     обвела бы по ним ровную рамку — ту самую панель, от которой лист и уводит.
+     drop-shadow повторяет силуэт вместе с обрывом. */
+  --author-links-drop-shadow: 0 10px 16px rgba(0,0,0,0.45);
   --author-links-row-background-hover: rgba(60,110,180,0.10);
   --author-links-row-background-active: rgba(60,110,180,0.18);
 }
@@ -3363,26 +3362,37 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
    отдельной вещью, а не выехавшей снизу полкой. Заодно и палец до него дотягивается
    одинаково с любого края телефона.
 
-   Клетка берётся размером 360 — ровно тем, каким она идёт на поле. Лист от этого читается
-   вырванным из той же тетради, а не «текстурой в клеточку»: узор совпадает с игровым один
-   к одному. Обрывок по краям у картинки свой, но он приходится на её грани, а серединный
-   кусок — чистая клетка, поэтому center и no-repeat. */
+   Лист теперь нарисован целиком — вместе с обрывом по всем четырём краям. Из этого
+   следует всё остальное правило, и каждый пункт держится за соседей:
+
+   1) Коробка обязана быть ровно 3:2, как холст картинки (1200x800), потому что растянута
+      она 100% 100%. Любой другой размер перекосит клетку в прямоугольники, а клетка тут —
+      главный признак тетрадного листа. Значит высота считается из ширины, а не из текста:
+      содержимое обязано в неё влезать. За это следит smoke-author-links.
+   2) Ни заливки, ни рамки, ни box-shadow. Всё это прямоугольники, и любой из них подрисует
+      обрыву ровный край — лист опять станет панелью. Тень поэтому фильтром, по силуэту.
+   3) Поля 16 точек не для красоты: у картинки с краю 6.5 точек прозрачного поля, и ещё
+      до 2.5 съедает сам обрыв. Меньше 9 — и строка полезет на рваный край. */
 #menuLayer #modeMenu .author-links {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   width: 300px;
+  aspect-ratio: 3 / 2;
   max-width: calc(100% - 40px);
   padding: 16px 16px 14px;
-  border-radius: var(--author-links-border-radius, 2px);
+  /* Высота у листа своя и от текста не зависит, а строк на нём бывает то одна, то три:
+     пустые адреса не показываются. Поэтому написанное держится серединой листа — иначе при
+     одной строке под ней остаётся пустая половина, и лист выглядит недописанным. */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   background-image: var(--author-links-paper);
   background-position: center;
-  background-size: var(--author-links-paper-size, 360px auto);
+  background-size: 100% 100%;
   background-repeat: no-repeat;
-  background-color: #f3e7cf;
-  border: var(--author-links-border, 1px solid rgba(90,65,40,0.45));
-  box-shadow: var(--author-links-box-shadow, 0 12px 28px rgba(0,0,0,0.45));
+  filter: drop-shadow(var(--author-links-drop-shadow, 0 10px 16px rgba(0,0,0,0.45)));
   color: var(--author-links-color, #1e2a3a);
   font-family: var(--author-links-font-family, "Palatino Linotype", Palatino, "Book Antiqua", serif);
   z-index: 9;
@@ -3409,10 +3419,11 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
   gap: 10px;
   min-height: 44px;
   padding: 0 4px;
+  /* Строки — записи НА листе, а не кнопки поверх него. Подчёркивания у них своего нет
+     нарочно: лист разлинован сам, и вторая линейка поверх нарисованной не совпала бы с ней
+     по шагу — вышло бы две сетки внахлёст. Кнопка с заливкой тем более превратила бы лист
+     обратно в панель. */
   border: none;
-  /* Строки — записи НА листе, а не кнопки поверх него: рамок нет, есть подчёркивание по
-     клетке. Кнопка с заливкой снова превратила бы лист в панель. */
-  border-bottom: 1px solid var(--author-links-rule, rgba(60,110,180,0.45));
   border-radius: 0;
   background: transparent;
   color: inherit;
