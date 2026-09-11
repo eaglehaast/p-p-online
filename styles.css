@@ -239,18 +239,24 @@
   --round-banner-box-shadow: var(--inventory-tooltip-box-shadow);
   --round-banner-padding: 14px 20px;
 
-  /* Ссылки автора. Палитра общая с подсказками инвентаря: это единственная «бумага»,
-     которую игра показывает поверх поля, и заводить ей вторую расцветку незачем. Строки
-     светлее самой карточки — чтобы читались приподнятыми, а не вырезанными. */
-  --author-links-background: var(--inventory-tooltip-background);
-  --author-links-color: var(--inventory-tooltip-color);
+  /* Ссылки автора. Это не панель поверх меню, а ЛИСТ ИЗ ТОЙ ЖЕ ТЕТРАДИ, на которой идёт
+     игра: та же бумага, та же клетка, тот же масштаб клетки. В игре каждая поверхность —
+     вещь: доска в раме, деревянная планка, тетрадный лист, приборная панель настроек.
+     Окошко, сделанное «просто панелью», было бы единственным предметом без материала.
+     Отделяется от меню оно поэтому не другим стилем, а другим материалом — бумага против
+     доски — и тенью: лист лежит НА доске.
+
+     Чернила синеватые, из семейства клетки, а не чёрные: на этой бумаге пишут ручкой. */
+  --author-links-paper: url("ui_gamescreen/paperwithred2.webp");
+  --author-links-paper-size: 360px auto;
+  --author-links-color: #1e2a3a;
   --author-links-font-family: var(--inventory-tooltip-font-family);
-  --author-links-border-radius: var(--inventory-tooltip-border-radius);
-  --author-links-border: var(--inventory-tooltip-border);
-  --author-links-box-shadow: var(--inventory-tooltip-box-shadow);
-  --author-links-row-background: rgba(232,216,180,0.97);
-  --author-links-row-background-hover: rgba(240,227,196,0.98);
-  --author-links-row-background-active: rgba(219,200,161,0.98);
+  --author-links-border-radius: 2px;
+  --author-links-border: 1px solid rgba(90,65,40,0.45);
+  --author-links-box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+  --author-links-rule: rgba(60,110,180,0.45);
+  --author-links-row-background-hover: rgba(60,110,180,0.10);
+  --author-links-row-background-active: rgba(60,110,180,0.18);
 }
 
 body, button {
@@ -3353,9 +3359,14 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 
 #menuLayer #modeMenu .author-links__backdrop[hidden] { display: none; }
 
-/* По центру кадра, а не у нижней грани: окошко перекрывает меню целиком и читается как
-   отдельный экран, а не как выехавшая снизу полка. Заодно и палец до него дотягивается
-   одинаково с любого края телефона. */
+/* По центру кадра, а не у нижней грани: лист перекрывает меню целиком и читается
+   отдельной вещью, а не выехавшей снизу полкой. Заодно и палец до него дотягивается
+   одинаково с любого края телефона.
+
+   Клетка берётся размером 360 — ровно тем, каким она идёт на поле. Лист от этого читается
+   вырванным из той же тетради, а не «текстурой в клеточку»: узор совпадает с игровым один
+   к одному. Обрывок по краям у картинки свой, но он приходится на её грани, а серединный
+   кусок — чистая клетка, поэтому center и no-repeat. */
 #menuLayer #modeMenu .author-links {
   position: absolute;
   left: 50%;
@@ -3363,12 +3374,16 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
   transform: translate(-50%, -50%);
   width: 300px;
   max-width: calc(100% - 40px);
-  padding: 14px 14px 12px;
-  border-radius: var(--author-links-border-radius, 6px);
-  background: var(--author-links-background, rgba(210,190,150,0.97));
-  border: var(--author-links-border, 1px solid rgba(90,65,40,0.35));
-  box-shadow: var(--author-links-box-shadow, 0 8px 18px rgba(0,0,0,0.18));
-  color: var(--author-links-color, #251d14);
+  padding: 16px 16px 14px;
+  border-radius: var(--author-links-border-radius, 2px);
+  background-image: var(--author-links-paper);
+  background-position: center;
+  background-size: var(--author-links-paper-size, 360px auto);
+  background-repeat: no-repeat;
+  background-color: #f3e7cf;
+  border: var(--author-links-border, 1px solid rgba(90,65,40,0.45));
+  box-shadow: var(--author-links-box-shadow, 0 12px 28px rgba(0,0,0,0.45));
+  color: var(--author-links-color, #1e2a3a);
   font-family: var(--author-links-font-family, "Palatino Linotype", Palatino, "Book Antiqua", serif);
   z-index: 9;
 }
@@ -3376,13 +3391,13 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 #menuLayer #modeMenu .author-links[hidden] { display: none; }
 
 #menuLayer #modeMenu .author-links__title {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   text-align: center;
   font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: lowercase;
-  opacity: 0.72;
+  opacity: 0.85;
 }
 
 /* Строка во всю ширину и высотой в 44 точки: это кнопка под палец, а не строчка текста.
@@ -3393,10 +3408,13 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  padding: 0 12px;
-  border: var(--author-links-border, 1px solid rgba(90,65,40,0.35));
-  border-radius: var(--author-links-border-radius, 6px);
-  background: var(--author-links-row-background, rgba(232,216,180,0.97));
+  padding: 0 4px;
+  border: none;
+  /* Строки — записи НА листе, а не кнопки поверх него: рамок нет, есть подчёркивание по
+     клетке. Кнопка с заливкой снова превратила бы лист в панель. */
+  border-bottom: 1px solid var(--author-links-rule, rgba(60,110,180,0.45));
+  border-radius: 0;
+  background: transparent;
   color: inherit;
   text-decoration: none;
   font-size: 15px;
@@ -3416,7 +3434,7 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 
 #menuLayer #modeMenu .author-links__name { flex: 1 1 auto; }
 
-#menuLayer #modeMenu .author-links__row + .author-links__row { margin-top: 8px; }
+#menuLayer #modeMenu .author-links__row + .author-links__row { margin-top: 2px; }
 
 #menuLayer #modeMenu .author-links__row:hover {
   background: var(--author-links-row-background-hover, rgba(240,227,196,0.98));
