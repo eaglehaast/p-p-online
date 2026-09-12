@@ -185,7 +185,7 @@ const поле = { верх: Number(ПОЛЯ[1]), бок: Number(ПОЛЯ[2]), �
     assert(m, `2: не найден z-index у ${селектор}`);
     return Number(m[1]);
   };
-  const кнопки = слой('#modeMenu button');
+  const кнопки = слой('#modeMenu \\.mode-menu__btn');
   const затемнение = слой('#menuLayer #modeMenu \\.author-links__backdrop');
   const окно = слой('#menuLayer #modeMenu \\.author-links');
 

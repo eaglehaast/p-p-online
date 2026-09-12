@@ -192,7 +192,7 @@ const правый = кадры.find((k) => k.side === 'right');
 // В покое он лежит под ней, и на середине пути скрывался бы за подписью кнопки — то есть
 // исчезал ровно там, где на него смотрят.
 {
-  const кнопка = /#modeMenu button \{[\s\S]*?z-index: (\d+);/.exec(styles);
+  const кнопка = /#modeMenu \.mode-menu__btn \{[\s\S]*?z-index: (\d+);/.exec(styles);
   const покой = /#menuLayer #modeMenu \.mm-plane \{[\s\S]*?z-index: (\d+);/.exec(styles);
   const перелёт = /#menuLayer #modeMenu \.mm-plane\.is-swapping \{\s*z-index: (\d+);/.exec(styles);
   assert(кнопка && покой && перелёт, '5: не найдены слои кнопки и самолётика');
