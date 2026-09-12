@@ -71,7 +71,6 @@ function makeStand({ relay = 'wss://relay.example', session = null } = {}){
     source.match(/const ONLINE_HOST_SEAT = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_MAX_LENGTH = \d+;/)[0],
     'let onlinePresence = { blue: true, green: false };',
-    'let onlineReady = { mine: true, theirs: true };',
     source.match(/const ONLINE_RELAY_ALLOWED_HOSTS = Object\.freeze\(\[[^\]]*\]\);/)[0],
     extractFunctionSource(source, 'resolveOnlineRelayAddress'),
     extractFunctionSource(source, 'isLocalPageOrigin'),
@@ -83,7 +82,7 @@ function makeStand({ relay = 'wss://relay.example', session = null } = {}){
     extractFunctionSource(source, 'joinOnlineRoomByCode'),
     'this.api = { normalizeOnlineRoomCode, joinOnlineRoomByCode,',
     '             session: () => onlineSession, presence: () => onlinePresence,',
-    '             ready: () => onlineReady };',
+    '           };',
     // Этот стенд про коды комнат, а не про разбор адресов: ретранслятор стенда и есть
     // настроенный. Иначе его отвергнет проверка чужих адресов — она принимает из ссылки
     // только свой собственный.
@@ -136,11 +135,9 @@ function makeStand({ relay = 'wss://relay.example', session = null } = {}){
     '2b: провод своей комнаты закрыт — иначе ходы уезжают туда, где никого нет');
   assert(stand.api.session().room === 'chuzhaya', '2c: сидим в названной комнате');
 
-  // Присутствие и готовность относились к прошлой комнате и в новой не значат ничего.
+  // Присутствие относилось к прошлой комнате и в новой не значит ничего.
   assert(stand.api.presence() === null,
     '2d: «кто за столом» забыто — иначе Play разблокируется без соперника');
-  assert(stand.api.ready().mine === false && stand.api.ready().theirs === false,
-    '2e: готовность забыта — иначе новый матч начнётся сам собой');
   assert(stand.log.some(([name]) => name === 'showOnlineLobby'), '2f: лобби показано');
 }
 
@@ -180,11 +177,12 @@ function makeStand({ relay = 'wss://relay.example', session = null } = {}){
   assert(/everOpened = true;/.test(transport),
     '4b: и «открывались» отмечается при открытии');
 
-  const status = extractFunctionSource(source, 'getOnlineLobbyStatusText');
-  assert(/connection === "connecting"/.test(status),
-    '4c: у «connecting» своя строка в лобби');
-  assert(status.indexOf('connecting') < status.indexOf('Connection lost'),
-    '4d: и проверяется она раньше — иначе её строка недостижима');
+  // Раньше у «connecting» была своя строка. Теперь про поломки говорят только когда они
+  // есть, и пока сокет открывается — молчат: терять ещё нечего, пугать нечем.
+  const status = extractFunctionSource(source, 'getOnlineTroubleText');
+  assert(/connection !== "connecting"/.test(status),
+    '4c: «подключаемся» больше не отличается от обрыва — игрок увидит «связь потеряна» '
+    + 'в первую же секунду, ещё до того как что-то потерялось');
 
   // Состояние связи меняется само, без нашего участия. Если о нём не сообщать, на экране
   // навсегда застынет то, что было в миг открытия панели.
@@ -207,7 +205,7 @@ function makeStand({ relay = 'wss://relay.example', session = null } = {}){
   const playBottom = Number(playRule.match(/top:\s*(\d+)px/)[1])
     + Number(playRule.match(/height:\s*(\d+)px/)[1]);
 
-  const lobbyRule = styles.match(/#menuLayer #modeMenu \.online-lobby \{[^}]*\}/)[0];
+  const lobbyRule = styles.match(/#menuLayer #modeMenu \.menu-notice \{[^}]*\}/)[0];
   const maxHeightMatch = lobbyRule.match(/max-height:\s*(\d+)px/);
   assert(maxHeightMatch,
     '5: у панели есть потолок высоты — без него её край не вычислить, он зависит от текста');

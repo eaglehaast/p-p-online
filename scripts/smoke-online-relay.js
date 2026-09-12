@@ -43,6 +43,10 @@ function extractFunctionSource(source, fnName){
 }
 
 const source = fs.readFileSync('script.js', 'utf8');
+// Версия протокола берётся из игры, а не пишется числом: конверты ниже — просто «обычный
+// пакет», и переписывать их при каждом подъёме номера незачем. Отдельно неверная версия
+// проверяется в smoke-online-transport.
+const P = Number(source.match(/const ONLINE_PROTOCOL_VERSION = (\d+);/)[1]);
 
 // Клиентский стенд: одно «устройство» со своей копией онлайн-слоя.
 function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic', settings = null } = {}){
@@ -155,15 +159,14 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
     extractFunctionSource(source, 'receiveOnlineRematchAnswer'),
     extractFunctionSource(source, 'resolveOnlineRematch'),
     extractFunctionSource(source, 'applyRematchWaitingUi'),
-    // Лобби: присутствие и готовность. Подробно проверяются в smoke-online-lobby.js.
+    // Лобби: присутствие и старт. Подробно проверяются в smoke-online-lobby.js.
     extractFunctionSource(source, 'isOnlineTableFull'),
     extractFunctionSource(source, 'receiveOnlinePresence'),
-    extractFunctionSource(source, 'sendOnlineReady'),
-    extractFunctionSource(source, 'receiveOnlineReady'),
-    extractFunctionSource(source, 'maybeStartOnlineMatch'),
+    extractFunctionSource(source, 'startOnlineMatchAsHost'),
+    extractFunctionSource(source, 'receiveOnlineStart'),
     extractFunctionSource(source, 'refreshOnlineLobbyUi'),
-    extractFunctionSource(source, 'getOnlineLobbyStatusText'),
-    'let onlinePresence = null; let onlineReady = { mine: false, theirs: false };',
+    extractFunctionSource(source, 'getOnlineTroubleText'),
+    'let onlinePresence = null;',
     extractFunctionSource(source, 'collectOnlineRoomSettings'),
     extractFunctionSource(source, 'publishOnlineRoomSettings'),
     extractFunctionSource(source, 'applyOnlineRoomSettings'),
@@ -223,15 +226,15 @@ const relay = await import('../worker/room.js');
   joinRoom(room, { seat: 'green', version: RELAY_PROTOCOL_VERSION, connection: greenSocket, key: GREEN_KEY });
 
   // Пересылка — ровно одному, второму месту.
-  const move = { p: 1, t: 'move', from: 'blue-a', seat: 'blue', seq: 1, payload: {} };
+  const move = { p: P, t: 'move', from: 'blue-a', seat: 'blue', seq: 1, payload: {} };
   const routed = routeEnvelope(room, 'blue', move);
   assert(routed.connection === greenSocket,
     '1d: пакет уходит второму месту, а не рассылается всем — при третьем игроке разница станет видна');
   assert(routed.kept === false, '1e: ход комната не придерживает: он одноразовый');
 
   // Придерживается то, без чего вернувшийся не сможет продолжить.
-  const settings = { p: 1, t: 'settings', from: 'blue-a', seat: 'blue', seq: 2, payload: { ruleset: 'classic' } };
-  const state = { p: 1, t: 'state', from: 'blue-a', seat: 'blue', seq: 3, payload: { v: 1 } };
+  const settings = { p: P, t: 'settings', from: 'blue-a', seat: 'blue', seq: 2, payload: { ruleset: 'classic' } };
+  const state = { p: P, t: 'state', from: 'blue-a', seat: 'blue', seq: 3, payload: { v: 1 } };
   assert(routeEnvelope(room, 'blue', settings).kept === true, '1f: настройки комнаты придерживаются');
   assert(routeEnvelope(room, 'blue', state).kept === true, '1g: снимок партии придерживается');
   assert(RELAY_KEPT_TYPES.length === 2,
@@ -384,7 +387,7 @@ const relay = await import('../worker/room.js');
 {
   const guest = makeClient('green', {});
   guest.transport.deliver({
-    p: 1, t: 'settings', from: 'blue-x', seat: 'blue', seq: 1,
+    p: P, t: 'settings', from: 'blue-x', seat: 'blue', seq: 1,
     payload: { ruleset: 'classic', settings: {}, placements: { cells: 'archive' } },
   });
   assert(JSON.stringify(guest.api.loadMapTesterPlacements()) === JSON.stringify({ cells: 'archive' }),
@@ -404,7 +407,7 @@ const relay = await import('../worker/room.js');
 {
   const me = makeClient('blue', {});
   const deliverFromPeer = (peerId, seq, payload) => me.transport.deliver({
-    p: 1, t: 'move', from: peerId, seat: 'green', seq, payload,
+    p: P, t: 'move', from: peerId, seat: 'green', seq, payload,
   });
 
   for(let seq = 1; seq <= 8; seq += 1){
@@ -440,7 +443,7 @@ const relay = await import('../worker/room.js');
 // Отличает их пометка комнаты, а не догадка клиента: у досланного пакета replay = true.
 {
   const returning = makeClient('green', {});
-  const beforeCrash = { p: 1, t: 'state', from: 'green-before-crash', seat: 'green', seq: 6,
+  const beforeCrash = { p: P, t: 'state', from: 'green-before-crash', seat: 'green', seq: 6,
                         payload: { v: 1, turnIndex: 1 } };
 
   // Живой пакет с нашего места — чужая вкладка, севшая на нашу сторону. Не принимаем.

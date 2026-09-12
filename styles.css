@@ -4406,129 +4406,96 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
   z-index: 61;
 }
 
-/* ======= ЛОББИ ОНЛАЙНА ======= */
-/*
-   Панель поверх меню: ссылка другу и состояние стола. Появляется, только когда комната
-   создана, и живёт ровно до начала партии.
+/* ======= ОНЛАЙН: ЛОББИ КАК ПУНКТЫ МЕНЮ =======
 
-   Намеренно скромная. Своих спрайтов у неё нет, а рисовать их наугад — значит вклинить
-   в игру чужеродный кусок; лучше сдержанная бумага в тон остальному, чем самодеятельность.
-*/
-/* Панель стоит НИЖЕ кнопки Play и ничем её не закрывает. Это не вкусовщина: партия
-   начинается именно ею, и если панель до неё дотянется, играть будет нельзя вовсе —
-   кнопка видна, но нажатие достаётся панели. Всё, что панель собой накрывает (правила и
-   настройки), в комнате и так уже решено: правила уехали сопернику при её создании.
+   Здесь была панель: белый прямоугольник поверх школьной доски, с кодом комнаты, полем
+   ввода и кнопкой Join. Единственная вещь на экране без материала — и единственная, к
+   которой пришлось бы рисовать оформление с нуля.
 
-   Высота ограничена нарочно. Она растёт от содержимого — от длины строки состояния,
-   которая на узком экране переносится, — а растёт панель ВВЕРХ, к той самой кнопке.
-   Потолок превращает эту незаметную зависимость в число, которое можно проверить:
-   Play кончается на 504 (440 + 64), под ним 296 точек, и 18 (снизу) + 256 (потолок)
-   = 274 оставляют до кнопки 22 точки зазора. За этой арифметикой следит
-   smoke-online-lobby-fits.
+   Теперь лобби говорит тем же голосом, что меню: те же надписи тем же приёмом, на тех же
+   местах. Рисовать под него нечего, потому что рисовать нечего заводить.
 
-   Потолок был 232, пока три кнопки панели по недосмотру стояли absolute и не занимали
-   в ней места. Вернувшись в поток, они добавили 31 точку, и панель начала прокручиваться
-   во всех состояниях — срезало как раз нижнюю строку, ради которой её и открывают.
+   Состояние держат два класса на #modeMenu — is-online-host и is-online-guest. Классы, а
+   не hidden у каждого элемента: показать надо ОДИН набор и спрятать другой, и правило,
+   написанное в одном месте, не разъедется по мере добавления пунктов. */
 
-   Самое длинное состояние («This seat is already taken…», три строки) просит 273 и в
-   потолок всё же не влезает: ему остаётся прокрутка. Опустить потолок под него значило бы
-   упереться в Play, а ужимать отступы внутри панели — это уже её оформление, а не почин
-   кнопок. */
-#menuLayer #modeMenu .online-lobby {
+/* Надписи хозяина встают ровно на места Hot Seat и Computer: слот Online остаётся пустым,
+   и зазор перед «Play» получается сам собой.
+   Дроби в left не опечатка: 460 минус нечётная ширина пополам не делится, а столбик меню
+   обязан стоять серединой на 230 — это проверяет smoke-menu-signature. */
+#menuLayer #modeMenu .mode-menu__btn--sendlink {
+  width: 165px;
+  height: 36px;
+  top: 272px;
+  left: 147.5px;
+  background-image: url('ui_mainmenu/mm_send_link.png');
+}
+
+#menuLayer #modeMenu .mode-menu__btn--cancel {
+  width: 137px;
+  height: 36px;
+  top: 332px;
+  left: 161.5px;
+  background-image: url('ui_mainmenu/mm_cancel.png');
+}
+
+/* Экран гостя. Ни «Play», ни правил у него нет, поэтому столбик стоит выше и просторнее:
+   надпись, картинка, отмена. */
+#menuLayer #modeMenu .mode-menu__waiting-label {
   position: absolute;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  width: 356px;
-  max-width: calc(100% - 32px);
-  max-height: 256px;
-  overflow-y: auto;
-  padding: 14px 16px 12px;
-  border-radius: 10px;
-  background: rgba(253, 250, 240, 0.96);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-  color: #2b2b2b;
-  font-family: inherit;
-  text-align: center;
-  z-index: 6;
+  width: 173px;
+  height: 36px;
+  top: 285px;
+  left: 143.5px;
+  z-index: 3;
 }
 
-#menuLayer #modeMenu .online-lobby[hidden] { display: none; }
-
-#menuLayer #modeMenu .online-lobby__status {
-  margin: 0 0 10px;
-  font-size: 15px;
-  line-height: 1.25;
+#menuLayer #modeMenu .mode-menu__waiting-spinner {
+  position: absolute;
+  width: 175px;
+  height: 175px;
+  top: 355px;
+  left: 142.5px;
+  z-index: 3;
 }
 
-/* Ссылка длинная, и её будут выделять и копировать руками, поэтому поле обычное
-   текстовое, а не картинка с текстом. */
-#menuLayer #modeMenu .online-lobby__link {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 7px 9px;
-  border: 1px solid rgba(0, 0, 0, 0.22);
-  border-radius: 6px;
-  background: #fff;
-  color: #2b2b2b;
-  font-size: 12px;
-  text-align: center;
-}
+#menuLayer #modeMenu.is-online-guest .mode-menu__btn--cancel { top: 555px; }
 
-#menuLayer #modeMenu .online-lobby__actions {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 10px;
-}
+/* Что видно в каком состоянии.
+   По умолчанию новых пунктов нет вовсе: в обычном меню им делать нечего. */
+#menuLayer #modeMenu .mode-menu__btn--sendlink,
+#menuLayer #modeMenu .mode-menu__btn--cancel,
+#menuLayer #modeMenu .mode-menu__waiting-label,
+#menuLayer #modeMenu .mode-menu__waiting-spinner { display: none; }
 
-#menuLayer #modeMenu .online-lobby__btn {
-  padding: 7px 14px;
-  border: 1px solid rgba(0, 0, 0, 0.28);
-  border-radius: 6px;
-  background: #f3ede0;
-  color: #2b2b2b;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
+#menuLayer #modeMenu.is-online-host .mode-menu__btn--sendlink,
+#menuLayer #modeMenu.is-online-host .mode-menu__btn--cancel,
+#menuLayer #modeMenu.is-online-guest .mode-menu__btn--cancel,
+#menuLayer #modeMenu.is-online-guest .mode-menu__waiting-label,
+#menuLayer #modeMenu.is-online-guest .mode-menu__waiting-spinner { display: block; }
 
-#menuLayer #modeMenu .online-lobby__btn:hover { background: #ece4d3; }
-#menuLayer #modeMenu .online-lobby__btn--quiet { background: transparent; }
+/* Выбор режима сделан — три кнопки выбора уходят у обоих. */
+#menuLayer #modeMenu.is-online-host .mode-menu__btn--hotseat,
+#menuLayer #modeMenu.is-online-host .mode-menu__btn--computer,
+#menuLayer #modeMenu.is-online-host .mode-menu__btn--online,
+#menuLayer #modeMenu.is-online-guest .mode-menu__btn--hotseat,
+#menuLayer #modeMenu.is-online-guest .mode-menu__btn--computer,
+#menuLayer #modeMenu.is-online-guest .mode-menu__btn--online { display: none; }
 
-/* Код комнаты — то, что диктуют вслух. Крупно, вразрядку и моноширинным: так его не
-   перепутать на слух и легко прочитать с чужого экрана. */
-#menuLayer #modeMenu .online-lobby__label {
-  margin: 10px 0 3px;
-  font-size: 11px;
-  opacity: 0.7;
-}
+/* У гостя нет ни «Play», ни правил.
+   «Play» — потому что начинает хозяин. Правила — потому что они приезжают от хозяина
+   готовыми: кнопки у гостя лишь показывали его выбор, но оставались нажимаемыми, и
+   нажатие меняло правила ТОЛЬКО у гостя, тихо разводя его с комнатой. */
+#menuLayer #modeMenu.is-online-guest .mode-menu__btn--play,
+#menuLayer #modeMenu.is-online-guest .mode-menu__btn--classic,
+#menuLayer #modeMenu.is-online-guest .mode-menu__btn--advanced { display: none; }
 
-#menuLayer #modeMenu .online-lobby__label--join {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(0, 0, 0, 0.12);
-}
-
-#menuLayer #modeMenu .online-lobby__code {
-  margin: 0 0 8px;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 22px;
-  letter-spacing: 0.18em;
-  font-weight: 600;
-}
-
-#menuLayer #modeMenu .online-lobby__link--join {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-}
-
-/* Соперник на месте — состояние становится заметным, чтобы не вглядываться в текст. */
-#menuLayer #modeMenu .online-lobby.is-ready .online-lobby__status {
-  font-weight: 600;
-  color: #1d6f2b;
-}
+/* У хозяина самолётики остаются: они переезжают на пункты лобби и стоят там, где выбор —
+   по умолчанию у «Send link». Это решает resolveModeButton в коде.
+   У гостя выбирать нечего: там одна кнопка, а вместо остального — картинка. Правил у него
+   тоже нет, поэтому уходят и те самолётики, что стоят у правил. */
+#menuLayer #modeMenu.is-online-guest .mm-plane--mode,
+#menuLayer #modeMenu.is-online-guest .mm-plane--rules { display: none; }
 
 /* Сообщение об отказе прямо в меню.
    Живёт там же, где лобби, и выглядит так же: это одно и то же место экрана и один и тот
@@ -4540,6 +4507,16 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
   transform: translateX(-50%);
   width: 356px;
   max-width: calc(100% - 32px);
+  /* Потолок высоты. Панель прижата к низу и растёт ВВЕРХ, а прямо над ней «Play» —
+     кнопка, которой партия начинается. Дотянувшись, панель отберёт нажатие: кнопка видна,
+     а играть нельзя, и по экрану этого не понять.
+
+     Раньше потолок был у лобби, потому что расти умело оно. Лобби стало пунктами меню, а
+     роль «единственное место, где к игроку обращаются текстом» досталась этой панели: она
+     теперь говорит и про непришедшие карты, и про оборванную связь. Значит и потолок
+     переехал сюда. Арифметику стережёт smoke-online-lobby-fits. */
+  max-height: 256px;
+  overflow-y: auto;
   padding: 14px 16px 12px;
   border-radius: 10px;
   background: rgba(253, 250, 240, 0.96);

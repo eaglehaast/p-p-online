@@ -6045,7 +6045,17 @@ function showMapsUnavailableNotice(reason){
     reason,
     manifestPath: mapDataBridge.MAPS_MANIFEST_PATH || null,
   });
-  if(mapsErrorNotice instanceof HTMLElement) mapsErrorNotice.hidden = false;
+  if(mapsErrorNotice instanceof HTMLElement){
+    // Панель одна на двоих, и до этого её мог занять онлайн — со своим текстом и
+    // спрятанной кнопкой. Разговор о картах важнее: без них играть нельзя вовсе.
+    delete mapsErrorNotice.dataset.online;
+    if(mapsErrorNoticeText instanceof HTMLElement){
+      mapsErrorNoticeText.textContent =
+        "Couldn’t load the game maps. Check your connection and reload.";
+    }
+    if(mapsErrorNoticeReloadBtn instanceof HTMLElement) mapsErrorNoticeReloadBtn.hidden = false;
+    mapsErrorNotice.hidden = false;
+  }
   syncPlayButtonSkin(false);
 }
 
@@ -6060,7 +6070,7 @@ function syncPlayButtonSkin(isReady){
   // столом двое и мы ещё не ответили. Решение живёт здесь, а не в вызывающих: их
   // несколько, и любой забытый снова открыл бы возможность начать партию в одиночку.
   if(ready && onlineSession && !gameMode){
-    ready = isOnlineTableFull() && !onlineReady.mine;
+    ready = isOnlineTableFull() && isOnlineHostSeat();
   }
   playBtn.disabled = !ready;
   playBtn.classList.toggle("disabled", !ready);
@@ -7710,15 +7720,17 @@ const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
-const onlineLobbyDiv = document.getElementById("onlineLobby");
-const onlineLobbyStatusEl = document.getElementById("onlineLobbyStatus");
-const onlineLobbyLinkInput = document.getElementById("onlineLobbyLink");
-const onlineLobbyCopyBtn = document.getElementById("onlineLobbyCopy");
-const onlineLobbyCloseBtn = document.getElementById("onlineLobbyClose");
-const onlineLobbyCodeEl = document.getElementById("onlineLobbyCode");
-const onlineLobbyJoinInput = document.getElementById("onlineLobbyJoinCode");
-const onlineLobbyJoinBtn = document.getElementById("onlineLobbyJoin");
+const onlineSendLinkBtn = document.getElementById("onlineSendLinkBtn");
+const onlineCancelBtn = document.getElementById("onlineCancelBtn");
+// На чём в лобби стоят самолётики. В остальном меню они показывают выбранный режим; здесь
+// показывать нечего, кроме того, на чём выбор, — а выбор тут по умолчанию один: позвать
+// друга. Держится отдельно от lastModeSelectionButton нарочно: тот помнит выбор РЕЖИМА и
+// должен пережить выход из комнаты.
+let onlineLobbyFocusBtn = null;
+// Столько длится перелёт самолётиков — см. transition у .mm-plane в стилях.
+const ONLINE_PLANE_FLIGHT_MS = 220;
 const mapsErrorNotice = document.getElementById("mapsErrorNotice");
+const mapsErrorNoticeText = document.getElementById("mapsErrorNoticeText");
 const mapsErrorNoticeReloadBtn = document.getElementById("mapsErrorNoticeReload");
 if(mapsErrorNoticeReloadBtn instanceof HTMLElement){
   // Перезагрузка — это и есть починка: сеть моргнула, а файлы лежат на месте.
@@ -8171,7 +8183,10 @@ const ONLINE_HOST_SEAT = "blue";
 // Версия того, что едет по проводу. Пакет чужой версии отвергается ЦЕЛИКОМ: иначе игра
 // разложила бы его наполовину и разъехалась бы у двоих тихо и не сразу. Ровно то же
 // правило, что у снимка партии (MATCH_STATE_VERSION).
-const ONLINE_PROTOCOL_VERSION = 1;
+// Версия 2: рукопожатие сменило смысл. Была пара «оба нажали готов», стало одно
+// «поехали» от хозяина. Пакет чужой версии отвергается целиком — иначе клиент версии 1
+// принял бы «start» за неизвестный тип и молча остался бы в меню, пока второй играет.
+const ONLINE_PROTOCOL_VERSION = 2;
 
 let onlineSession = null;
 // Что приехало и ещё не применено. Одна очередь на ходы и снимки вместе — порядок
@@ -8419,7 +8434,7 @@ function startOnlineSession(options = {}){
     settingsApplied: false,
     rematchHandlers: [],
     presenceHandlers: [],
-    readyHandlers: [],
+    startHandlers: [],
     // Ответы на «ещё раз?»: свой и соперника. null — ещё не ответил.
     rematch: { mine: null, theirs: null },
   };
@@ -8442,9 +8457,8 @@ function startOnlineSession(options = {}){
   onRemoteSettings(applyOnlineRoomSettings);
   onRemoteRematch(receiveOnlineRematchAnswer);
   onlineSession.presenceHandlers.push(receiveOnlinePresence);
-  onlineSession.readyHandlers.push(receiveOnlineReady);
+  onlineSession.startHandlers.push(receiveOnlineStart);
   onlinePresence = null;
-  onlineReady = { mine: false, theirs: false };
   console.log("[online] место за столом", {
     seat: onlineSession.seat,
     room: onlineSession.room,
@@ -8557,7 +8571,7 @@ function receiveOnlineEnvelope(envelope){
     : envelope.t === "settings" ? onlineSession.settingsHandlers
     : envelope.t === "rematch" ? onlineSession.rematchHandlers
     : envelope.t === "presence" ? onlineSession.presenceHandlers
-    : envelope.t === "ready" ? onlineSession.readyHandlers
+    : envelope.t === "start" ? onlineSession.startHandlers
     : null;
   if(!handlers) return false;
   for(const handler of handlers) handler(envelope.payload, envelope);
@@ -8677,10 +8691,6 @@ const ONLINE_ROOM_ID_LENGTH = 6;
 
 // Кто за столом по сведениям комнаты. null — комната ещё не сказала.
 let onlinePresence = null;
-// Готовность начать: нажатие «Play» это ещё не старт, а половина решения — ровно как
-// «да» в реванше.
-let onlineReady = { mine: false, theirs: false };
-
 // Куда игре разрешено подключаться, помимо своего ретранслятора. Пусто — значит только
 // свой; сюда вписывают запасной или тестовый, когда он появится.
 const ONLINE_RELAY_ALLOWED_HOSTS = Object.freeze([]);
@@ -8892,7 +8902,6 @@ function joinOnlineRoomByCode(rawCode){
   // Свою комнату, если успели создать, бросаем: играть в двух сразу нельзя.
   stopOnlineSession();
   onlinePresence = null;
-  onlineReady = { mine: false, theirs: false };
 
   const session = startOnlineSession({
     seat: ONLINE_HOST_SEAT === "blue" ? "green" : "blue",
@@ -8915,36 +8924,36 @@ function receiveOnlinePresence(payload){
   onlinePresence = { blue: seats.blue === true, green: seats.green === true };
   console.log("[online] за столом", onlinePresence);
 
-  // Соперник только что пришёл. Если мы нажали «Play» ещё до его прихода, наша
-  // готовность улетела в пустоту — комната такие пакеты не придерживает. Скажем ещё раз.
-  if(!wasFull && isOnlineTableFull() && onlineReady.mine){
-    sendOnlineReady();
-  }
-  // Соперник ушёл — его готовность больше ничего не значит.
-  if(!isOnlineTableFull()) onlineReady.theirs = false;
-
+  // Пересылать «я готов» больше некому и незачем: начинает хозяин, и только когда сам
+  // нажмёт. Приход соперника видно по «Play» — она загорается вот прямо здесь.
   refreshOnlineLobbyUi();
   return true;
 }
 
-function sendOnlineReady(){
-  return postOnlineEnvelope("ready", { ready: true });
-}
-
-function receiveOnlineReady(){
-  onlineReady.theirs = true;
-  refreshOnlineLobbyUi();
-  maybeStartOnlineMatch();
+// Начинает хозяин, и только он.
+//
+// Раньше «Play» значил «я готов», жали его оба, и партия начиналась по двум ответам. Это
+// требовало от игроков переписки — «ты готов? я готов» — и держало три строки состояния из
+// десяти. Решать, когда начинать, должен ОДИН, и он же создал комнату.
+//
+// Гость при этом не остаётся без защиты, ради которой пара и заводилась: он не «где-то в
+// меню», а сидит на экране ожидания подключённым, и старт приезжает ему отдельным
+// сообщением по тому же проводу — раньше любого хода, потому что порядок пакетов
+// сохраняется.
+function startOnlineMatchAsHost(){
+  if(!onlineSession || !isOnlineHostSeat()) return false;
+  if(gameMode) return false;              // уже играем
+  if(!isOnlineTableFull()) return false;  // играть не с кем
+  postOnlineEnvelope("start", { start: true });
+  applyOnlineMenuState();
+  handlePlayStart();
   return true;
 }
 
-// Начинаем, только когда готовы оба: иначе ход одного уедет второму, который ещё в меню,
-// и попадёт в игру, которая у него не началась.
-function maybeStartOnlineMatch(){
-  if(!onlineSession || !onlineReady.mine || !onlineReady.theirs) return false;
-  if(gameMode) return false; // уже играем
-  onlineReady = { mine: false, theirs: false };
-  hideOnlineLobby();
+function receiveOnlineStart(){
+  if(!onlineSession || isOnlineHostSeat()) return false;
+  if(gameMode) return false;
+  applyOnlineMenuState();
   handlePlayStart();
   return true;
 }
@@ -8960,26 +8969,45 @@ function createOnlineRoom(){
 }
 
 /* --- лобби: то, что видно --- */
+//
+// Видно теперь не панель, а само меню в другом состоянии. Всю раскладку держат два класса
+// на #modeMenu, и ставятся они в одном месте: показать надо ОДИН набор пунктов и спрятать
+// другой, а такое правило, размазанное по вызывающим, разъезжается на первой же правке.
 
-function showOnlineLobby(){
-  if(!(onlineLobbyDiv instanceof HTMLElement)) return;
-  onlineLobbyDiv.hidden = false;
-  if(onlineLobbyLinkInput instanceof HTMLInputElement){
-    onlineLobbyLinkInput.value = buildOnlineInviteLink();
+function applyOnlineMenuState(){
+  const меню = document.getElementById("modeMenu");
+  if(!(меню instanceof HTMLElement)) return;
+  const вЛобби = Boolean(onlineSession) && !gameMode;
+  меню.classList.toggle("is-online-host", вЛобби && isOnlineHostSeat());
+  меню.classList.toggle("is-online-guest", вЛобби && !isOnlineHostSeat());
+  if(вЛобби && isOnlineHostSeat()){
+    // Значение сбрасывается только на входе. Иначе прилетевшее в эти же миллисекунды
+    // известие о соперника вернуло бы самолётики с «Cancel» обратно на полпути.
+    if(onlineLobbyFocusBtn !== onlineSendLinkBtn && onlineLobbyFocusBtn !== onlineCancelBtn){
+      onlineLobbyFocusBtn = onlineSendLinkBtn;
+    }
+  } else {
+    onlineLobbyFocusBtn = null;
   }
-  if(onlineLobbyCodeEl instanceof HTMLElement){
-    onlineLobbyCodeEl.textContent = onlineSession?.room ?? "······";
-  }
-  refreshOnlineLobbyUi();
+  // Сказать им перелететь. Само по себе значение выше самолётики не двигает: место им
+  // считают здесь, по кнопке, а зовут эту функцию из выбора режима — а выбор режима в
+  // лобби уже позади.
+  updateModePlanesPosition(onlineLobbyFocusBtn || undefined);
+  showOnlineTrouble();
+  // Пока соперника нет, начинать нечего: «Play» гаснет и загорается сам. Он же и есть
+  // единственный указатель на то, что гость пришёл, — отдельной строки состояния больше
+  // нет и не нужно.
+  if(onlineSession && !gameMode) syncPlayButtonSkin(true);
 }
 
-function hideOnlineLobby(){
-  if(!(onlineLobbyDiv instanceof HTMLElement)) return;
-  onlineLobbyDiv.hidden = true;
-}
-
-function getOnlineLobbyStatusText(){
-  if(!onlineSession) return "";
+// Сообщать больше нечего, кроме поломок.
+//
+// Девять строк состояния из десяти рассказывали то, что и так видно: пришёл ли соперник
+// (по «Play») и чего мы ждём (по самому экрану). Осталось то, что глазами не увидеть, —
+// оборванная связь и отказ комнаты. Своего места для них не заводим: в меню уже живёт
+// панель извещений, та самая, что говорит о непришедших картах.
+function getOnlineTroubleText(){
+  if(!onlineSession || gameMode) return "";
   const connection = onlineSession.transport.status?.() ?? "online";
   if(connection === "rejected"){
     // «Место занято» перезагрузкой не лечится: там сидит другой человек, и советовать
@@ -8988,27 +9016,37 @@ function getOnlineLobbyStatusText(){
       ? "This seat is already taken. Ask your friend for a new link."
       : "Room refused the connection. Reload the page.";
   }
-  if(connection === "connecting") return "Connecting…";
-  if(connection !== "online") return "Connection lost. Retrying…";
-  if(!onlinePresence) return "Room created. Connecting…";
-  if(!isOnlineTableFull()) return "Waiting for an opponent. Send them the link.";
-  if(onlineReady.mine) return "You’re ready. Waiting for your opponent.";
-  if(onlineReady.theirs) return "Your opponent is ready. Hit Play.";
-  return "Opponent is here. Hit Play.";
+  if(connection !== "online" && connection !== "connecting"){
+    return "Connection lost. Retrying…";
+  }
+  return "";
 }
 
-function refreshOnlineLobbyUi(){
-  if(onlineLobbyDiv instanceof HTMLElement && !onlineLobbyDiv.hidden){
-    if(onlineLobbyStatusEl instanceof HTMLElement){
-      onlineLobbyStatusEl.textContent = getOnlineLobbyStatusText();
+function showOnlineTrouble(){
+  const текст = getOnlineTroubleText();
+  // Панель занята разговором о картах — он важнее: без карт играть нельзя вовсе.
+  if(mapsUnavailable) return;
+  if(!(mapsErrorNotice instanceof HTMLElement)) return;
+  if(!текст){
+    if(mapsErrorNotice.dataset.online === "1"){
+      mapsErrorNotice.hidden = true;
+      delete mapsErrorNotice.dataset.online;
     }
-    onlineLobbyDiv.classList.toggle("is-ready", isOnlineTableFull());
+    return;
   }
-  // Пока соперника нет, начинать нечего.
-  if(onlineSession && !gameMode){
-    syncPlayButtonSkin(true);
+  mapsErrorNotice.dataset.online = "1";
+  if(mapsErrorNoticeText instanceof HTMLElement) mapsErrorNoticeText.textContent = текст;
+  // Перезагрузка помогает не всегда: занятое место ею не освободить.
+  if(mapsErrorNoticeReloadBtn instanceof HTMLElement){
+    mapsErrorNoticeReloadBtn.hidden = !/Reload/.test(текст);
   }
+  mapsErrorNotice.hidden = false;
 }
+
+// Прежние имена оставлены точками входа: их зовут из десятка мест, включая провод.
+function showOnlineLobby(){ applyOnlineMenuState(); }
+function hideOnlineLobby(){ applyOnlineMenuState(); }
+function refreshOnlineLobbyUi(){ applyOnlineMenuState(); }
 
 /* --- «ещё раз?»: решение общее, а не у каждого своё --- */
 //
@@ -20885,57 +20923,55 @@ onlineBtn.addEventListener("click",()=>{
   }
 });
 
-if(onlineLobbyCopyBtn instanceof HTMLElement){
-  onlineLobbyCopyBtn.addEventListener("click", async () => {
-    const link = onlineLobbyLinkInput?.value || "";
+// «Send link» — системная шторка «поделиться», а не «скопировать».
+//
+// Скопировать значит: скопировать, свернуть игру, открыть переписку, вставить. Шторка —
+// один тап сразу в нужный чат, и на телефоне это вся разница между «позвал друга» и
+// «потом позову». Буфер обмена остаётся запасным путём: на десктопе шторки обычно нет.
+if(onlineSendLinkBtn instanceof HTMLElement){
+  onlineSendLinkBtn.addEventListener("click", async () => {
+    const link = buildOnlineInviteLink();
     if(!link) return;
-    // Буфер обмена доступен не везде (нужен https или localhost), поэтому есть и запасной
-    // путь: выделить текст, чтобы человек скопировал сам.
     try {
-      await navigator.clipboard.writeText(link);
-      onlineLobbyCopyBtn.textContent = "Copied";
-      setTimeout(() => { onlineLobbyCopyBtn.textContent = "Copy link"; }, 1500);
-    } catch(_error){
-      onlineLobbyLinkInput?.select?.();
-      onlineLobbyCopyBtn.textContent = "Copy it manually";
-    }
-  });
-}
-
-if(onlineLobbyJoinBtn instanceof HTMLElement){
-  const join = () => {
-    const raw = onlineLobbyJoinInput?.value ?? "";
-    const code = normalizeOnlineRoomCode(raw);
-    if(!code){
-      // Молчать нельзя: человек ввёл что-то и ждёт. Пишем прямо в строку состояния —
-      // другого места сказать ему у нас нет.
-      if(onlineLobbyStatusEl instanceof HTMLElement){
-        onlineLobbyStatusEl.textContent =
-          `Can’t read that code. ${ONLINE_ROOM_ID_LENGTH} letters and digits, no spaces.`;
+      if(typeof navigator.share === "function"){
+        await navigator.share({ title: "Inky Planes", text: "Let's play", url: link });
+        return;
       }
+    } catch(_error){
+      // Шторку закрыли, не выбрав ничего. Это не поломка и не повод лезть в буфер:
+      // человек передумал.
       return;
     }
-    if(!joinOnlineRoomByCode(code) && onlineLobbyStatusEl instanceof HTMLElement){
-      onlineLobbyStatusEl.textContent = "Couldn’t join. Check the code.";
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch(_error){
+      console.warn("[online] ссылку не удалось ни отправить, ни скопировать", link);
     }
-  };
-  onlineLobbyJoinBtn.addEventListener("click", join);
-  // Enter в поле — то же самое: набрал код и нажал ввод, как везде.
-  onlineLobbyJoinInput?.addEventListener?.("keydown", (event) => {
-    if(event.key === "Enter") join();
   });
 }
 
-if(onlineLobbyCloseBtn instanceof HTMLElement){
-  onlineLobbyCloseBtn.addEventListener("click", () => {
-    stopOnlineSession();
-    onlinePresence = null;
-    onlineReady = { mine: false, theirs: false };
-    hideOnlineLobby();
-    selectedMode = "hotSeat";
-    setStoredGameMode(selectedMode);
-    lastModeSelectionButton = hotSeatBtn;
-    updateModeSelection(hotSeatBtn);
+// «Cancel» — и у хозяина, и у гостя одна и та же кнопка и одно и то же действие: выйти из
+// комнаты в обычное меню. Разное у них только место на экране, и это решают стили.
+if(onlineCancelBtn instanceof HTMLElement){
+  let уходим = false;
+  onlineCancelBtn.addEventListener("click", () => {
+    if(уходим) return;
+    уходим = true;
+    // Сперва самолётики перелетают на «Cancel», и только потом уходим. Без паузы перелёт
+    // срезало бы на первом кадре: выход мгновенно возвращает обычное меню, и они прыгнули
+    // бы к кнопке режима. 220 мс — ровно длина перелёта, на ощупь это не задержка.
+    onlineLobbyFocusBtn = onlineCancelBtn;
+    updateModePlanesPosition(onlineCancelBtn);
+    setTimeout(() => {
+      уходим = false;
+      stopOnlineSession();
+      onlinePresence = null;
+      hideOnlineLobby();
+      selectedMode = "hotSeat";
+      setStoredGameMode(selectedMode);
+      lastModeSelectionButton = hotSeatBtn;
+      updateModeSelection(hotSeatBtn);
+    }, ONLINE_PLANE_FLIGHT_MS);
   });
 }
 // Клик по любому самолёту меню — выбор стороны. Четыре элемента, одно действие.
@@ -21031,6 +21067,9 @@ if(mapTesterBtn){
 }
 function resolveModeButton(activeButton){
   if(!selectedMode) return null;
+  // В лобби кнопок режима на экране нет, и самолётики встали бы у спрятанной — то есть
+  // нигде. Здесь они стоят у того пункта лобби, на котором выбор.
+  if(onlineLobbyFocusBtn instanceof HTMLElement) return onlineLobbyFocusBtn;
   if(modeMenuButtons.includes(activeButton)) return activeButton;
   if(lastModeSelectionButton) return lastModeSelectionButton;
   if(selectedMode === "hotSeat") return hotSeatBtn;
@@ -21271,19 +21310,17 @@ async function handlePlayStart(){
 }
 
 playBtn.addEventListener("click",async ()=>{
-  // Онлайн: «Play» — это «я готов», а не «поехали». Начать в одиночку нельзя: наш первый
-  // ход уехал бы сопернику, который ещё в меню, и попал бы в игру, которая у него не
-  // началась.
+  // Онлайн: «Play» — это «поехали», и жмёт его хозяин. Гость этой кнопки не видит вовсе.
   if(onlineSession && !gameMode){
+    if(!isOnlineHostSeat()){
+      console.warn("[online] начинает хозяин комнаты");
+      return;
+    }
     if(!isOnlineTableFull()){
       console.warn("[online] соперник ещё не подключился");
       return;
     }
-    if(onlineReady.mine) return;
-    onlineReady.mine = true;
-    sendOnlineReady();
-    refreshOnlineLobbyUi();
-    maybeStartOnlineMatch();
+    startOnlineMatchAsHost();
     return;
   }
   await handlePlayStart();
@@ -53703,72 +53740,58 @@ if(onlineSession){
 
 // Предпросмотр лобби для рисования: ?lobby=preview
 //
-// Лобби нельзя посмотреть просто так. Кнопка «Online» выключена, пока нет ретранслятора,
-// а половина того, что на этой панели написано, появляется только при живом сопернике:
-// «Opponent is here», «This seat is already taken» и остальные. То есть нарисовать экран
-// вслепую можно, а увидеть, что нарисовал, — нет.
+// Онлайн включается только при живом ретрансляторе, а «Online» без него выключена — то
+// есть посмотреть на эти два экрана в игре нельзя никак. Режим показывает их без сети:
+// ничего не создаётся, никуда не подключается, в localStorage не пишется.
 //
-// Отсюда режим без сети. Ничего не создаётся, никуда не подключается, в localStorage не
-// пишется: панель просто показывается, а состояние переключается руками. Это инструмент
-// для нас, как редактор карт, поэтому и подписи у переключателя русские — игрок сюда не
-// попадёт, адрес надо знать.
+// Экранов теперь два вместо десяти состояний панели, и это само по себе итог: показывать
+// стало почти нечего, потому что почти нечего и рассказывать.
 //
-// Полоса переключателя живёт ВНЕ кадра нарочно. Внутри она перекрывала бы ровно то, ради
-// чего всё и затевалось, да ещё и лезла бы в замеры.
+// Полоса переключателя живёт ВНЕ кадра и сверху: внутри она перекрывала бы то, ради чего
+// всё и затевалось. Подписи русские — это инструмент для нас, как редактор карт.
 (function предпросмотрЛобби(){
   if(new URLSearchParams(window.location?.search || "").get("lobby") !== "preview") return;
-  if(!(onlineLobbyDiv instanceof HTMLElement)) return;
+  const меню = document.getElementById("modeMenu");
+  if(!(меню instanceof HTMLElement)) return;
 
-  // Тексты повторены здесь, а не взяты у getOnlineLobbyStatusText(): без сессии та вернёт
-  // пустую строку. Чтобы список не разошёлся с игрой, за совпадением следит
-  // smoke-lobby-preview — он ищет каждую из этих строк в самой игре.
-  const СОСТОЯНИЯ = [
-    { имя: "комната создана",  готово: false, текст: "Room created. Connecting…" },
-    { имя: "подключение",      готово: false, текст: "Connecting…" },
-    { имя: "ждём соперника",   готово: false, текст: "Waiting for an opponent. Send them the link." },
-    { имя: "соперник пришёл",  готово: true,  текст: "Opponent is here. Hit Play." },
-    { имя: "я готов",          готово: true,  текст: "You’re ready. Waiting for your opponent." },
-    { имя: "соперник готов",   готово: true,  текст: "Your opponent is ready. Hit Play." },
-    { имя: "связь пропала",    готово: false, текст: "Connection lost. Retrying…" },
-    { имя: "место занято",     готово: false, текст: "This seat is already taken. Ask your friend for a new link." },
-    { имя: "комната отказала", готово: false, текст: "Room refused the connection. Reload the page." },
-    { имя: "код не подошёл",   готово: false, текст: "Couldn’t join. Check the code." }
+  const ВИДЫ = [
+    { имя: "хозяин, один",      класс: "is-online-host",  play: false },
+    { имя: "хозяин, гость при\u0448ёл", класс: "is-online-host",  play: true },
+    { имя: "гость ждёт",        класс: "is-online-guest", play: false },
+    { имя: "обычное меню",      класс: "",                play: false }
   ];
 
-  // Код нарочно постоянный, а не случайный: по нему сверяют раскладку между заходами, и
-  // прыгающая ширина строки мешала бы. Шесть знаков — столько же, сколько у настоящего.
-  const КОМНАТА = "gvh4np";
-
-  let текущее = 0;
+  let текущий = 0;
   const подпись = document.createElement("span");
 
-  function показать(){
-    const с = СОСТОЯНИЯ[текущее];
-    // Меню за панелью — в том же виде, в каком оно бывает при живом онлайне: иначе фон
-    // под лобби был бы не тот, что увидит игрок. Режим в localStorage не пишется.
-    selectedMode = "online";
-    updateModeSelection(onlineBtn);
+  // «Play» — единственный указатель на то, что соперник пришёл, и показать надо оба её
+  // вида. Обычно её состояние считает сама игра, поэтому в предпросмотре она у кнопки
+  // единственный хозяин: иначе bootstrapGame(), идущий сразу за этим блоком, пересчитал бы
+  // всё заново и оба вида слились бы в один.
+  function поставитьPlay(горит){
+    const play = document.getElementById("playBtn");
+    if(!(play instanceof HTMLElement)) return;
+    play.disabled = !горит;
+    play.classList.toggle("disabled", !горит);
+    if(typeof applyMenuButtonSkin === "function") applyMenuButtonSkin(play, "play", горит);
+  }
+  syncPlayButtonSkin = function(){ поставитьPlay(ВИДЫ[текущий].play); };
 
-    onlineLobbyDiv.hidden = false;
-    onlineLobbyDiv.classList.toggle("is-ready", с.готово);
-    if(onlineLobbyStatusEl instanceof HTMLElement) onlineLobbyStatusEl.textContent = с.текст;
-    if(onlineLobbyCodeEl instanceof HTMLElement) onlineLobbyCodeEl.textContent = КОМНАТА;
-    if(onlineLobbyLinkInput instanceof HTMLInputElement){
-      const { origin, pathname } = window.location;
-      onlineLobbyLinkInput.value = `${origin}${pathname}?room=${КОМНАТА}&seat=green`;
-    }
-    подпись.textContent = `${текущее + 1}/${СОСТОЯНИЯ.length}  ${с.имя}`;
+  function показать(){
+    const в = ВИДЫ[текущий];
+    меню.classList.toggle("is-online-host", в.класс === "is-online-host");
+    меню.classList.toggle("is-online-guest", в.класс === "is-online-guest");
+    поставитьPlay(в.play);
+    подпись.textContent = (текущий + 1) + "/" + ВИДЫ.length + "  " + в.имя;
   }
 
   function шаг(куда){
-    текущее = (текущее + куда + СОСТОЯНИЯ.length) % СОСТОЯНИЯ.length;
+    текущий = (текущий + куда + ВИДЫ.length) % ВИДЫ.length;
     показать();
   }
 
   const полоса = document.createElement("div");
   полоса.id = "lobbyPreviewBar";
-  // Сверху, а не снизу: лобби прижато к нижней грани кадра, и полоса внизу накрыла бы
-  // ровно ту строку, ради которой её и открывают. Наверху под ней заголовок игры.
   полоса.style.cssText = "position:fixed;left:50%;top:0;transform:translateX(-50%);"
     + "z-index:99999;display:flex;align-items:center;gap:10px;padding:7px 12px;"
     + "background:rgba(18,20,16,0.92);color:#e8e4d8;border-radius:0 0 8px 8px;"
@@ -53778,16 +53801,14 @@ if(onlineSession){
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = знак;
-    // all:unset — иначе кнопку поймает #modeMenu button с position:absolute и прочим
-    // оформлением меню. Полоса лежит вне #modeMenu, но привычка дешевле разбирательства.
     b.style.cssText = "all:unset;cursor:pointer;padding:3px 10px;border-radius:4px;"
       + "background:rgba(255,255,255,0.14);";
     b.addEventListener("click", () => шаг(куда));
     return b;
   };
 
-  подпись.style.cssText = "min-width:190px;text-align:center;";
-  полоса.append(кнопка("‹", -1), подпись, кнопка("›", 1));
+  подпись.style.cssText = "min-width:200px;text-align:center;";
+  полоса.append(кнопка("\u2039", -1), подпись, кнопка("\u203a", 1));
   document.body.appendChild(полоса);
 
   показать();
