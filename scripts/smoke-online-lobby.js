@@ -61,10 +61,8 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
                           hostname: parsedOrigin.hostname } },
     postOnlineEnvelope: (type, payload) => { sent.push({ type, payload }); return true; },
     handlePlayStart: () => log.push(['handlePlayStart']),
-    hideOnlineLobby: () => log.push(['hideOnlineLobby']),
+    applyOnlineMenuState: () => log.push(['applyOnlineMenuState']),
     syncPlayButtonSkin: (ready) => log.push(['play', ready]),
-    onlineLobbyDiv: null,
-    onlineLobbyStatusEl: null,
     HTMLElement: function HTMLElement(){},
     ONLINE_RELAY_URL: relayUrl,
   };
@@ -73,7 +71,7 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
     source.match(/const ONLINE_HOST_SEAT = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_ALPHABET = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_LENGTH = \d+;/)[0],
-    'let onlinePresence = null; let onlineReady = { mine: false, theirs: false };',
+    'let onlinePresence = null;',
     source.match(/const ONLINE_RELAY_ALLOWED_HOSTS = Object\.freeze\(\[[^\]]*\]\);/)[0],
     extractFunctionSource(source, 'resolveOnlineRelayAddress'),
     extractFunctionSource(source, 'isLocalPageOrigin'),
@@ -85,19 +83,18 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
     extractFunctionSource(source, 'makeOnlineRoomId'),
     extractFunctionSource(source, 'buildOnlineInviteLink'),
     extractFunctionSource(source, 'isOnlineTableFull'),
+    extractFunctionSource(source, 'getOnlineSeatColor'),
+    extractFunctionSource(source, 'isOnlineHostSeat'),
     extractFunctionSource(source, 'receiveOnlinePresence'),
-    extractFunctionSource(source, 'sendOnlineReady'),
-    extractFunctionSource(source, 'receiveOnlineReady'),
-    extractFunctionSource(source, 'maybeStartOnlineMatch'),
+    extractFunctionSource(source, 'startOnlineMatchAsHost'),
+    extractFunctionSource(source, 'receiveOnlineStart'),
     extractFunctionSource(source, 'refreshOnlineLobbyUi'),
-    extractFunctionSource(source, 'getOnlineLobbyStatusText'),
+    extractFunctionSource(source, 'getOnlineTroubleText'),
     'this.api = { isOnlineAvailable, makeOnlineRoomId, buildOnlineInviteLink,',
-    '             getConfiguredRelayUrl, isRelayAddressAllowed,',
-    '             isOnlineTableFull, receiveOnlinePresence, receiveOnlineReady,',
-    '             maybeStartOnlineMatch, getOnlineLobbyStatusText, refreshOnlineLobbyUi,',
-    '             ready: () => onlineReady, presence: () => onlinePresence,',
-    '             pressPlay: () => { onlineReady.mine = true; sendOnlineReady();',
-    '                                refreshOnlineLobbyUi(); maybeStartOnlineMatch(); } };',
+    '             getConfiguredRelayUrl, isRelayAddressAllowed, isOnlineHostSeat,',
+    '             isOnlineTableFull, receiveOnlinePresence, receiveOnlineStart,',
+    '             startOnlineMatchAsHost, getOnlineTroubleText, refreshOnlineLobbyUi,',
+    '             presence: () => onlinePresence };',
   ].join('\n'), sandbox);
   return { seat, api: sandbox.api, log, sent, sandbox };
 }
@@ -245,27 +242,69 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
 }
 
 // === 4. ГЛАВНОЕ: начать в одиночку нельзя ===
+//
+// Раньше это обеспечивала пара «оба нажали готов». Теперь начинает один — хозяин, — и
+// защита держится на двух вещах сразу: он не может начать без соперника, а гость не может
+// начать вовсе. Пропадёт любая из них — и первый ход уедет тому, у кого партия не началась.
 {
-  const side = makeSide('blue');
+  const хозяин = makeSide('blue');
 
-  // Соперника нет — «Play» ничего не начинает.
-  side.api.pressPlay();
-  assert(!side.log.some(([name]) => name === 'handlePlayStart'),
+  хозяин.api.startOnlineMatchAsHost();
+  assert(!хозяин.log.some(([name]) => name === 'handlePlayStart'),
     '4: без соперника матч не начинается');
+  assert(хозяин.sent.filter((e) => e.type === 'start').length === 0,
+    '4b: и «поехали» в пустую комнату не отправляется');
 
-  // Соперник пришёл, но ещё не готов.
-  side.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
-  assert(side.api.isOnlineTableFull() === true, '4b: комната сообщила, что оба на месте');
-  assert(!side.log.some(([name]) => name === 'handlePlayStart'),
-    '4c: одного присутствия мало — второй ещё не нажал «Play»');
+  хозяин.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
+  assert(хозяин.api.isOnlineTableFull() === true, '4c: комната сообщила, что оба на месте');
 
-  // Готов и он — поехали.
-  side.api.receiveOnlineReady();
-  assert(side.log.some(([name]) => name === 'handlePlayStart'),
-    '4d: когда готовы оба, матч начинается');
-  assert(side.log.some(([name]) => name === 'hideOnlineLobby'), '4e: лобби закрывается');
-  assert(side.api.ready().mine === false && side.api.ready().theirs === false,
-    '4f: готовность сброшена — иначе следующий матч начнётся сам');
+  хозяин.api.startOnlineMatchAsHost();
+  assert(хозяин.log.some(([name]) => name === 'handlePlayStart'),
+    '4d: с соперником за столом матч начинается');
+  assert(хозяин.sent.filter((e) => e.type === 'start').length === 1,
+    '4e: и сопернику уехало ровно одно «поехали»');
+}
+
+// === 4b. Гость начинает не сам, а по слову хозяина ===
+//
+// Это вторая половина замка. Если гость сумеет начать сам, получится ровно то, от чего
+// защищались: двое в разных партиях, и ходы одного попадают в игру, которой у второго нет.
+{
+  const гость = makeSide('green');
+
+  гость.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
+  гость.api.startOnlineMatchAsHost();
+  assert(!гость.log.some(([name]) => name === 'handlePlayStart'),
+    '4b1: гость не начинает партию сам, даже когда за столом двое');
+  assert(гость.sent.filter((e) => e.type === 'start').length === 0,
+    '4b2: и «поехали» от гостя не уезжает');
+
+  гость.api.receiveOnlineStart();
+  assert(гость.log.some(([name]) => name === 'handlePlayStart'),
+    '4b3: услышав «поехали», гость входит в матч');
+
+  // И обратное: хозяин чужого «поехали» не слушает. Своё эхо до него не доходит, но
+  // пакет с этим типом может прийти от кого угодно, кто попал в комнату, — а решение
+  // начинать принимает один.
+  const хозяин = makeSide('blue');
+  хозяин.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
+  хозяин.api.receiveOnlineStart();
+  assert(!хозяин.log.some(([name]) => name === 'handlePlayStart'),
+    '4b4: хозяина увели в партию чужим «поехали» — начинать должен он сам');
+}
+
+// === 4c. Хозяин не начинает дважды ===
+//
+// «Поехали» уехало, партия пошла — второе нажатие не должно ни начать её заново, ни
+// послать сопернику ещё один старт посреди игры.
+{
+  const хозяин = makeSide('blue');
+  хозяин.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
+  хозяин.api.startOnlineMatchAsHost();
+  хозяин.sandbox.gameMode = 'online';
+  хозяин.api.startOnlineMatchAsHost();
+  assert(хозяин.sent.filter((e) => e.type === 'start').length === 1,
+    '4c1: в идущей партии второе «поехали» не отправляется');
 }
 
 // === 4a. Замок на «Play» живёт в одном месте ===
@@ -273,7 +312,7 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
 // Вызывающих у syncPlayButtonSkin несколько, и любой забытый снова открыл бы возможность
 // начать партию в одиночку. Поэтому решение принимает сама функция, а не её вызывающие.
 {
-  const gate = (presence, mineReady, inGame) => {
+  const gate = (presence, seat, inGame) => {
     const log = [];
     const sandbox = {
       Object, Math,
@@ -281,9 +320,9 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
       playBtn: null,
       applyMenuButtonSkin: () => {},
       gameMode: inGame ? 'online' : null,
-      onlineSession: { seat: 'blue' },
+      onlineSession: { seat },
       onlinePresence: presence,
-      onlineReady: { mine: mineReady, theirs: false },
+      ONLINE_HOST_SEAT: 'blue',
       // Здесь проверяется онлайновый замок, поэтому карты считаем приехавшими: иначе
       // «Play» гасил бы второй замок, и проверка ничего не говорила бы про первый.
       mapsUnavailable: false,
@@ -296,6 +335,8 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
     }, sandbox.HTMLElement.prototype);
     vm.createContext(sandbox);
     vm.runInContext([
+      extractFunctionSource(source, 'getOnlineSeatColor'),
+      extractFunctionSource(source, 'isOnlineHostSeat'),
       extractFunctionSource(source, 'isOnlineTableFull'),
       extractFunctionSource(source, 'syncPlayButtonSkin'),
       'syncPlayButtonSkin(true); this.disabled = playBtn.disabled;',
@@ -303,82 +344,120 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
     return sandbox.disabled;
   };
 
-  assert(gate({ blue: true, green: false }, false, false) === true,
+  assert(gate({ blue: true, green: false }, 'blue', false) === true,
     '4a: пока соперника нет, «Play» заблокирована — даже если её просят включить');
-  assert(gate({ blue: true, green: true }, false, false) === false,
-    '4a2: когда оба на месте — доступна');
-  assert(gate({ blue: true, green: true }, true, false) === true,
-    '4a3: после своего «готов» — снова заблокирована, ответ уже дан');
-  assert(gate({ blue: true, green: false }, false, true) === false,
+  assert(gate({ blue: true, green: true }, 'blue', false) === false,
+    '4a2: когда оба на месте — хозяину доступна');
+  assert(gate({ blue: true, green: true }, 'green', false) === true,
+    '4a3: а гостю нет: начинает хозяин. Кнопку у гостя прячут ещё и стилями, но замок '
+    + 'обязан держать и без них');
+  assert(gate({ blue: true, green: false }, 'blue', true) === false,
     '4a4: в идущей игре замок не действует — там «Play» про другое');
 }
 
-// === 5. Готовность, сказанная в пустоту, повторяется при приходе соперника ===
+// === 5. Приход соперника зажигает «Play» сам ===
 //
-// Комната не придерживает «я готов»: это одноразовое решение. Нажав «Play» до прихода
-// друга, мы бы ждали его вечно — он никогда не узнал бы, что мы готовы.
+// Отдельной строки состояния больше нет: то, что гость сел за стол, игрок узнаёт по
+// загоревшейся кнопке и никак иначе. Значит известие от комнаты обязано её пересчитать.
 {
+  // Половина первая: известие от комнаты доходит до пересчёта экрана.
   const side = makeSide('blue');
-  side.api.receiveOnlinePresence({ seats: { blue: true, green: false } });
-  side.api.pressPlay();
-  const beforeJoin = side.sent.filter((e) => e.type === 'ready').length;
-  assert(beforeJoin === 1, '5: готовность отправлена (в пустоту)');
-
   side.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
-  const afterJoin = side.sent.filter((e) => e.type === 'ready').length;
-  assert(afterJoin === 2,
-    '5b: когда соперник пришёл, готовность отправлена ещё раз — иначе он о ней не узнает');
+  assert(side.log.some(([name]) => name === 'applyOnlineMenuState'),
+    '5: приход соперника не пересчитал экран — единственный указатель остался погасшим');
 
-  // А пока за столом не двое, чужая готовность ничего не значит.
-  const other = makeSide('green');
-  other.api.receiveOnlineReady();
-  other.api.receiveOnlinePresence({ seats: { blue: false, green: true } });
-  assert(other.api.ready().theirs === false,
-    '5c: ушедший соперник больше не считается готовым');
+  // Половина вторая: пересчёт экрана трогает саму кнопку. Живьём это не собрать — там
+  // #modeMenu и самолётики, — поэтому читается сам код: замок обязан быть внутри.
+  const пересчёт = extractFunctionSource(source, 'applyOnlineMenuState');
+  assert(/syncPlayButtonSkin\(/.test(пересчёт),
+    '5b: пересчёт экрана перестал трогать «Play» — она так и останется в том виде, '
+    + 'в каком её застало открытие лобби');
+  assert(/onlineSession && !gameMode/.test(пересчёт),
+    '5c: «Play» пересчитывается и в идущей партии — там она про другое, и трогать её нельзя');
 }
 
-// === 6. Состояние написано словами, а не угадывается по пустой панели ===
+// === 6. Про поломки сказано словами, а про остальное — самим экраном ===
+//
+// Десять строк состояния схлопнулись в один экран и одну кнопку: пришёл ли соперник,
+// видно по загоревшемуся «Play», а чего мы ждём — по тому, на каком экране стоим. Осталось
+// то, чего глазами не увидеть: связь оборвалась или комната не пустила.
+//
+// Проверяется именно граница. Пока всё хорошо — молчание, потому что говорить не о чем.
+// Стоит начать говорить в порядке — и текст вернётся на экран, а вместе с ним и панель.
 {
-  const side = makeSide('blue');
-  const seen = new Set();
-  seen.add(side.api.getOnlineLobbyStatusText());
-  side.api.receiveOnlinePresence({ seats: { blue: true, green: false } });
-  seen.add(side.api.getOnlineLobbyStatusText());
-  side.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
-  seen.add(side.api.getOnlineLobbyStatusText());
-  side.api.pressPlay();
-  seen.add(side.api.getOnlineLobbyStatusText());
+  const тихо = makeSide('blue');
+  assert(тихо.api.getOnlineTroubleText() === '',
+    '6: при рабочей связи лобби молчит — говорить не о чем');
+  тихо.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
+  assert(тихо.api.getOnlineTroubleText() === '',
+    '6b: и когда соперник пришёл, тоже: об этом говорит «Play», а не строка');
 
-  assert(seen.size === 4,
-    `6: каждое состояние лобби описано своими словами (сейчас разных: ${seen.size})`);
-  for(const text of seen){
-    assert(typeof text === 'string' && text.trim().length > 8,
-      `6b: «${text}» — внятная строка, а не заглушка`);
-  }
+  // Пока сокет только открывается, терять ещё нечего и пугать нечем.
+  const открывается = makeSide('blue');
+  открывается.sandbox.onlineSession.transport.status = () => 'connecting';
+  assert(открывается.api.getOnlineTroubleText() === '',
+    '6c: «подключаемся» — не поломка, и молчать про неё правильно');
 
-  // Оборванная связь тоже названа — своими словами, а не молчанием и не той же строкой,
-  // что при рабочей связи. Проверяем именно это, а не конкретную формулировку: язык
-  // интерфейса менялся и ещё может смениться, а «состояние названо» — не должно.
-  const broken = makeSide('green');
-  broken.sandbox.onlineSession.transport.status = () => 'reconnecting';
-  const brokenText = broken.api.getOnlineLobbyStatusText();
-  assert(brokenText.trim().length > 8, '6c: про потерянную связь лобби говорит, а не молчит');
-  assert(!seen.has(brokenText),
-    `6d: у оборванной связи своя строка, не та же, что при рабочей («${brokenText}»)`);
+  const оборвано = makeSide('green');
+  оборвано.sandbox.onlineSession.transport.status = () => 'reconnecting';
+  const текст = оборвано.api.getOnlineTroubleText();
+  assert(текст.trim().length > 8, '6d: про потерянную связь лобби говорит, а не молчит');
+
+  // Отказ комнаты и занятое место лечатся по-разному, поэтому и сказано о них разное.
+  const отказ = makeSide('green');
+  отказ.sandbox.onlineSession.transport.status = () => 'rejected';
+  отказ.sandbox.onlineSession.transport.rejection = () => 'busy';
+  const занято = makeSide('green');
+  занято.sandbox.onlineSession.transport.status = () => 'rejected';
+  занято.sandbox.onlineSession.transport.rejection = () => 'seat_taken';
+  assert(отказ.api.getOnlineTroubleText() !== занято.api.getOnlineTroubleText(),
+    '6e: занятое место и прочий отказ описаны одинаково, а лечатся по-разному');
+  assert(!/Reload/i.test(занято.api.getOnlineTroubleText()),
+    '6f: занятому месту советуют перезагрузиться — там сидит другой человек, и это '
+    + 'гоняет пришедшего по кругу');
 }
 
-// === 7. Панель и её место в разметке ===
+// === 7. Лобби в разметке — пункты меню, а не панель ===
+//
+// Панель тут и была тем единственным на экране, что не походило ни на что вокруг. Если
+// она вернётся, вернётся и всё остальное: своё оформление, свои размеры, свой голос.
 {
-  for(const id of ['onlineLobby', 'onlineLobbyStatus', 'onlineLobbyLink',
-                   'onlineLobbyCopy', 'onlineLobbyClose']){
+  for(const id of ['onlineSendLinkBtn', 'onlineCancelBtn',
+                   'onlineWaitingLabel', 'onlineWaitingSpinner']){
     assert(new RegExp(`id="${id}"`).test(markup), `7: в разметке есть ${id}`);
   }
-  assert(/id="onlineLobby"[^>]*hidden/.test(markup),
-    '7b: по умолчанию панель спрятана — она не нужна, пока комнаты нет');
-  assert(/#menuLayer #modeMenu \.online-lobby \{/.test(styles),
-    '7c: у панели есть стили');
-  assert(/readonly/.test(markup.match(/<input id="onlineLobbyLink"[\s\S]*?\/>/)[0]),
-    '7d: поле со ссылкой только для чтения — его выделяют и копируют, а не правят');
+  // С точкой: без неё совпадёт имя теста smoke-online-lobby-fits в комментарии.
+  assert(!/id="onlineLobby"/.test(markup) && !/\.online-lobby/.test(styles),
+    '7b: панель лобби вернулась — на экране снова вещь без материала');
+
+  // Кнопки лобби — те же кнопки меню и той же породы: иначе правило раскладки их не найдёт.
+  for(const id of ['onlineSendLinkBtn', 'onlineCancelBtn']){
+    const кнопка = new RegExp(`<button id="${id}"[\\s\\S]*?>`).exec(markup);
+    assert(кнопка && /class="mode-menu__btn /.test(кнопка[0]),
+      `7c: ${id} размечена не как кнопка меню — она уедет из своего места`);
+  }
+
+  // У гостя нет ни «Play», ни правил, и это не украшательство. «Play» — потому что
+  // начинает хозяин. Правила — потому что они приезжают от хозяина готовыми: кнопки у
+  // гостя лишь показывают его выбор, но нажимаются, и нажатие меняет правила ТОЛЬКО у
+  // гостя, тихо разводя его с комнатой.
+  for(const кнопка of ['play', 'classic', 'advanced']){
+    const правило = new RegExp(
+      `#menuLayer #modeMenu\\.is-online-guest \\.mode-menu__btn--${кнопка}[^{]*\\{[^}]*display:\\s*none`
+    ).test(styles) || new RegExp(
+      `\\.is-online-guest \\.mode-menu__btn--${кнопка},`
+    ).test(styles);
+    assert(правило, `7f: у гостя видна кнопка «${кнопка}» — а нажать её он не может ни с `
+      + 'каким смыслом: правила ему присылают, а партию начинает хозяин');
+  }
+
+  // Ожидание показывается той же картинкой, что и загрузка. Не из лени: она уже скачана,
+  // и экран ожидания не стоит игроку ни одного лишнего байта.
+  const кружок = /<img id="onlineWaitingSpinner"[\s\S]*?>/.exec(markup);
+  assert(кружок && /preload_animation\.gif/.test(кружок[0]),
+    '7d: на экране ожидания своя картинка — а значит лишняя загрузка на ровном месте');
+  assert(/"preload_animation\.gif"/.test(source),
+    '7e: и она по-прежнему в списке предзагрузки, иначе поедет в момент показа');
 }
 
 // === 8. Присутствие приходит от КОМНАТЫ, а не от игрока ===

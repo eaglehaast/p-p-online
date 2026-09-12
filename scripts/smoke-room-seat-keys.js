@@ -188,8 +188,8 @@ const OTHER = 'sovsemdrugojkljuc567';
 // Совет «перезагрузите страницу» здесь вреден: за местом сидит другой человек, и
 // перезагрузка гоняет пришедшего по кругу.
 {
-  const status = /function getOnlineLobbyStatusText\(\)\{[\s\S]*?\n\}/.exec(code);
-  assert(status, '8: текст состояния лобби не найден');
+  const status = /function getOnlineTroubleText\(\)\{[\s\S]*?\n\}/.exec(code);
+  assert(status, '8: текст поломок онлайна не найден');
   assert(/rejection\?\.\(\) === "seat_taken"/.test(status[0]),
     '8b: «место занято» не отличается от прочих отказов, а лечится оно иначе');
   assert(/seat is already taken/i.test(status[0]),

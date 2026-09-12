@@ -6,12 +6,17 @@
 // Игра англоязычная: Settings, Score, Round, «cells» у самолёта, все шесть подсказок
 // инвентаря. А лобби писалось по ходу разговора и получилось русским целиком — от
 // «Комната создаётся…» до кнопки «Войти». На витрине вроде itch.io это выглядит так:
-// человек открывает английскую игру, жмёт Online и упирается в панель на языке, которого
-// не знает. Причём упирается ровно в том месте, где ему надо позвать друга.
+// человек открывает английскую игру, жмёт Online и упирается в текст на языке, которого
+// не знает. Причём упирается ровно там, где ему надо позвать друга.
 //
-// Проверяется не перевод как таковой, а то, что в ЛОБЛИ не осталось русского текста,
-// который увидит игрок. Комментарии в коде и сообщения в консоль — русские, как и во всём
-// проекте: их читаем мы, а не игрок, и трогать их незачем.
+// От самой панели с тех пор ничего не осталось: лобби стало двумя состояниями меню —
+// «Send link» и «Cancel» у хозяина, «Waiting…» и «Cancel» у гостя. Надписи на них
+// нарисованы картинками, то есть по-английски они уже потому, что так нарисованы. Зато
+// появилось новое место, где легко проговориться: подписи для экранного диктора, alt у
+// картинок и единственный оставшийся текст — про поломки связи.
+//
+// Проверяется не перевод как таковой, а то, что игроку нигде не показывают русского.
+// Комментарии и сообщения в консоль — русские, как и во всём проекте: их читаем мы.
 
 const fs = require('fs');
 
@@ -20,83 +25,85 @@ function assert(condition, message){
 }
 
 const CYRILLIC = /[Ѐ-ӿ]/;
-
 const source = fs.readFileSync('script.js', 'utf8');
 const markup = fs.readFileSync('index.html', 'utf8');
 
-// Кусок кода от метки до её закрывающей скобки.
-function extractBlock(text, marker){
-  const start = text.indexOf(marker);
-  if(start === -1) throw new Error(`Не найдено в script.js: ${marker}`);
-  const bodyStart = text.indexOf('{', text.indexOf(')', start));
+function extractBlock(text, opener){
+  const start = text.indexOf(opener);
+  if(start === -1) throw new Error(`Не найдено в script.js: ${opener}`);
+  const bodyStart = text.indexOf('{', start + opener.length - 1);
   let depth = 0;
   for(let i = bodyStart; i < text.length; i += 1){
     if(text[i] === '{') depth += 1;
     if(text[i] === '}') depth -= 1;
     if(depth === 0) return text.slice(start, i + 1);
   }
-  throw new Error(`Не найден конец блока: ${marker}`);
+  throw new Error(`Не найден конец блока: ${opener}`);
 }
 
-// Строковые литералы без комментариев: комментарии у нас русские везде, и ловить надо не
-// их, а то, что попадает на экран.
-function textLiterals(code){
-  const withoutComments = code
+// Строковые литералы куска кода — без комментариев и без консоли: и то и другое наше.
+function textLiterals(block){
+  const withoutNoise = block
     .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    .replace(/console\.\w+\([\s\S]*?\);/g, '');
   const found = [];
-  for(const match of withoutComments.matchAll(/"([^"\\]*)"|`([^`\\]*)`/g)){
+  for(const match of withoutNoise.matchAll(/"([^"\\]*)"|`([^`\\]*)`/g)){
     found.push(match[1] ?? match[2]);
   }
   return found;
 }
 
-// === 1. Строки состояния лобби ===
+// === 1. Единственный текст, который в лобби остался, — про поломки ===
+//
+// Девять строк состояния из десяти ушли вместе с панелью: что соперник пришёл, видно по
+// загоревшемуся «Play», а чего мы ждём — по самому экрану. Осталось то, чего глазами не
+// увидеть.
 {
-  const statusFn = extractBlock(source, 'function getOnlineLobbyStatusText(');
-  const lines = textLiterals(statusFn).filter((text) => text.trim().length > 0);
+  const troubleFn = extractBlock(source, 'function getOnlineTroubleText(');
+  const lines = textLiterals(troubleFn).filter((text) => text.trim().length > 0);
 
-  assert(lines.length >= 6,
-    `1: строк состояния найдено ${lines.length} — проверять почти нечего, разбор сломался`);
+  assert(lines.length >= 3,
+    `1: строк про поломки найдено ${lines.length} — проверять почти нечего, разбор сломался`);
   for(const line of lines){
-    assert(!CYRILLIC.test(line), `1b: строка состояния по-русски: «${line}»`);
+    assert(!CYRILLIC.test(line), `1b: игроку сообщают о поломке по-русски: «${line}»`);
   }
 }
 
-// === 2. Кнопки лобби и то, что они говорят в ответ ===
+// === 2. Кнопки лобби и то, что они отправляют наружу ===
 //
-// Ответы кнопок живут не в разметке, а в коде: «Copied» после копирования, жалоба на
-// непонятый код. Их легко перевести в разметке и забыть здесь.
+// У «Send link» есть текст, которого нет ни в разметке, ни в стилях: заголовок и подпись
+// для системной шторки «поделиться». Их увидит не только игрок, но и тот, кому он пишет.
 {
   const blocks = {
-    'вход по коду': extractBlock(source, 'if(onlineLobbyJoinBtn instanceof HTMLElement){'),
-    'копирование ссылки': extractBlock(source, 'if(onlineLobbyCopyBtn instanceof HTMLElement){'),
+    'отправка ссылки': extractBlock(source, 'if(onlineSendLinkBtn instanceof HTMLElement){'),
+    'отмена': extractBlock(source, 'if(onlineCancelBtn instanceof HTMLElement){'),
     'кнопка Online': extractBlock(source, 'if(onlineBtn instanceof HTMLElement){'),
   };
   for(const [name, block] of Object.entries(blocks)){
     for(const line of textLiterals(block)){
-      assert(!CYRILLIC.test(line), `2: «${name}» отвечает игроку по-русски: «${line}»`);
+      assert(!CYRILLIC.test(line), `2: «${name}» говорит игроку по-русски: «${line}»`);
     }
   }
 }
 
-// === 3. Разметка лобби ===
+// === 3. Разметка пунктов лобби ===
+//
+// Видимого текста у них нет вовсе — надписи нарисованы. Значит вся речь к игроку тут
+// прячется в атрибутах, и заметить в них русский глазами невозможно.
 {
-  const start = markup.indexOf('<div id="onlineLobby"');
-  assert(start !== -1, '3: панель лобби не найдена в index.html');
-  const end = markup.indexOf('</div>', markup.indexOf('online-lobby__link--join'));
-  const panel = markup.slice(start, end).replace(/<!--[\s\S]*?-->/g, '');
+  const start = markup.indexOf('<button id="onlineSendLinkBtn"');
+  assert(start !== -1, '3: пункты лобби не найдены в index.html');
+  const end = markup.indexOf('<!--', markup.indexOf('id="onlineWaitingSpinner"'));
+  assert(end > start, '3a: конец разметки лобби не найден');
+  const кусок = markup.slice(start, end).replace(/<!--[\s\S]*?-->/g, '');
 
-  // Текст между тегами — то, что написано на панели и на кнопках.
-  for(const chunk of panel.split(/<[^>]*>/)){
+  for(const chunk of кусок.split(/<[^>]*>/)){
     const text = chunk.trim();
     if(!text) continue;
-    assert(!CYRILLIC.test(text), `3b: на панели написано по-русски: «${text}»`);
+    assert(!CYRILLIC.test(text), `3b: на экране написано по-русски: «${text}»`);
   }
-
-  // Подписи для экранного диктора и подсказка в пустом поле — тоже речь к игроку,
-  // просто её не видно, пока не понадобится.
-  for(const match of panel.matchAll(/(?:aria-label|placeholder|title|alt)="([^"]*)"/g)){
+  for(const match of кусок.matchAll(/(?:aria-label|placeholder|title|alt)="([^"]*)"/g)){
     assert(!CYRILLIC.test(match[1]),
       `3c: подпись «${match[1]}» по-русски — её читает игроку экранный диктор`);
   }
@@ -106,15 +113,17 @@ function textLiterals(code){
 //
 // Три проверки выше устроены так, что пустой разбор их не роняет: не нашли строк — не
 // нашли и русского. Поэтому отдельно убеждаемся, что живой текст лобби действительно
-// прочитан, иначе тест зеленел бы, даже перестав что-либо видеть.
+// прочитан.
 {
-  const panel = markup.slice(markup.indexOf('<div id="onlineLobby"'),
-                             markup.indexOf('</div>', markup.indexOf('online-lobby__link--join')));
-  assert(/Copy link/.test(panel) && /Join/.test(panel),
-    '4: разметка лобби прочитана целиком (кнопки на месте)');
+  const start = markup.indexOf('<button id="onlineSendLinkBtn"');
+  const кусок = markup.slice(start, markup.indexOf('<!--', markup.indexOf('id="onlineWaitingSpinner"')));
+  assert(/aria-label="Send link"/.test(кусок) && /aria-label="Cancel"/.test(кусок),
+    '4: разметка лобби прочитана целиком (обе кнопки на месте)');
+  assert(/alt="Waiting for the host to start"/.test(кусок),
+    '4b: экран ожидания прочитан');
 
-  const statusFn = extractBlock(source, 'function getOnlineLobbyStatusText(');
-  assert(/Hit Play/.test(statusFn), '4b: строки состояния прочитаны');
+  const troubleFn = extractBlock(source, 'function getOnlineTroubleText(');
+  assert(/Connection lost/.test(troubleFn), '4c: строки про поломки прочитаны');
 }
 
 console.log('smoke-lobby-english: OK');
