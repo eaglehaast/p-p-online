@@ -53701,4 +53701,96 @@ if(onlineSession){
   showOnlineLobby();
 }
 
+// Предпросмотр лобби для рисования: ?lobby=preview
+//
+// Лобби нельзя посмотреть просто так. Кнопка «Online» выключена, пока нет ретранслятора,
+// а половина того, что на этой панели написано, появляется только при живом сопернике:
+// «Opponent is here», «This seat is already taken» и остальные. То есть нарисовать экран
+// вслепую можно, а увидеть, что нарисовал, — нет.
+//
+// Отсюда режим без сети. Ничего не создаётся, никуда не подключается, в localStorage не
+// пишется: панель просто показывается, а состояние переключается руками. Это инструмент
+// для нас, как редактор карт, поэтому и подписи у переключателя русские — игрок сюда не
+// попадёт, адрес надо знать.
+//
+// Полоса переключателя живёт ВНЕ кадра нарочно. Внутри она перекрывала бы ровно то, ради
+// чего всё и затевалось, да ещё и лезла бы в замеры.
+(function предпросмотрЛобби(){
+  if(new URLSearchParams(window.location?.search || "").get("lobby") !== "preview") return;
+  if(!(onlineLobbyDiv instanceof HTMLElement)) return;
+
+  // Тексты повторены здесь, а не взяты у getOnlineLobbyStatusText(): без сессии та вернёт
+  // пустую строку. Чтобы список не разошёлся с игрой, за совпадением следит
+  // smoke-lobby-preview — он ищет каждую из этих строк в самой игре.
+  const СОСТОЯНИЯ = [
+    { имя: "комната создана",  готово: false, текст: "Room created. Connecting…" },
+    { имя: "подключение",      готово: false, текст: "Connecting…" },
+    { имя: "ждём соперника",   готово: false, текст: "Waiting for an opponent. Send them the link." },
+    { имя: "соперник пришёл",  готово: true,  текст: "Opponent is here. Hit Play." },
+    { имя: "я готов",          готово: true,  текст: "You’re ready. Waiting for your opponent." },
+    { имя: "соперник готов",   готово: true,  текст: "Your opponent is ready. Hit Play." },
+    { имя: "связь пропала",    готово: false, текст: "Connection lost. Retrying…" },
+    { имя: "место занято",     готово: false, текст: "This seat is already taken. Ask your friend for a new link." },
+    { имя: "комната отказала", готово: false, текст: "Room refused the connection. Reload the page." },
+    { имя: "код не подошёл",   готово: false, текст: "Couldn’t join. Check the code." }
+  ];
+
+  // Код нарочно постоянный, а не случайный: по нему сверяют раскладку между заходами, и
+  // прыгающая ширина строки мешала бы. Шесть знаков — столько же, сколько у настоящего.
+  const КОМНАТА = "gvh4np";
+
+  let текущее = 0;
+  const подпись = document.createElement("span");
+
+  function показать(){
+    const с = СОСТОЯНИЯ[текущее];
+    // Меню за панелью — в том же виде, в каком оно бывает при живом онлайне: иначе фон
+    // под лобби был бы не тот, что увидит игрок. Режим в localStorage не пишется.
+    selectedMode = "online";
+    updateModeSelection(onlineBtn);
+
+    onlineLobbyDiv.hidden = false;
+    onlineLobbyDiv.classList.toggle("is-ready", с.готово);
+    if(onlineLobbyStatusEl instanceof HTMLElement) onlineLobbyStatusEl.textContent = с.текст;
+    if(onlineLobbyCodeEl instanceof HTMLElement) onlineLobbyCodeEl.textContent = КОМНАТА;
+    if(onlineLobbyLinkInput instanceof HTMLInputElement){
+      const { origin, pathname } = window.location;
+      onlineLobbyLinkInput.value = `${origin}${pathname}?room=${КОМНАТА}&seat=green`;
+    }
+    подпись.textContent = `${текущее + 1}/${СОСТОЯНИЯ.length}  ${с.имя}`;
+  }
+
+  function шаг(куда){
+    текущее = (текущее + куда + СОСТОЯНИЯ.length) % СОСТОЯНИЯ.length;
+    показать();
+  }
+
+  const полоса = document.createElement("div");
+  полоса.id = "lobbyPreviewBar";
+  // Сверху, а не снизу: лобби прижато к нижней грани кадра, и полоса внизу накрыла бы
+  // ровно ту строку, ради которой её и открывают. Наверху под ней заголовок игры.
+  полоса.style.cssText = "position:fixed;left:50%;top:0;transform:translateX(-50%);"
+    + "z-index:99999;display:flex;align-items:center;gap:10px;padding:7px 12px;"
+    + "background:rgba(18,20,16,0.92);color:#e8e4d8;border-radius:0 0 8px 8px;"
+    + "font:12px/1 ui-monospace,Menlo,Consolas,monospace;";
+
+  const кнопка = (знак, куда) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = знак;
+    // all:unset — иначе кнопку поймает #modeMenu button с position:absolute и прочим
+    // оформлением меню. Полоса лежит вне #modeMenu, но привычка дешевле разбирательства.
+    b.style.cssText = "all:unset;cursor:pointer;padding:3px 10px;border-radius:4px;"
+      + "background:rgba(255,255,255,0.14);";
+    b.addEventListener("click", () => шаг(куда));
+    return b;
+  };
+
+  подпись.style.cssText = "min-width:190px;text-align:center;";
+  полоса.append(кнопка("‹", -1), подпись, кнопка("›", 1));
+  document.body.appendChild(полоса);
+
+  показать();
+})();
+
 bootstrapGame();
