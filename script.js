@@ -8867,51 +8867,6 @@ function buildOnlineInviteLink(){
   return `${location.origin}${location.pathname}?${params.toString()}`;
 }
 
-// Что человек ввёл в поле «код или ссылка» — превращаем в имя комнаты.
-//
-// Принимаем и то, и другое нарочно. Ссылка удобна там, где её есть куда вставить; код
-// работает везде — его можно продиктовать голосом. А на itch.io, например, ссылка не
-// работает вовсе: игра открывается внутри рамки на их странице, и параметры адреса до
-// неё не доезжают. Там код — единственный способ позвать друга.
-//
-// Заодно прощаем то, что люди делают на самом деле: пробелы по краям, ВЕРХНИЙ РЕГИСТР,
-// целиком скопированную ссылку.
-function normalizeOnlineRoomCode(raw){
-  const text = `${raw ?? ""}`.trim();
-  if(!text) return "";
-
-  // Похоже на ссылку — достаём из неё имя комнаты.
-  if(/[?&]room=/.test(text)){
-    const match = /[?&]room=([^&\s]+)/.exec(text);
-    if(match) return normalizeOnlineRoomCode(decodeURIComponent(match[1]));
-  }
-
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "")
-    .slice(0, ONLINE_ROOM_MAX_LENGTH);
-}
-
-// Войти в чужую комнату: своё место — свободное, то есть не хозяйское.
-function joinOnlineRoomByCode(rawCode){
-  const room = normalizeOnlineRoomCode(rawCode);
-  if(!room) return null;
-  const relay = getConfiguredRelayUrl();
-  if(!relay) return null;
-
-  // Свою комнату, если успели создать, бросаем: играть в двух сразу нельзя.
-  stopOnlineSession();
-  onlinePresence = null;
-
-  const session = startOnlineSession({
-    seat: ONLINE_HOST_SEAT === "blue" ? "green" : "blue",
-    room,
-    relay,
-  });
-  if(!session) return null;
-  showOnlineLobby();
-  return session;
-}
 
 function isOnlineTableFull(){
   return Boolean(onlinePresence?.blue && onlinePresence?.green);
