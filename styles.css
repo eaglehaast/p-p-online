@@ -247,7 +247,7 @@
      доски — и тенью: лист лежит НА доске.
 
      Чернила синеватые, из семейства клетки, а не чёрные: на этой бумаге пишут ручкой. */
-  --author-links-paper: url("ui_mainmenu/mm_links_paper.png");
+  --author-links-paper: url("ui_mainmenu/mm_links_paper.webp");
   --author-links-color: #1e2a3a;
   --author-links-font-family: var(--inventory-tooltip-font-family);
   /* Тень идёт фильтром, а не box-shadow: у листа рваные края, и прямоугольная тень
