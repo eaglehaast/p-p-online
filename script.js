@@ -7727,6 +7727,10 @@ const onlineCancelBtn = document.getElementById("onlineCancelBtn");
 // друга. Держится отдельно от lastModeSelectionButton нарочно: тот помнит выбор РЕЖИМА и
 // должен пережить выход из комнаты.
 let onlineLobbyFocusBtn = null;
+// Звали ли уже друга в этой комнате. Нужно только затем, чтобы перестать зазывать: дело
+// сделано, дальше остаётся ждать. Отказ от системной шторки за отправку не считается —
+// человек передумал, и подсказка ему ещё пригодится.
+let onlineInviteSent = false;
 // Столько длится перелёт самолётиков — см. transition у .mm-plane в стилях.
 const ONLINE_PLANE_FLIGHT_MS = 220;
 const mapsErrorNotice = document.getElementById("mapsErrorNotice");
@@ -8459,6 +8463,7 @@ function startOnlineSession(options = {}){
   onlineSession.presenceHandlers.push(receiveOnlinePresence);
   onlineSession.startHandlers.push(receiveOnlineStart);
   onlinePresence = null;
+  onlineInviteSent = false;
   console.log("[online] место за столом", {
     seat: onlineSession.seat,
     room: onlineSession.room,
@@ -8929,6 +8934,18 @@ function createOnlineRoom(){
 // на #modeMenu, и ставятся они в одном месте: показать надо ОДИН набор пунктов и спрятать
 // другой, а такое правило, размазанное по вызывающим, разъезжается на первой же правке.
 
+// Зазывать нажать «Send link» имеет смысл ровно пока это единственное, что тут можно
+// сделать: соперника нет, а выбор стоит на самой кнопке. Пришёл соперник — внимание
+// переходит к загоревшемуся «Play»; нажали «Cancel» — самолётики уже улетают к нему.
+function обновитьЗазывание(){
+  const меню = document.getElementById("modeMenu");
+  if(!(меню instanceof HTMLElement)) return;
+  const зовём = Boolean(onlineSession) && !gameMode && isOnlineHostSeat()
+    && !isOnlineTableFull() && !onlineInviteSent
+    && onlineLobbyFocusBtn === onlineSendLinkBtn;
+  меню.classList.toggle("is-online-alone", зовём);
+}
+
 function applyOnlineMenuState(){
   const меню = document.getElementById("modeMenu");
   if(!(меню instanceof HTMLElement)) return;
@@ -8944,6 +8961,7 @@ function applyOnlineMenuState(){
   } else {
     onlineLobbyFocusBtn = null;
   }
+  обновитьЗазывание();
   // Сказать им перелететь. Само по себе значение выше самолётики не двигает: место им
   // считают здесь, по кнопке, а зовут эту функцию из выбора режима — а выбор режима в
   // лобби уже позади.
@@ -20890,6 +20908,8 @@ if(onlineSendLinkBtn instanceof HTMLElement){
     try {
       if(typeof navigator.share === "function"){
         await navigator.share({ title: "Inky Planes", text: "Let's play", url: link });
+        onlineInviteSent = true;
+        обновитьЗазывание();
         return;
       }
     } catch(_error){
@@ -20899,6 +20919,8 @@ if(onlineSendLinkBtn instanceof HTMLElement){
     }
     try {
       await navigator.clipboard.writeText(link);
+      onlineInviteSent = true;
+      обновитьЗазывание();
     } catch(_error){
       console.warn("[online] ссылку не удалось ни отправить, ни скопировать", link);
     }
@@ -20912,13 +20934,22 @@ if(onlineCancelBtn instanceof HTMLElement){
   onlineCancelBtn.addEventListener("click", () => {
     if(уходим) return;
     уходим = true;
-    // Сперва самолётики перелетают на «Cancel», и только потом уходим. Без паузы перелёт
-    // срезало бы на первом кадре: выход мгновенно возвращает обычное меню, и они прыгнули
-    // бы к кнопке режима. 220 мс — ровно длина перелёта, на ощупь это не задержка.
+    // Сперва самолётики перелетают на «Cancel», и только потом уходим.
+    //
+    // Пауза чуть длиннее самого перелёта, и это не запас на всякий случай: раньше она была
+    // ровно в 220 мс, и выход срабатывал в тот же миг, когда перелёт заканчивался. Замер
+    // показывал разворот на полпути — самолётики шли вниз к «Cancel», не долетали и их
+    // дёргало обратно. Пусть приземлятся.
     onlineLobbyFocusBtn = onlineCancelBtn;
+    обновитьЗазывание();
     updateModePlanesPosition(onlineCancelBtn);
     setTimeout(() => {
       уходим = false;
+      // Обратно к Hot Seat — без перелёта. В этот же миг меняется весь экран, и второй
+      // перелёт подряд читается рывком, а не движением.
+      const самолётики = [leftModePlane, rightModePlane, leftRulesPlane, rightRulesPlane];
+      for(const п of самолётики) п?.classList?.add?.("is-cut");
+
       stopOnlineSession();
       onlinePresence = null;
       hideOnlineLobby();
@@ -20926,7 +20957,13 @@ if(onlineCancelBtn instanceof HTMLElement){
       setStoredGameMode(selectedMode);
       lastModeSelectionButton = hotSeatBtn;
       updateModeSelection(hotSeatBtn);
-    }, ONLINE_PLANE_FLIGHT_MS);
+
+      // Снять склейку через кадр: раньше — и браузер успеет анимировать то, что мы только
+      // что запретили.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        for(const п of самолётики) п?.classList?.remove?.("is-cut");
+      }));
+    }, ONLINE_PLANE_FLIGHT_MS + 60);
   });
 }
 // Клик по любому самолёту меню — выбор стороны. Четыре элемента, одно действие.
