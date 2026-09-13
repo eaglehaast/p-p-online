@@ -2870,6 +2870,9 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 
 @media (prefers-reduced-motion: reduce) {
   .think-hoof { display: none; }
+  /* Зазывание — украшение, а не сообщение: без него «Send link» остаётся первой надписью
+     на экране и читается сам. */
+  #menuLayer #modeMenu.is-online-alone .mm-plane--mode { animation: none; }
 }
 
 
@@ -4496,6 +4499,34 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
    тоже нет, поэтому уходят и те самолётики, что стоят у правил. */
 #menuLayer #modeMenu.is-online-guest .mm-plane--mode,
 #menuLayer #modeMenu.is-online-guest .mm-plane--rules { display: none; }
+
+/* Самолётики зазывают нажать «Send link».
+   Пока ссылка не ушла и никто не подключился, на этом экране делать больше нечего — а
+   перелететь самолётикам некуда: «Send link» встал ровно в слот Hot Seat, и выбор режима
+   не сдвигал их ни на точку. Со стороны это выглядело так, будто их вообще нет.
+   Поэтому они не летят, а тихонько сходятся к надписи и расходятся обратно.
+
+   Качается свойство translate, а не transform: transform у самолётика занят его местом в
+   кадре, и на нём же висит переход перелёта. Эти два свойства складываются, поэтому
+   покачивание не мешает ни тому, ни другому. */
+@keyframes mm-plane-beckon {
+  0%, 100% { translate: 0 0; }
+  50% { translate: var(--mm-beckon, 4px) 0; }
+}
+
+#menuLayer #modeMenu.is-online-alone .mm-plane--mode {
+  animation: mm-plane-beckon 2.6s ease-in-out infinite;
+}
+/* Сходятся к надписи, а не дрейфуют в одну сторону: левый вправо, правый влево. */
+#menuLayer #modeMenu.is-online-alone .mm-plane--left { --mm-beckon: 4px; }
+#menuLayer #modeMenu.is-online-alone .mm-plane--right { --mm-beckon: -4px; }
+
+/* Возврат после «Cancel» — без перелёта.
+   Уходя из комнаты, самолётики обязаны оказаться у Hot Seat. Лететь туда им незачем: в
+   этот же миг меняется весь экран, и на фоне смены их отдельный перелёт читается рывком —
+   тем более что он начинается сразу за перелётом к «Cancel». Одна склейка честнее двух
+   перелётов подряд. */
+#menuLayer #modeMenu .mm-plane.is-cut { transition: none; }
 
 /* Сообщение об отказе прямо в меню.
    Живёт там же, где лобби, и выглядит так же: это одно и то же место экрана и один и тот
