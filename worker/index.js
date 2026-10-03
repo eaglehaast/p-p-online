@@ -27,10 +27,17 @@ export default {
   async fetch(request, env){
     const { room, version } = parseJoinRequest(request.url);
     if(!room){
-      return new Response("Paper Wings relay. Подключение: /room/<комната>?seat=blue&v=1\n", {
-        status: 404,
-        headers: { "content-type": "text/plain; charset=utf-8" },
-      });
+      // Номер версии подставляется, а не пишется числом: это единственная страница, по
+      // которой человек проверяет, жив ли ретранслятор, и соврать она не должна. Вписанная
+      // «1» пережила переход на вторую версию и подсказывала адрес, по которому комната
+      // отказывает.
+      return new Response(
+        `Paper Wings relay. Подключение: /room/<комната>?seat=blue&v=${RELAY_PROTOCOL_VERSION}\n`,
+        {
+          status: 404,
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        },
+      );
     }
     if(request.headers.get("Upgrade") !== "websocket"){
       return new Response("Ожидается websocket\n", { status: 426 });
