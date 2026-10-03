@@ -221,7 +221,7 @@ export function getRoomConnections(room){
   return RELAY_SEATS.map((seat) => room.seats[seat]).filter((connection) => connection !== null);
 }
 
-// Разбор адреса подключения: /room/<имя>?seat=blue&v=1
+// Разбор адреса подключения: /room/<имя>?seat=blue&v=<RELAY_PROTOCOL_VERSION>
 export function parseJoinRequest(url){
   const parsed = new URL(url);
   const match = /^\/room\/([^/]{1,64})$/.exec(parsed.pathname);
