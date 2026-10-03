@@ -8854,6 +8854,54 @@ function resolveSeatKey(room, seat){
   return key;
 }
 
+// Имя комнаты тоже переживает перезагрузку — и по той же причине, что и ключ места.
+//
+// Раньше каждое нажатие «Online» заводило новую случайную комнату. Отправил другу ссылку,
+// обновил у себя страницу — и ссылка стала вести в комнату, где никого нет.
+//
+// Увидеть это нельзя ни с одной стороны: друг открывает ссылку, честно попадает в свою
+// комнату и ждёт в ней вечно; у хозяина «Play» не загорается. Оба ждут друг друга, оба
+// видят ровно то, что видели бы при настоящей поломке связи. Так и вышло в первый же
+// вечер, когда онлайн наконец заработал: сидели в разных комнатах и чинили работающее.
+//
+// Срок нужен, чтобы вернувшийся через неделю не оказался в комнате, ссылку на которую
+// кто-то всё ещё держит открытой: тот сядет за стол молча и неожиданно.
+const ONLINE_HOST_ROOM_STORAGE_KEY = "online.hostRoom";
+const ONLINE_HOST_ROOM_TTL_MS = 12 * 60 * 60 * 1000;
+
+function rememberHostRoom(room){
+  try {
+    window.localStorage?.setItem(ONLINE_HOST_ROOM_STORAGE_KEY,
+      JSON.stringify({ room, at: Date.now() }));
+  } catch(_error){
+    // Приватный режим: комната проживёт до перезагрузки — то есть ровно до той беды, от
+    // которой это и спасает. Лучше, чем ничего: внутри одной страницы ссылка верна.
+  }
+}
+
+function recallHostRoom(){
+  try {
+    const сохранённое = JSON.parse(
+      window.localStorage?.getItem(ONLINE_HOST_ROOM_STORAGE_KEY) || "null");
+    const room = сохранённое?.room;
+    if(typeof room !== "string" || !room) return "";
+    const когда = сохранённое?.at;
+    if(!Number.isFinite(когда) || Date.now() - когда > ONLINE_HOST_ROOM_TTL_MS) return "";
+    return room.slice(0, ONLINE_ROOM_MAX_LENGTH);
+  } catch(_error){
+    // Испорченная запись — то же самое, что её отсутствие: заведём новую комнату.
+    return "";
+  }
+}
+
+function forgetHostRoom(){
+  try {
+    window.localStorage?.removeItem(ONLINE_HOST_ROOM_STORAGE_KEY);
+  } catch(_error){
+    // Нечего забывать.
+  }
+}
+
 // Ссылка для друга: та же страница, но место — свободное.
 function buildOnlineInviteLink(){
   if(!onlineSession) return "";
@@ -8927,9 +8975,12 @@ function receiveOnlineStart(){
 function createOnlineRoom(){
   const relay = getConfiguredRelayUrl();
   if(!relay) return null;
-  const room = makeOnlineRoomId();
+  // Своя прежняя комната, если она ещё в силе: ровно на неё выписана ссылка, которая,
+  // возможно, уже лежит у друга в переписке. Новая заводится, только когда прежней нет.
+  const room = recallHostRoom() || makeOnlineRoomId();
   const session = startOnlineSession({ seat: ONLINE_HOST_SEAT, room, relay });
   if(!session) return null;
+  rememberHostRoom(room);
   showOnlineLobby();
   return session;
 }
@@ -20957,6 +21008,11 @@ if(onlineCancelBtn instanceof HTMLElement){
       for(const п of самолётики) п?.classList?.add?.("is-cut");
 
       stopOnlineSession();
+      // «Cancel» — это «я закончил», а не «я на минуту отойду»: за ним меняется весь
+      // экран. Значит и прежняя ссылка должна умереть здесь, а не жить ещё двенадцать
+      // часов — иначе друг, открывший её завтра, молча сядет за стол, за которым я уже
+      // жду другого.
+      forgetHostRoom();
       onlinePresence = null;
       hideOnlineLobby();
       selectedMode = "hotSeat";
