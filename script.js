@@ -51073,6 +51073,43 @@ if(typeof window !== "undefined"){
   };
 }
 
+// Грузы из снимка: что из них уже падает у нас — пусть падает дальше.
+//
+// Ящик появляется у обоих в ОДНОМ И ТОМ ЖЕ месте: место выбирается общими костями по
+// номеру раунда и хода (см. findCargoSpawnTarget). Значит и падение начинают оба.
+//
+// А потом приезжает снимок хода — и список грузов заменялся целиком, ящиками «уже
+// лежащими». Своё падение, начавшееся мгновением раньше, обрывалось почти сразу, и со
+// стороны это выглядело так: в свой ход ящик падает, в ход соперника — просто возникает.
+//
+// Снимок при этом остаётся главным во всём, что касается ИГРЫ: где ящик лежит, сколько их
+// и какие собраны. Своим остаётся ровно одно — та доля секунды, пока он падает. Разойтись
+// на ней нельзя: координаты у падающего ящика финальные с самого начала, падение их не
+// меняет.
+const CARGO_SAME_SPOT_EPS = 0.75;
+
+function применитьГрузИзСнимка(список){
+  const прежние = cargoState.slice();
+  cargoState.length = 0;
+  for(const cargo of (Array.isArray(список) ? список : [])){
+    // Ищем СВОЙ падающий ящик на том же месте. Падающий, а не любой: лежащий и так
+    // совпадает со снимком, а собранный — это уже другое состояние, и спорить тут не о чем.
+    const свой = прежние.find((п) => п?.state === "animating"
+      && Number.isFinite(п.x) && Number.isFinite(п.y)
+      && Math.abs(п.x - cargo.x) <= CARGO_SAME_SPOT_EPS
+      && Math.abs(п.y - cargo.y) <= CARGO_SAME_SPOT_EPS);
+    if(свой && cargo.state === "ready"){
+      cargoState.push(свой);
+      continue;
+    }
+    cargoState.push({
+      x: cargo.x, y: cargo.y, state: cargo.state,
+      animStartedAt: 0, animDurationMs: 0, readyAtSim: -Infinity, pickedAt: null,
+    });
+  }
+  return cargoState.length;
+}
+
 function applyMatchState(state){
   if(!state || typeof state !== "object") return false;
   if(state.v !== MATCH_STATE_VERSION) return false;
@@ -51119,15 +51156,7 @@ function applyMatchState(state){
     mines.push({ id: mine.id, owner: mine.owner, x: mine.x, y: mine.y });
   }
 
-  cargoState.length = 0;
-  for(const cargo of (Array.isArray(state.cargo) ? state.cargo : [])){
-    // Анимация падения к этому моменту отыграла — ящик кладётся сразу лежащим.
-    cargoState.push({
-      x: cargo.x, y: cargo.y, state: cargo.state,
-      // Снимок берётся между ходами, когда падение отыграло: ящик кладётся сразу готовым.
-      animStartedAt: 0, animDurationMs: 0, readyAtSim: -Infinity, pickedAt: null,
-    });
-  }
+  применитьГрузИзСнимка(state.cargo);
 
   const flagStates = Array.isArray(state.flags) ? state.flags : [];
   for(let i = 0; i < flags.length; i += 1){

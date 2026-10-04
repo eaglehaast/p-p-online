@@ -102,6 +102,10 @@ function buildWorld(){
     source.match(/const MATCH_STATE_PLANE_FIELDS = Object\.freeze\(\[[\s\S]*?\]\);/)[0],
     source.match(/const MATCH_STATE_SKIPPED_PLANE_FIELDS = Object\.freeze\(\{[\s\S]*?\n\}\);/)[0],
     extractFunctionSource(source, 'serializeMatchState'),
+    // Разбор грузов вынесен из applyMatchState отдельной функцией: падающий у нас ящик
+    // снимок не обрывает. Без неё стенд падает на ReferenceError.
+    source.match(/const CARGO_SAME_SPOT_EPS = [\d.]+;/)[0],
+    extractFunctionSource(source, 'применитьГрузИзСнимка'),
     extractFunctionSource(source, 'applyMatchState'),
     'this.serializeMatchState = serializeMatchState;',
     'this.applyMatchState = applyMatchState;',
