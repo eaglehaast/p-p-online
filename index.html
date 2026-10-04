@@ -213,6 +213,20 @@
             <div id="mantisIndicator" class="turn-indicator" style="display:none;"></div>
             <div id="goatIndicator" class="turn-indicator" style="display:none;"></div>
 
+            <!-- Чей ход — словами. Только для онлайна: за одним столом и против
+                 компьютера довольно загоревшейся морды, а по сети соперника не видно, и
+                 загоревшаяся морда читается как «моя». Стрелка показывает В ПОЛЕ и в
+                 сторону того, кто ходит; её направление решают стили, потому что зависит
+                 оно и от хода, и от ориентации кадра. -->
+            <div id="turnSignal" class="turn-signal" aria-hidden="true" hidden>
+              <img id="turnSignalWho" class="turn-signal__who"
+                   src="ui_gamescreen/gamescreen_outside/gs_turn_their.webp" alt="" draggable="false">
+              <img class="turn-signal__turn"
+                   src="ui_gamescreen/gamescreen_outside/gs_turn_turn.webp" alt="" draggable="false">
+              <img class="turn-signal__arrow"
+                   src="ui_gamescreen/gamescreen_outside/gs_turn_arrow.webp" alt="" draggable="false">
+            </div>
+
             <!-- "AI is thinking" goat hoof: peeks in from the left only while the
                  AI deliberates past a threshold, fidgets (stroking-its-beard
                  squeeze), then jerks back out the moment the move is ready. -->
