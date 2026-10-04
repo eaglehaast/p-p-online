@@ -1030,7 +1030,13 @@ const roundBannerState = {
   element: null,
   hideTimerId: null,
 };
-const TRANSFER_FRAME_TURN_AUTO_HIDE_MS = 1500;
+// Сколько висит плашка начала раунда.
+//
+// Было полторы секунды. За них надо успеть: заметить, что что-то появилось, перевести
+// взгляд, прочитать номер раунда и чью очередь, и понять, твоя ли это очередь. Полутора
+// секунд на это не хватает — особенно в первый раз, когда читаешь по-настоящему, а не
+// узнаёшь знакомое пятно.
+const TRANSFER_FRAME_TURN_AUTO_HIDE_MS = 2600;
 const TRANSFER_FRAME_GAME_WIN_AUTO_HIDE_MS = 1500;
 const TRANSFER_FRAME_SHOW_SCALE_FROM = 0.994;
 const TRANSFER_FRAME_HIDE_SCALE_TO = 0.992;
