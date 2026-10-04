@@ -4599,10 +4599,24 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
 #menuLayer #modeMenu.is-online-guest .mode-menu__btn--computer,
 #menuLayer #modeMenu.is-online-guest .mode-menu__btn--online { display: none; }
 
-/* У гостя нет ни «Play», ни правил.
-   «Play» — потому что начинает хозяин. Правила — потому что они приезжают от хозяина
-   готовыми: кнопки у гостя лишь показывали его выбор, но оставались нажимаемыми, и
-   нажатие меняло правила ТОЛЬКО у гостя, тихо разводя его с комнатой. */
+/* В лобби нет ни «Play», ни правил — ни у кого.
+
+   «Play» убрана потому, что нажимать было не о чем: решение играть принято в тот миг,
+   когда отправлена ссылка. Партия начинается, когда друг её откроет. Гость из-за этой
+   кнопки ждал не друга, а чужого нажатия — и не мог отличить «он ещё не нажал» от
+   «сломалось».
+
+   Правила — потому что в комнату они уезжают ОДИН раз, при её создании. У гостя кнопки
+   лишь показывали его собственный выбор, но оставались нажимаемыми и тихо разводили его
+   с комнатой. У хозяина было хуже и незаметнее: он переключал правила, уже стоя в лобби,
+   комнате об этом не сообщалось, и двое играли по разным правилам, не зная того.
+   Проверено на стенде: хозяин переключил classic -> advanced, гость вошёл с classic.
+
+   Правила выбираются до «Online», в обычном меню. Передумал — «Cancel», поменял, позвал
+   заново; ссылка остаётся та же, комната тоже. */
+#menuLayer #modeMenu.is-online-host .mode-menu__btn--play,
+#menuLayer #modeMenu.is-online-host .mode-menu__btn--classic,
+#menuLayer #modeMenu.is-online-host .mode-menu__btn--advanced,
 #menuLayer #modeMenu.is-online-guest .mode-menu__btn--play,
 #menuLayer #modeMenu.is-online-guest .mode-menu__btn--classic,
 #menuLayer #modeMenu.is-online-guest .mode-menu__btn--advanced { display: none; }
@@ -4611,6 +4625,7 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
    по умолчанию у «Send link». Это решает resolveModeButton в коде.
    У гостя выбирать нечего: там одна кнопка, а вместо остального — картинка. Правил у него
    тоже нет, поэтому уходят и те самолётики, что стоят у правил. */
+#menuLayer #modeMenu.is-online-host .mm-plane--rules,
 #menuLayer #modeMenu.is-online-guest .mm-plane--mode,
 #menuLayer #modeMenu.is-online-guest .mm-plane--rules { display: none; }
 
