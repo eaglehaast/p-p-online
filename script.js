@@ -1352,8 +1352,17 @@ function buildTransferWinnerText(player, options = {}) {
     : `${winnerName} WINS\nTHE ROUND`;
 }
 
+function buildTransferTurnPlane(player, sideClass) {
+  const plane = document.createElement("img");
+  plane.className = `transfer-turn-plane ${sideClass}`;
+  plane.src = PLANE_ASSET_PATHS[player === "green" ? "green" : "blue"];
+  plane.alt = "";
+  plane.draggable = false;
+  plane.setAttribute("aria-hidden", "true");
+  return plane;
+}
+
 function buildTransferTurnTexts(player, roundValue) {
-  const turnName = player === "green" ? "GREEN" : "BLUE";
   const parsedRound = Number(roundValue);
   const safeRound = Number.isFinite(parsedRound) && parsedRound > 0
     ? Math.floor(parsedRound)
@@ -1361,8 +1370,25 @@ function buildTransferTurnTexts(player, roundValue) {
   const isDuelRound = typeof isDuelModeActive === "function" && isDuelModeActive();
   return {
     topText: isDuelRound ? DUEL_MODE_BANNER_TEXT : `ROUND ${safeRound}`,
-    bottomText: `${turnName} TURN`
+    bottomText: buildTransferTurnOwnerText(player),
   };
+}
+
+// Чей ход — словами, которые верны именно здесь.
+//
+// За одним устройством «GREEN TURN» — единственный возможный ответ: оба игрока тут, и
+// сказать «твой» нельзя, непонятно кому. По сети всё наоборот: цвет сам по себе не
+// говорит ничего, пока не знаешь, какой из них твой. Ровно на это и жаловались — «светится
+// рожа, пытаешься сходить, а ходит друг».
+//
+// Слова те же, что у знака в углах экрана, и это не совпадение: одно и то же состояние
+// должно называться одинаково, иначе игрок будет сверять два разных языка.
+function buildTransferTurnOwnerText(player) {
+  const color = player === "green" ? "green" : "blue";
+  if(onlineSession && typeof isLocalColor === "function"){
+    return isLocalColor(color) ? "YOUR TURN" : "THEIR TURN";
+  }
+  return `${color === "green" ? "GREEN" : "BLUE"} TURN`;
 }
 
 function stopTransferPanelAnimation() {
@@ -1514,7 +1540,24 @@ function showTransferFrame(options = {}) {
     roundLabel.className = "transfer-round-label";
     roundLabel.textContent = topTextValue;
     transferState.turnTopText.appendChild(roundLabel);
-    transferState.turnBottomText.textContent = bottomTextValue;
+    // Самолёты по обе стороны надписи — той стороны, чей ход. Шапка уже красится в её
+    // цвет, самолёт говорит то же самое картинкой: цвет читается быстрее слова, особенно
+    // если слово незнакомое.
+    //
+    // Самолёт берётся ИГРОВОЙ, тот самый, которым играют. Рисовать для плашки отдельный
+    // незачем, а узнавание получается даром: это не значок стороны, это твой самолёт.
+    //
+    // Смотрят они внутрь, на надпись: спрайт нарисован носом вверх, поэтому левому +90°,
+    // правому −90°. Так же стоят самолётики у пунктов меню.
+    transferState.turnBottomText.textContent = "";
+    const планка = document.createElement("span");
+    планка.className = "transfer-turn-label";
+    планка.textContent = bottomTextValue;
+    transferState.turnBottomText.appendChild(
+      buildTransferTurnPlane(player, "transfer-turn-plane--left"));
+    transferState.turnBottomText.appendChild(планка);
+    transferState.turnBottomText.appendChild(
+      buildTransferTurnPlane(player, "transfer-turn-plane--right"));
     transferState.turnTopText.classList.toggle("is-visible", mode === "turn");
     transferState.turnBottomText.classList.toggle("is-visible", mode === "turn");
   }
