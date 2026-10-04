@@ -232,6 +232,19 @@
                    src="ui_gamescreen/gamescreen_outside/gs_turn_arrow.webp" alt="" draggable="false">
             </div>
 
+            <!-- Та же надпись у противоположного края: между счётчиками очков такая же
+                 щель, как между счётчиками самолётов. Это не копия, а зеркало — стрелка
+                 показывает в поле, а поле от этого края лежит в другую сторону. -->
+            <div id="turnSignalMirror" class="turn-signal turn-signal--mirror"
+                 aria-hidden="true" hidden>
+              <img id="turnSignalMirrorWho" class="turn-signal__who"
+                   src="ui_gamescreen/gamescreen_outside/gs_turn_their.webp" alt="" draggable="false">
+              <img class="turn-signal__turn"
+                   src="ui_gamescreen/gamescreen_outside/gs_turn_turn.webp" alt="" draggable="false">
+              <img class="turn-signal__arrow"
+                   src="ui_gamescreen/gamescreen_outside/gs_turn_arrow.webp" alt="" draggable="false">
+            </div>
+
             <!-- "AI is thinking" goat hoof: peeks in from the left only while the
                  AI deliberates past a threshold, fidgets (stroking-its-beard
                  squeeze), then jerks back out the moment the move is ready. -->

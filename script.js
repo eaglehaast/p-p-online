@@ -11,6 +11,8 @@ const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
 const turnSignal      = document.getElementById("turnSignal");
 const turnSignalWho   = document.getElementById("turnSignalWho");
+const turnSignalMirror    = document.getElementById("turnSignalMirror");
+const turnSignalMirrorWho = document.getElementById("turnSignalMirrorWho");
 
 const DEBUG_RESIZE = false;
 const DEBUG_BOOT = false;
@@ -13080,9 +13082,17 @@ const FLAG_STATES = { ACTIVE: 'active', CAPTURED: 'captured' };
 let flagConfigs = [];
 let flags = [];
 
+// Полосы счёта. Ряды заполняют полосу ОТ КРАЯ ДО КРАЯ: последний ряд стоит ровно на её
+// границе. Поэтому «докуда полоса» — это и «докуда яйца», и середину кадра они занимали
+// целиком: 97..384 и 416..703, впритык к щели.
+//
+// В эту щель встал знак «чей ход», и счёт оказался у него под боком: в портрете вплотную,
+// в горизонтали — внахлёст. Полосы укорочены с внутреннего конца на 17 точек каждая;
+// внешние концы (97 и 703) остались на месте, длина у обеих одна, симметрия сохранена.
+// Между крайним яйцом и крайней кукурузиной теперь 66 точек, из них знак занимает 50.
 const MATCH_SCORE_CONTAINERS = {
-  blue: { x: 411, y: 97, width: 48, height: 287 },
-  green: { x: 411, y: 416, width: 48, height: 287 }
+  blue: { x: 411, y: 97, width: 48, height: 270 },
+  green: { x: 411, y: 433, width: 48, height: 270 }
 };
 
 const MATCH_SCORE_ASSETS = {
@@ -51676,12 +51686,22 @@ const TURN_SIGNAL_WHO_SRC = Object.freeze({
 let turnSignalShown = null;
 let turnSignalFlashTimer = null;
 
+// Знаков два, и живут они одной жизнью: одно состояние, один текст, одна вспышка.
+// Отличает их только сторона кадра, а значит и направление стрелки — это решают стили.
+// Здесь они перечислены парами «надпись — слово в ней», чтобы ни один не оказался забыт
+// при правке: забытый знак не сломает ничего, он просто начнёт врать.
+const ЗНАКИ_ХОДА = [
+  { знак: turnSignal, кто: turnSignalWho },
+  { знак: turnSignalMirror, кто: turnSignalMirrorWho },
+];
+
 function обновитьЗнакХода(color){
-  if(!(turnSignal instanceof HTMLElement)) return;
   // Вне онлайновой партии знака нет вовсе — ни в меню, ни в хот-сите, ни с компьютером.
   const нужен = Boolean(onlineSession) && Boolean(gameMode) && Boolean(color);
   if(!нужен){
-    turnSignal.hidden = true;
+    for(const { знак } of ЗНАКИ_ХОДА){
+      if(знак instanceof HTMLElement) знак.hidden = true;
+    }
     turnSignalShown = null;
     return;
   }
@@ -51694,16 +51714,18 @@ function обновитьЗнакХода(color){
   const мой = isLocalColor(color);
   const ближняя = color === getBoardViewSeat();
   const состояние = мой ? "your" : "their";
-  turnSignal.hidden = false;
-  turnSignal.classList.toggle("is-your", мой);
-  turnSignal.classList.toggle("is-their", !мой);
-  turnSignal.classList.toggle("is-near", ближняя);
-  turnSignal.classList.toggle("is-far", !ближняя);
-  if(turnSignalWho instanceof HTMLImageElement){
-    const адрес = TURN_SIGNAL_WHO_SRC[состояние];
-    // Сверяем по окончанию: в src лежит полный адрес, а у нас путь от корня.
-    if(!turnSignalWho.getAttribute("src")?.endsWith(адрес)){
-      turnSignalWho.setAttribute("src", адрес);
+  const адрес = TURN_SIGNAL_WHO_SRC[состояние];
+
+  for(const { знак, кто } of ЗНАКИ_ХОДА){
+    if(!(знак instanceof HTMLElement)) continue;
+    знак.hidden = false;
+    знак.classList.toggle("is-your", мой);
+    знак.classList.toggle("is-their", !мой);
+    знак.classList.toggle("is-near", ближняя);
+    знак.classList.toggle("is-far", !ближняя);
+    if(кто instanceof HTMLImageElement){
+      // Сверяем по окончанию: в src лежит полный адрес, а у нас путь от корня.
+      if(!кто.getAttribute("src")?.endsWith(адрес)) кто.setAttribute("src", адрес);
     }
   }
 
@@ -51714,12 +51736,19 @@ function обновитьЗнакХода(color){
 }
 
 function вспыхнутьЗнакомХода(){
-  if(!(turnSignal instanceof HTMLElement) || turnSignal.hidden) return;
-  turnSignal.classList.add("is-flash");
+  let вспыхнул = false;
+  for(const { знак } of ЗНАКИ_ХОДА){
+    if(!(знак instanceof HTMLElement) || знак.hidden) continue;
+    знак.classList.add("is-flash");
+    вспыхнул = true;
+  }
+  if(!вспыхнул) return;
   if(turnSignalFlashTimer !== null) clearTimeout(turnSignalFlashTimer);
   turnSignalFlashTimer = setTimeout(() => {
     turnSignalFlashTimer = null;
-    turnSignal.classList.remove("is-flash");
+    for(const { знак } of ЗНАКИ_ХОДА){
+      if(знак instanceof HTMLElement) знак.classList.remove("is-flash");
+    }
   }, TURN_SIGNAL_FLASH_MS);
 }
 
