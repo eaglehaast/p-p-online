@@ -9,6 +9,8 @@
 /* ======= DOM ======= */
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
+const turnSignal      = document.getElementById("turnSignal");
+const turnSignalWho   = document.getElementById("turnSignalWho");
 
 const DEBUG_RESIZE = false;
 const DEBUG_BOOT = false;
@@ -20874,6 +20876,8 @@ function resetGame(options = {}){
     gsBoardCanvas.style.display = "none";
     mantisIndicator.style.display = "none";
     goatIndicator.style.display = "none";
+    // Знак «чей ход» уходит вместе с мордами: в меню отвечать не на что.
+    обновитьЗнакХода(null);
     aimCanvas.style.display = "none";
     planeCanvas.style.display = "none";
   } else {
@@ -22558,7 +22562,14 @@ function handleStart(e) {
 
   const currentColor= turnColors[turnIndex];
   // Не наша сторона: ход ИИ или ход соперника по сети.
-  if(!isLocalColor(currentColor)) return;
+  //
+  // Молчать в ответ нельзя. Человек уже сделал движение — и молчание читается не как
+  // «сейчас не ты», а как «не нажалось»: он жмёт ещё раз, сильнее, и злится. Знак
+  // «чей ход» для того и заведён, чтобы ответить ровно в этот миг.
+  if(!isLocalColor(currentColor)){
+    вспыхнутьЗнакомХода();
+    return;
+  }
 
   if(flyingPoints.some(fp=>fp.plane.color===currentColor)) return;
 
@@ -51521,6 +51532,76 @@ function updateTurnIndicators(){
   // которое знает «чей сейчас ход» и вызывается на каждой перерисовке счёта, то есть
   // переживёт любую смену хода — хоть по выстрелу, хоть по загрузке партии.
   playerThinkGesture.sync(color);
+  // И знак «чей ход» — по той же причине: это единственное место, знающее ответ.
+  обновитьЗнакХода(color);
+}
+
+/* --- «Чей ход» словами: только по сети -----------------------------------
+//
+// За одним столом и против компьютера вопроса нет: обе морды на виду, и чья
+// загорелась — видно. По сети соперника не видно вовсе, а загоревшаяся морда
+// читается как «моя»: человек тянется ходить, игра молчит в ответ, и он решает, что
+// не нажалось, и жмёт ещё раз. Поэтому знак заводится ровно для онлайна.
+//
+// Громкость у него две. В покое тусклый: меняется он каждый ход, и яркий начал бы
+// раздражать уже во вторую партию. Вспыхивает только на событии — сменился ход или
+// человек ткнул не в свой. Постоянно мигать нельзя: к мигающему нельзя привыкнуть,
+// оно дёргает внимание на двухсотом ходу так же, как на первом, и при этом ничего не
+// сообщает — идёт одинаково и когда ты уже понял, и когда смотришь в другую сторону.
+*/
+const TURN_SIGNAL_FLASH_MS = 700;
+const TURN_SIGNAL_WHO_SRC = Object.freeze({
+  your: "ui_gamescreen/gamescreen_outside/gs_turn_your.webp",
+  their: "ui_gamescreen/gamescreen_outside/gs_turn_their.webp",
+});
+let turnSignalShown = null;
+let turnSignalFlashTimer = null;
+
+function обновитьЗнакХода(color){
+  if(!(turnSignal instanceof HTMLElement)) return;
+  // Вне онлайновой партии знака нет вовсе — ни в меню, ни в хот-сите, ни с компьютером.
+  const нужен = Boolean(onlineSession) && Boolean(gameMode) && Boolean(color);
+  if(!нужен){
+    turnSignal.hidden = true;
+    turnSignalShown = null;
+    return;
+  }
+
+  // Слово отвечает на «чей ход», стрелка — на «куда смотреть». Это РАЗНЫЕ вопросы, и
+  // ответы у них расходятся: в онлайне доска не разворачивается под место, у обоих
+  // зелёный внизу. Синий игрок ходит верхней половиной, и стрелка, привязанная к «моему
+  // ходу», показывала бы ему на половину соперника. Привязана она к половине: ближняя —
+  // та, что внизу экрана, она принадлежит getBoardViewSeat().
+  const мой = isLocalColor(color);
+  const ближняя = color === getBoardViewSeat();
+  const состояние = мой ? "your" : "their";
+  turnSignal.hidden = false;
+  turnSignal.classList.toggle("is-your", мой);
+  turnSignal.classList.toggle("is-their", !мой);
+  turnSignal.classList.toggle("is-near", ближняя);
+  turnSignal.classList.toggle("is-far", !ближняя);
+  if(turnSignalWho instanceof HTMLImageElement){
+    const адрес = TURN_SIGNAL_WHO_SRC[состояние];
+    // Сверяем по окончанию: в src лежит полный адрес, а у нас путь от корня.
+    if(!turnSignalWho.getAttribute("src")?.endsWith(адрес)){
+      turnSignalWho.setAttribute("src", адрес);
+    }
+  }
+
+  if(состояние !== turnSignalShown){
+    turnSignalShown = состояние;
+    вспыхнутьЗнакомХода();
+  }
+}
+
+function вспыхнутьЗнакомХода(){
+  if(!(turnSignal instanceof HTMLElement) || turnSignal.hidden) return;
+  turnSignal.classList.add("is-flash");
+  if(turnSignalFlashTimer !== null) clearTimeout(turnSignalFlashTimer);
+  turnSignalFlashTimer = setTimeout(() => {
+    turnSignalFlashTimer = null;
+    turnSignal.classList.remove("is-flash");
+  }, TURN_SIGNAL_FLASH_MS);
 }
 
 function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
