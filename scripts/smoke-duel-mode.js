@@ -56,12 +56,18 @@ const context = {
   blueScore: 0,
   greenScore: 0,
   duelModeActive: false,
+  // Онлайна тут нет: проверяется дуэль за одним устройством.
+  onlineSession: null,
+  isLocalColor: () => true,
   settings: { flagsEnabled: true },
   isArcadeInfiniteScoreMode: () => false
 };
 vm.createContext(context);
 
-for(const fnName of ['isDuelModeActive', 'isDuelScoreTie', 'shouldStartDuelRound', 'getDuelPlaneWorldPositions', 'getFlagConfigsForMap', 'isFlagsModeEnabled', 'buildTransferTurnTexts']){
+// buildTransferTurnOwnerText — нижняя строка плашки: за одним устройством «GREEN TURN», по
+// сети «YOUR TURN». Дуэльному режиму до неё дела нет, но без неё buildTransferTurnTexts не
+// соберётся.
+for(const fnName of ['isDuelModeActive', 'isDuelScoreTie', 'shouldStartDuelRound', 'getDuelPlaneWorldPositions', 'getFlagConfigsForMap', 'isFlagsModeEnabled', 'buildTransferTurnOwnerText', 'buildTransferTurnTexts']){
   vm.runInContext(extractFunctionSource(source, fnName), context);
 }
 

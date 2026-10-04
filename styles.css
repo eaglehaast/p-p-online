@@ -950,6 +950,41 @@ body, button {
     -webkit-text-stroke: 0;
   }
 
+  /* Самолёты по обе стороны надписи «чей ход».
+
+     Спрайт игровой и нарисован носом ВВЕРХ, поэтому разворачивается по месту: левому
+     +90°, правому −90°, и оба смотрят на надпись. Так же стоят самолётики у пунктов
+     меню — экран один, и повадки у них должны быть одни.
+
+     Размер привязан к кеглю надписи (em), а не задан числом: надпись сама тянется
+     между 32 и 39 точками, и самолёт, заданный числом, разъехался бы с ней на одном из
+     концов. */
+  .transfer-turn-plane {
+    height: 1.15em;
+    width: auto;
+    flex: 0 0 auto;
+    /* Спрайт квадратный 36x36, а самолёт в нём узкий — внутри картинки уже есть поля,
+       поэтому внешний отступ нужен маленький, иначе надпись уедет к центру. */
+    margin: 0 0.1em;
+    pointer-events: none;
+    user-select: none;
+    /* Тень под самолётом — своя, слабее текстовой: он картинка, а не буква. */
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+  }
+
+  .transfer-turn-plane--left {
+    transform: rotate(90deg);
+  }
+
+  .transfer-turn-plane--right {
+    transform: rotate(-90deg);
+  }
+
+  .transfer-turn-label {
+    /* Надпись не должна подпрыгивать от того, что рядом встала картинка. */
+    line-height: 1;
+  }
+
   .transfer-frame-text--win {
     top: calc(((var(--transfer-content-y) + var(--transfer-zone-win-y)) / var(--transfer-frame-height)) * 100%);
     height: calc((var(--transfer-zone-win-height) / var(--transfer-frame-height)) * 100%);
