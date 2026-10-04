@@ -943,7 +943,13 @@ body, button {
   .transfer-frame-text--turn-bottom {
     top: calc(((var(--transfer-content-y) + var(--transfer-zone-main-y)) / var(--transfer-frame-height)) * 100%);
     height: calc((var(--transfer-zone-main-height) / var(--transfer-frame-height)) * 100%);
-    font-size: clamp(32px, 3.2vw, 39px);
+    /* Кегль уменьшен, чтобы рядом с надписью поместились самолёты.
+       Было clamp(32px, 3.2vw, 39px) — и на десктопе они вываливались за плашку.
+       Причина в том, что кегль тут считается от ширины ОКНА, а плашка — от кадра: на
+       большом экране буквы растут, а доска нет. Замер на 1440: «GREEN TURN» занимал 486
+       точек из 554 доступных, самолёты (по 81) уходили за край на 34 с каждой стороны.
+       На 30px надпись занимает 374, и остаётся по 60 на самолёт. */
+    font-size: clamp(24px, 2.5vw, 30px);
     color: #e8d6b0;
     letter-spacing: 1.2px;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
