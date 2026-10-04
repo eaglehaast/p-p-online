@@ -89,14 +89,51 @@ export function isMessageTooLarge(message){
   return measureMessageBytes(message) > RELAY_MAX_MESSAGE_BYTES;
 }
 
+// Сколько ключ держит ОПУСТЕВШЕЕ место за собой.
+//
+// Ключ заведён ради одного: вернуть место тому, у кого оборвалась связь или кто
+// перезагрузил страницу. Это занимает секунды: лестница повторных попыток у клиента —
+// 0.5, 1, 2, 4, 8, 15 секунд, то есть шесть попыток укладываются в полминуты. Минута —
+// вдвое больше, с запасом.
+//
+// Держать дольше нельзя, и это выяснилось на живой игре. Хозяин теперь возвращается в ТУ
+// ЖЕ комнату, а не заводит новую (ссылка не должна умирать от перезагрузки). Место же
+// закреплялось за ключом навсегда — и зелёное место оставалось записано на ключ вчерашнего
+// гостя. Новый друг по той же ссылке получал seat_taken, у хозяина «Play» не загорался
+// никогда. Выглядело как «онлайн сломался».
+//
+// Длиннее делать нечего: за этот срок ключ защищает ровно от одного — что посторонний с
+// подсмотренной ссылкой займёт место, пока хозяин места переподключается. Вернувшийся
+// позже сядет и так: место к тому времени просто ничьё, и выгонять его некому.
+//
+// Пока место ЗАНЯТО живым соединением, срок не идёт вовсе: посторонний с подсмотренной
+// ссылкой не вытеснит того, кто сидит.
+export const RELAY_SEAT_HOLD_MS = 60_000;
+
 export function createRoom(){
   return {
     seats: { blue: null, green: null },
-    // Ключ места: кто занял первым, тот его и назначил. Живёт, пока живёт комната.
+    // Ключ места: кто занял первым, тот его и назначил.
     seatKeys: { blue: null, green: null },
+    // Когда место опустело. null — оно занято или ещё ни разу не занималось.
+    seatFreedAt: { blue: null, green: null },
     kept: Object.create(null),
     joinCount: 0,
   };
+}
+
+// Держит ли ключ это место прямо сейчас.
+//
+// Держит, пока место занято живым соединением, и ещё RELAY_SEAT_HOLD_MS после того, как
+// оно опустело. Дальше место ничьё: первый пришедший называет его своим.
+export function isSeatClaimHeld(room, seat, now = Date.now()){
+  if(room.seatKeys[seat] === null || room.seatKeys[seat] === undefined) return false;
+  if(room.seats[seat] !== null) return true;
+  const опустело = room.seatFreedAt[seat];
+  // Про опустевшее место неизвестно когда — считаем, что давно: иначе комната, пережившая
+  // сон, снова держала бы место вечно.
+  if(опустело === null || опустело === undefined) return false;
+  return (now - опустело) <= RELAY_SEAT_HOLD_MS;
 }
 
 // Сесть за место.
@@ -112,7 +149,7 @@ export function createRoom(){
 //
 // Вытесненное соединение возвращается наружу: закрыть его — дело вызывающего, комната
 // сокетов не знает.
-export function joinRoom(room, { seat, version, connection, key }){
+export function joinRoom(room, { seat, version, connection, key, now = Date.now() }){
   if(!RELAY_SEATS.includes(seat)){
     return { ok: false, error: RELAY_ERRORS.BAD_SEAT };
   }
@@ -124,17 +161,19 @@ export function joinRoom(room, { seat, version, connection, key }){
   }
 
   const known = room.seatKeys[seat];
-  if(known === null || known === undefined){
-    // Место свободно с самого начала: первый пришедший его и называет своим.
+  if(!isSeatClaimHeld(room, seat, now)){
+    // Место свободно: либо за ним никого не было, либо прежний хозяин ключа давно ушёл.
+    // Первый пришедший называет его своим.
     room.seatKeys[seat] = key;
   } else if(known !== key){
-    // Чужой с чужим ключом. Отказ, а не вытеснение: именно этим посторонний и отличается
-    // от вернувшегося.
+    // Чужой с чужим ключом по горячим следам. Отказ, а не вытеснение: именно этим
+    // посторонний и отличается от вернувшегося.
     return { ok: false, error: RELAY_ERRORS.SEAT_TAKEN };
   }
 
   const evicted = room.seats[seat];
   room.seats[seat] = connection;
+  room.seatFreedAt[seat] = null;
   room.joinCount += 1;
 
   // Порядок важен: настройки должны примениться до снимка, иначе гость на мгновение
@@ -177,10 +216,12 @@ export function routeEnvelope(room, seat, envelope){
 //
 // Только если за ним всё ещё это же соединение: пока закрывался старый сокет, место мог
 // занять он же, вернувшийся заново, — и очистка «по месту» вышвырнула бы живого игрока.
-export function leaveRoom(room, seat, connection){
+export function leaveRoom(room, seat, connection, now = Date.now()){
   if(!RELAY_SEATS.includes(seat)) return false;
   if(room.seats[seat] !== connection) return false;
   room.seats[seat] = null;
+  // Отсюда и пойдёт срок, который ключ ещё держит это место за собой.
+  room.seatFreedAt[seat] = now;
   return true;
 }
 

@@ -84,6 +84,16 @@ export class Room {
         const key = keys.get(`key:${seat}`);
         if(key) this.room.seatKeys[seat] = key;
       }
+
+      // И время, когда место опустело: ключ держит его за собой не вечно, а полтора
+      // десятка секунд сверх последней попытки переподключиться. Без хранилища эта
+      // отметка не пережила бы сон, и место снова оказалось бы закреплено навсегда —
+      // в точности та поломка, ради которой срок и заведён.
+      const отпущены = await state.storage.get(RELAY_SEATS.map((seat) => `freed:${seat}`));
+      for(const seat of RELAY_SEATS){
+        const когда = отпущены.get(`freed:${seat}`);
+        if(typeof когда === "number") this.room.seatFreedAt[seat] = когда;
+      }
     });
   }
 
@@ -105,9 +115,13 @@ export class Room {
     // молчит минутами, и без него платить пришлось бы за круглосуточно висящий сокет.
     this.state.acceptWebSocket(server, [seat]);
 
-    // Ключ запоминаем ПОСЛЕ успешного входа: joinRoom мог его и отвергнуть.
+    // Ключ запоминаем ПОСЛЕ успешного входа: joinRoom мог его и отвергнуть. Вместе с ним
+    // снимаем отметку «место опустело тогда-то»: оно занято снова, и срок не идёт.
     this.state.storage.put(`key:${seat}`, this.room.seatKeys[seat]).catch((error) => {
       console.warn("[room] не удалось запомнить ключ места", { seat, error });
+    });
+    this.state.storage.delete(`freed:${seat}`).catch((error) => {
+      console.warn("[room] не удалось снять отметку об уходе", { seat, error });
     });
 
     // Прежнее соединение на этом месте закрываем ПОСЛЕ того, как новое принято: иначе
@@ -172,10 +186,22 @@ export class Room {
   webSocketClose(socket){
     // Оставшемуся надо сказать, что он остался один: молчание соперника иначе
     // неотличимо от долгого раздумья.
-    if(leaveRoom(this.room, this.state.getTags(socket)[0], socket)) this.broadcastPresence();
+    this.уход(socket);
   }
 
   webSocketError(socket){
-    if(leaveRoom(this.room, this.state.getTags(socket)[0], socket)) this.broadcastPresence();
+    this.уход(socket);
+  }
+
+  уход(socket){
+    const seat = this.state.getTags(socket)[0];
+    if(!leaveRoom(this.room, seat, socket)) return;
+    // Сначала сказать оставшемуся, потом записывать: ждёт человек, а не хранилище.
+    this.broadcastPresence();
+    // Отметку об уходе кладём в хранилище: по ней проснувшаяся комната поймёт, что ключ
+    // этого места уже отпустил его, и не станет держать место за ушедшим вечно.
+    this.state.storage.put(`freed:${seat}`, this.room.seatFreedAt[seat]).catch((error) => {
+      console.warn("[room] не удалось запомнить время ухода", { seat, error });
+    });
   }
 }
