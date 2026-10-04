@@ -4599,6 +4599,58 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
 #menuLayer #modeMenu.is-online-guest .mode-menu__btn--computer,
 #menuLayer #modeMenu.is-online-guest .mode-menu__btn--online { display: none; }
 
+/* Ответ на «Send link».
+
+   Оформление взято у подсказок инвентаря — теми же переменными, а не классом: так же
+   сделан round-banner, и по той же причине. Подсказка инвентаря живёт на игровом экране,
+   позиционируется относительно слота и знает про края поля; здесь ничего этого не нужно,
+   нужен только её вид.
+
+   Место — под «Cancel», по центру. Там пусто до самой подписи автора (719), так что
+   надпись никуда не упирается и ничего не толкает.
+
+   Текст короткий и в одну-две строки: это ответ на нажатие, а не инструкция. Висит пару
+   секунд и уходит сам — нажимать «ок» на сообщении, которое ничего не спрашивает, не надо
+   никому. */
+#menuLayer #modeMenu .lobby-toast {
+  position: absolute;
+  top: 392px;
+  left: 110px;
+  width: 240px;
+  margin: 0;
+  padding: var(--inventory-tooltip-padding, 8px 12px);
+  box-sizing: border-box;
+  background: var(--inventory-tooltip-background, rgba(210,190,150,0.97));
+  color: var(--inventory-tooltip-color, #251d14);
+  font-family: var(--inventory-tooltip-font-family, "Palatino Linotype", Palatino, serif);
+  font-size: var(--inventory-tooltip-font-size, 12px);
+  font-weight: var(--inventory-tooltip-font-weight, 700);
+  line-height: var(--inventory-tooltip-line-height, 1.4);
+  text-align: center;
+  white-space: pre-line;
+  border-radius: var(--inventory-tooltip-border-radius, 6px);
+  border: var(--inventory-tooltip-border, 1px solid rgba(90,65,40,0.35));
+  box-shadow: var(--inventory-tooltip-box-shadow, 0 8px 18px rgba(0,0,0,0.18));
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+#menuLayer #modeMenu .lobby-toast[hidden] {
+  display: none;
+}
+
+#menuLayer #modeMenu .lobby-toast.is-visible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #menuLayer #modeMenu .lobby-toast {
+    transition: none;
+  }
+}
+
 /* В лобби нет ни «Play», ни правил — ни у кого.
 
    «Play» убрана потому, что нажимать было не о чем: решение играть принято в тот миг,

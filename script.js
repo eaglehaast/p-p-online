@@ -7722,6 +7722,7 @@ const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
 const onlineSendLinkBtn = document.getElementById("onlineSendLinkBtn");
 const onlineCancelBtn = document.getElementById("onlineCancelBtn");
+const lobbyToast = document.getElementById("lobbyToast");
 // На чём в лобби стоят самолётики. В остальном меню они показывают выбранный режим; здесь
 // показывать нечего, кроме того, на чём выбор, — а выбор тут по умолчанию один: позвать
 // друга. Держится отдельно от lastModeSelectionButton нарочно: тот помнит выбор РЕЖИМА и
@@ -9007,6 +9008,43 @@ function createOnlineRoom(){
 // Зазывать нажать «Send link» имеет смысл ровно пока это единственное, что тут можно
 // сделать: соперника нет, а выбор стоит на самой кнопке. Пришёл соперник — внимание
 // переходит к загоревшемуся «Play»; нажали «Cancel» — самолётики уже улетают к нему.
+/* --- Ответ на нажатие в лобби --------------------------------------------
+//
+// Короткая строка под «Cancel»: что произошло и что делать дальше. Сама гаснет.
+//
+// Нужна она ровно потому, что «Send link» отвечал молчанием. На телефоне открывалась
+// системная шторка — она и была ответом; на компьютере ссылка уезжала в буфер, и не
+// происходило ВООБЩЕ НИЧЕГО. Человек не знал ни сработало ли, ни где теперь ссылка.
+*/
+const LOBBY_TOAST_MS = 3200;
+let lobbyToastTimer = null;
+
+function показатьПодсказкуЛобби(текст){
+  if(!(lobbyToast instanceof HTMLElement)) return false;
+  if(lobbyToastTimer !== null) clearTimeout(lobbyToastTimer);
+  lobbyToast.textContent = String(текст ?? "");
+  lobbyToast.hidden = false;
+  // Кадр между появлением в разметке и зажиганием: без него переход не успевает начаться,
+  // и надпись возникает рывком.
+  requestAnimationFrame(() => lobbyToast.classList.add("is-visible"));
+  lobbyToastTimer = setTimeout(() => {
+    lobbyToastTimer = null;
+    спрятатьПодсказкуЛобби();
+  }, LOBBY_TOAST_MS);
+  return true;
+}
+
+function спрятатьПодсказкуЛобби(){
+  if(!(lobbyToast instanceof HTMLElement)) return false;
+  if(lobbyToastTimer !== null){
+    clearTimeout(lobbyToastTimer);
+    lobbyToastTimer = null;
+  }
+  lobbyToast.classList.remove("is-visible");
+  lobbyToast.hidden = true;
+  return true;
+}
+
 function обновитьЗазывание(){
   const меню = document.getElementById("modeMenu");
   if(!(меню instanceof HTMLElement)) return;
@@ -9030,6 +9068,9 @@ function applyOnlineMenuState(){
     }
   } else {
     onlineLobbyFocusBtn = null;
+    // Ушли из лобби — ответу на нажатие висеть негде и незачем: партия началась, или мы
+    // вернулись в меню. Иначе надпись переживёт смену экрана и повиснет поверх чужого.
+    спрятатьПодсказкуЛобби();
   }
   обновитьЗазывание();
   // Сказать им перелететь. Само по себе значение выше самолётики не двигает: место им
@@ -20973,6 +21014,40 @@ onlineBtn.addEventListener("click",()=>{
 // Скопировать значит: скопировать, свернуть игру, открыть переписку, вставить. Шторка —
 // один тап сразу в нужный чат, и на телефоне это вся разница между «позвал друга» и
 // «потом позову». Буфер обмена остаётся запасным путём: на десктопе шторки обычно нет.
+// Копирование ссылки в буфер.
+//
+// Способа два, и второй не наследие, а необходимость. Современный требует «безопасного
+// контекста»: по https он есть, а на домашнем сервере в локальной сети
+// (http://192.168.1.5:8080) его нет — там navigator.clipboard просто отсутствует. То есть
+// у того, кто поднял игру у себя и зовёт друга из соседней комнаты, работал бы только
+// запасной.
+async function скопироватьСсылку(link){
+  try {
+    if(navigator.clipboard?.writeText){
+      await navigator.clipboard.writeText(link);
+      return true;
+    }
+  } catch(_error){
+    // Разрешения не дали — пробуем старым способом, он спрашивает иначе.
+  }
+  try {
+    const поле = document.createElement("textarea");
+    поле.value = link;
+    // За краем экрана, но в документе: из display:none и из скрытого поля копировать
+    // нечего — выделение в них не живёт.
+    поле.setAttribute("readonly", "readonly");
+    поле.style.cssText = "position:fixed;top:-1000px;left:-1000px;opacity:0;";
+    document.body.appendChild(поле);
+    поле.select();
+    поле.setSelectionRange(0, link.length);
+    const получилось = document.execCommand("copy");
+    поле.remove();
+    return получилось === true;
+  } catch(_error){
+    return false;
+  }
+}
+
 if(onlineSendLinkBtn instanceof HTMLElement){
   onlineSendLinkBtn.addEventListener("click", async () => {
     const link = buildOnlineInviteLink();
@@ -20982,6 +21057,9 @@ if(onlineSendLinkBtn instanceof HTMLElement){
         await navigator.share({ title: "Inky Planes", text: "Let's play", url: link });
         onlineInviteSent = true;
         обновитьЗазывание();
+        // Системная шторка сама по себе ответ, но она уже закрылась — а вопрос «ушло или
+        // нет» остаётся. Одна строка его снимает.
+        показатьПодсказкуЛобби("Link sent.\nWaiting for your friend…");
         return;
       }
     } catch(_error){
@@ -20989,13 +21067,20 @@ if(onlineSendLinkBtn instanceof HTMLElement){
       // человек передумал.
       return;
     }
-    try {
-      await navigator.clipboard.writeText(link);
+
+    if(await скопироватьСсылку(link)){
       onlineInviteSent = true;
       обновитьЗазывание();
-    } catch(_error){
-      console.warn("[online] ссылку не удалось ни отправить, ни скопировать", link);
+      // Главное здесь — второе предложение. «Скопировано» отвечает на «сработало ли», но
+      // не на «и что теперь»: ссылка лежит в буфере, которого не видно.
+      показатьПодсказкуЛобби("Link copied.\nPaste it to a friend.");
+      return;
     }
+
+    console.warn("[online] ссылку не удалось ни отправить, ни скопировать", link);
+    // Молчать тут нельзя тем более: не сработало ничего, и без этой строки человек будет
+    // жать снова и снова.
+    показатьПодсказкуЛобби("Could not copy the link.\nCheck clipboard permissions.");
   });
 }
 

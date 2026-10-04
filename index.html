@@ -109,6 +109,11 @@
               <span class="visually-hidden">Cancel</span>
             </button>
 
+            <!-- Ответ на «Send link». Без него нажатие выглядело как ничего не делающее:
+                 ссылка уезжала в буфер молча, и человек не знал ни что она там, ни что
+                 делать дальше. role="status" — чтобы это услышал и экранный диктор. -->
+            <p id="lobbyToast" class="lobby-toast" role="status" aria-live="polite" hidden></p>
+
             <img id="onlineWaitingLabel" class="mode-menu__waiting-label"
                  src="ui_mainmenu/mm_waiting.png" alt="Waiting for the host to start"
                  width="173" height="36" draggable="false" />
