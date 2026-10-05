@@ -1067,6 +1067,7 @@ const transferFrameState = {
   winText: null,
   turnTopText: null,
   turnBottomText: null,
+  turnRow: null,
   hideTimerId: null,
   hideAnimationId: 0,
   panelAnimation: null,
@@ -1358,6 +1359,34 @@ function buildTransferWinnerText(player, options = {}) {
     : `${winnerName} WINS\nTHE ROUND`;
 }
 
+// Строка «чей ход» вместе с самолётами не вылезает за доску. Ни при каком окне, ни при
+// каком шрифте.
+//
+// Считать это заранее нельзя, и попытка кончилась плохо: кегль надписи задан от ширины
+// ОКНА, а доска масштабируется под КАДР, то есть по высоте. На окне 1440x900 строка
+// влезала, на 1440x700 — нет; та же ширина, другая пропорция. Сверх того ширина букв
+// зависит от шрифта, который нашёлся у игрока: на макбуке это настоящий Palatino, в моей
+// проверке — подставной. Числа, подобранные на одной машине, на другой врут.
+//
+// Поэтому не подбираем, а меряем по факту и ужимаем. Ужимается строка целиком, вместе с
+// самолётами: надпись, ужатая отдельно, разъехалась бы с ними по размеру.
+const TRANSFER_TURN_ROW_FIT = 0.96;
+
+function вписатьСтрокуХода() {
+  const ряд = transferFrameState.turnRow;
+  const коробка = transferFrameState.turnBottomText;
+  if (!(ряд instanceof HTMLElement) || !(коробка instanceof HTMLElement)) return 1;
+
+  ряд.style.transform = "";
+  const доступно = коробка.getBoundingClientRect().width * TRANSFER_TURN_ROW_FIT;
+  const нужно = ряд.getBoundingClientRect().width;
+  if (!(доступно > 0) || !(нужно > 0)) return 1;
+
+  const доля = Math.min(1, доступно / нужно);
+  if (доля < 1) ряд.style.transform = `scale(${доля.toFixed(4)})`;
+  return доля;
+}
+
 function buildTransferTurnPlane(player, sideClass) {
   const plane = document.createElement("img");
   plane.className = `transfer-turn-plane ${sideClass}`;
@@ -1559,11 +1588,14 @@ function showTransferFrame(options = {}) {
     const планка = document.createElement("span");
     планка.className = "transfer-turn-label";
     планка.textContent = bottomTextValue;
-    transferState.turnBottomText.appendChild(
-      buildTransferTurnPlane(player, "transfer-turn-plane--left"));
-    transferState.turnBottomText.appendChild(планка);
-    transferState.turnBottomText.appendChild(
-      buildTransferTurnPlane(player, "transfer-turn-plane--right"));
+    // Строка собирается в один узел, чтобы её можно было ЦЕЛИКОМ ужать под доску.
+    const ряд = document.createElement("span");
+    ряд.className = "transfer-turn-row";
+    ряд.appendChild(buildTransferTurnPlane(player, "transfer-turn-plane--left"));
+    ряд.appendChild(планка);
+    ряд.appendChild(buildTransferTurnPlane(player, "transfer-turn-plane--right"));
+    transferState.turnBottomText.appendChild(ряд);
+    transferState.turnRow = ряд;
     transferState.turnTopText.classList.toggle("is-visible", mode === "turn");
     transferState.turnBottomText.classList.toggle("is-visible", mode === "turn");
   }
@@ -1571,6 +1603,8 @@ function showTransferFrame(options = {}) {
   if (transferState.layer instanceof HTMLElement) {
     transferState.layer.classList.add("is-visible");
   }
+  // Ужать строку, если она не влезла. Кадром позже: до показа у доски нет размеров.
+  requestAnimationFrame(() => вписатьСтрокуХода());
   if (transferState.panel instanceof HTMLElement) {
     const showDuration = mode === "win"
       ? TRANSFER_FRAME_WIN_SHOW_DURATION_MS
