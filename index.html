@@ -62,29 +62,36 @@
                  перехватывает нажатия по кнопкам под собой. -->
             <div id="authorLinksBackdrop" class="author-links__backdrop" hidden></div>
             <div id="authorLinks" class="author-links" role="dialog" aria-modal="true"
-                 aria-labelledby="authorLinksTitle" hidden>
-              <p id="authorLinksTitle" class="author-links__title">eaglehaast</p>
-              <!-- Строка без адреса не показывается: пустой href — это ссылка в никуда,
+                 aria-label="Author links" hidden>
+              <!-- Слева — ЧТО это, справа — КУДА ведёт. Левый столбец весь из названий
+                   категорий, а не вперемешку с именами сайтов: «Instagram — instagram.com»
+                   говорило дважды одно и то же, пока соседи говорили разное.
+
+                   Строка без адреса не показывается: пустой href — это ссылка в никуда,
                    а мёртвая строка в таком окошке хуже отсутствующей. Появится адрес —
-                   строка зажжётся сама. -->
+                   строка зажжётся сама.
+
+                   Строки обёрнуты в отдельный блок не для красоты: проценты в полях
+                   считаются от РОДИТЕЛЯ, а у листа есть max-width — на узком экране он
+                   уже родителя, и поля, заданные ему самому, разъезжаются с его же
+                   клеткой. Ширина и поля внутреннего блока считаются от листа. -->
+              <div class="author-links__sheet">
               <a class="author-links__row" href="https://www.instagram.com/eaglehaast/"
                  target="_blank" rel="noopener noreferrer">
-                <span class="author-links__icon" aria-hidden="true"></span>
-                <span class="author-links__name">Instagram</span>
+                <span class="author-links__name">Social</span>
                 <span class="author-links__where"></span>
               </a>
               <a class="author-links__row" href="https://github.com/eaglehaast/p-p-online"
                  target="_blank" rel="noopener noreferrer">
-                <span class="author-links__icon" aria-hidden="true"></span>
                 <span class="author-links__name">Source code</span>
                 <span class="author-links__where"></span>
               </a>
               <a class="author-links__row" href="https://ko-fi.com/eaglehaast"
                  target="_blank" rel="noopener noreferrer">
-                <span class="author-links__icon" aria-hidden="true"></span>
                 <span class="author-links__name">Support</span>
                 <span class="author-links__where"></span>
               </a>
+              </div>
             </div>
 
             <!-- Онлайн: лобби — не панель, а те же пункты меню.
