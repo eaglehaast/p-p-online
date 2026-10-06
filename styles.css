@@ -3606,13 +3606,17 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
   width: 300px;
   aspect-ratio: 3 / 2;
   max-width: calc(100% - 40px);
-  padding: 16px 16px 14px;
-  /* Высота у листа своя и от текста не зависит, а строк на нём бывает то одна, то три:
-     пустые адреса не показываются. Поэтому написанное держится серединой листа — иначе при
-     одной строке под ней остаётся пустая половина, и лист выглядит недописанным. */
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  /* Поля — по клетке листа, а не круглым числом точек.
+
+     Клетка замерена по самой картинке (1200x800): линии по горизонтали идут с шагом
+     72.86 от 87.5, по вертикали — с шагом 71.06 от 68.5. В долях листа это 6.07% и
+     8.88%, и держатся они при любом его размере, потому что картинка растянута 100%.
+
+     Слева и справа поле доведено до ВТОРОЙ вертикальной линии (13.25% и 13.71%): первая
+     проходит слишком близко к рваному краю, и строка на ней читалась бы как сползшая.
+     Сверху и снизу — до второй горизонтальной. */
+  padding: 0;
+  display: block;
   background-image: var(--author-links-paper);
   background-position: center;
   background-size: 100% 100%;
@@ -3625,14 +3629,31 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 
 #menuLayer #modeMenu .author-links[hidden] { display: none; }
 
-#menuLayer #modeMenu .author-links__title {
-  margin: 0 0 12px;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: lowercase;
-  opacity: 0.85;
+/* Поля — по клетке листа, а не круглым числом точек.
+
+   Клетка замерена по самой картинке (1200x800): линии по горизонтали идут с шагом 72.86
+   от 87.5, по вертикали — с шагом 71.06 от 68.5. В долях листа это 6.07% и 8.88%, и
+   держатся они при любом его размере, потому что картинка растянута 100%.
+
+   Поле слева доведено до ВТОРОЙ вертикальной линии (13.25%): первая проходит слишком
+   близко к рваному краю, и строка на ней читалась бы как сползшая. Справа — до второй с
+   того края, то есть ширина 73.04%.
+
+   Блок отдельный, а не поля на самом листе, и это не вкусовщина: проценты в полях
+   считаются от РОДИТЕЛЯ, а у листа есть max-width. На узком экране лист уже родителя, и
+   его собственные поля в процентах разъезжаются с его же клеткой. Ширина и поля
+   внутреннего блока считаются от листа — и держатся.
+
+   Высота у листа своя и от текста не зависит, а строк бывает то одна, то три: пустые
+   адреса не показываются. Поэтому написанное держится серединой листа — иначе при одной
+   строке под ней остаётся пустая половина, и лист выглядит недописанным. */
+#menuLayer #modeMenu .author-links__sheet {
+  margin-left: 13.25%;
+  width: 73.04%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 /* Строка во всю ширину и высотой в 44 точки: это кнопка под палец, а не строчка текста.
@@ -3641,9 +3662,13 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 #menuLayer #modeMenu .author-links__row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 4px;
+  gap: 0.42em;
+  /* Высота строки — ровно две клетки листа (2 x 8.88%). Тогда строки стоят по линейкам, а
+     не поперёк них, и остаются такими же, если одна из них спрячется: шаг кратен клетке,
+     и при любом числе строк столбик съезжает тоже на целую клетку. */
+  height: 17.76%;
+  min-height: 0;
+  padding: 0;
   /* Строки — записи НА листе, а не кнопки поверх него. Подчёркивания у них своего нет
      нарочно: лист разлинован сам, и вторая линейка поверх нарисованной не совпала бы с ней
      по шагу — вышло бы две сетки внахлёст. Кнопка с заливкой тем более превратила бы лист
@@ -3653,24 +3678,18 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
   background: transparent;
   color: inherit;
   text-decoration: none;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-/* Значок строки. Картинки пока нет ни у одной — место под неё держится пустым, чтобы
-   подписи стояли в столбик уже сейчас. Появится файл — добавится одно правило с url. */
-#menuLayer #modeMenu .author-links__icon {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  background-repeat: no-repeat;
-  background-size: contain;
-  background-position: center;
+  /* Один кегль и один вес на всю строку. Разной величины тут были не «два шрифта ради
+     красоты», а подпорка: крупное жирное слово объясняло, что оно главное. На листе в три
+     строки объяснять это некому — порядок и так виден. Остаётся тон: адрес тише, но тем
+     же шрифтом и тем же размером. */
+  font-size: 13px;
+  font-weight: 600;
 }
 
 #menuLayer #modeMenu .author-links__name { flex: 1 1 auto; }
 
-#menuLayer #modeMenu .author-links__row + .author-links__row { margin-top: 2px; }
+/* Между строками ничего не добавляется: шаг задан высотой самой строки, и любая добавка
+   увела бы их с линеек. */
 
 #menuLayer #modeMenu .author-links__row:hover {
   background: var(--author-links-row-background-hover, rgba(240,227,196,0.98));
@@ -3683,16 +3702,22 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
 
 #menuLayer #modeMenu .author-links__row[hidden] { display: none; }
 
-/* Куда ведёт — мелко и вторым планом. Строка уводит из игры, и честно показать куда
-   дешевле, чем объяснять словами. */
+/* Куда ведёт. Строка уводит из игры, и честно показать куда дешевле, чем объяснять
+   словами.
+
+   Тем же шрифтом и тем же кеглем, что и название, — тише только тоном. Слеши рисуются
+   стилями, а не лежат в разметке: так их нельзя забыть в новой строке. */
 #menuLayer #modeMenu .author-links__where {
   flex: none;
-  font-size: 11px;
-  font-weight: 400;
-  opacity: 0.62;
+  opacity: 0.55;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+#menuLayer #modeMenu .author-links__where::before {
+  content: "// ";
+  opacity: 0.6;
 }
 
 #menuLayer #modeMenu .mode-menu__btn--editor {
