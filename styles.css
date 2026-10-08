@@ -3678,6 +3678,44 @@ html.is-board-landscape #playerThinkHoof.is-sparrow-south .ai-think-hoof__frame-
    Высота у листа своя и от текста не зависит, а строк бывает то одна, то три: пустые
    адреса не показываются. Поэтому написанное держится серединой листа — иначе при одной
    строке под ней остаётся пустая половина, и лист выглядит недописанным. */
+/* Толстые линейки — отдельно и сильнее.
+
+   Их пять: по вертикали на 233.5, 599.5 и 964 из 1200, по горизонтали на 210.5 и 566 из
+   800. Шире тонких втрое (9-10 точек против 3) и втрое насыщеннее (синева 125-136 против
+   36-47) — общего подмеса им мало, они так и остаются элементом, а не фоном. Та, что
+   проходит по началу слов, читается хуже всех, хотя по замеру она даже не самая сильная:
+   левая 125, правая 136.
+
+   Стоят они ровно через пять клеток, поэтому гасятся повторяющимся градиентом, а не
+   пятью полосами поимённо. Числа — доли листа: шаг 365.25/1200 и 355.5/800, полуширина
+   взята чуть больше замеренной, чтобы накрыть размытые края.
+
+   Слой тот же по устройству, что и общий подмес: цвет бумаги, режим «только светлее»,
+   вырезка по листу, под текстом. */
+#menuLayer #modeMenu .author-links::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(to right,
+      transparent 0 18.8%,
+      var(--author-links-bold-mute, rgba(248, 233, 207, 0.6)) 18.8% 20.1%,
+      transparent 20.1% 30.44%),
+    repeating-linear-gradient(to bottom,
+      transparent 0 25.6%,
+      var(--author-links-bold-mute, rgba(248, 233, 207, 0.6)) 25.6% 27%,
+      transparent 27% 44.44%);
+  mix-blend-mode: lighten;
+  -webkit-mask-image: var(--author-links-paper);
+  mask-image: var(--author-links-paper);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
 #menuLayer #modeMenu .author-links__sheet {
   margin-left: 13.25%;
   width: 73.04%;
