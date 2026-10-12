@@ -167,6 +167,7 @@ function buildTable(){
       extractFunctionSource(source, 'getSharedRandomFraction'),
       extractFunctionSource(source, 'isOnlineMatchActive'),
       extractFunctionSource(source, 'startOnlineSession'),
+      'function clearOnlineRoomFromAddress(){ return ""; }',
       extractFunctionSource(source, 'stopOnlineSession'),
       extractFunctionSource(source, 'sendMove'),
       extractFunctionSource(source, 'sendState'),

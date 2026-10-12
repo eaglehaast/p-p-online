@@ -8333,8 +8333,19 @@ function parseOnlineSeatFromSearch(search, location = window.location){
 }
 
 // Хозяин комнаты — тот, кто её ЗАВЁЛ, а не тот, кому достался синий цвет.
+//
+// Спрашиваем об этом саму комнату: она называет место хозяина в каждом сообщении о том,
+// кто за столом. Нажатие Online знает только своя вкладка, а завтра за стол вернутся оба
+// по ссылкам — и нажимавшего не окажется ни одного.
+//
+// До первого слова комнаты (и со старым ретранслятором, который о хозяине молчит) в силе
+// своё нажатие: иначе между входом и первым сообщением о присутствии хозяина не было бы
+// вовсе, и настройки комнаты не уехали бы.
 function isOnlineHost(){
-  return onlineSession?.host === true;
+  if(!onlineSession) return false;
+  const хозяинСтола = onlineSession.hostSeat;
+  if(хозяинСтола === "blue" || хозяинСтола === "green") return onlineSession.seat === хозяинСтола;
+  return onlineSession.host === true;
 }
 
 function getOnlineSeatColor(){
@@ -8560,9 +8571,14 @@ function startOnlineSession(options = {}){
     seat: seatInfo.seat,
     room: seatInfo.room,
     relay: seatInfo.relay || null,
-    // Хозяин ли я этой комнате. Ставится здесь и только здесь: завести комнату можно
-    // одним способом — нажать Online. Всё, что приезжает из адреса, — это гость.
+    // Завёл ли комнату я сам, в этой вкладке. Это ответ до первого слова комнаты; дальше
+    // хозяина называет она (hostSeat), потому что завтра оба придут по ссылкам.
     host: options.host === true,
+    // Место хозяина стола, как его называет комната. null — ещё не говорила.
+    hostSeat: null,
+    // Уехали ли уже настройки комнаты. Хозяином можно СТАТЬ по слову комнаты, позже
+    // входа, — и тогда настройки надо отправить в тот момент, а не при входе.
+    settingsPublished: false,
     // Свой номер нужен, чтобы не принять собственный пакет за чужой. BroadcastChannel
     // себе не отвечает, но ретранслятор при переподключении досылает придержанное, и без
     // этой проверки мы бы разыграли собственный ход второй раз.
@@ -8632,6 +8648,7 @@ function stopOnlineSession(){
   onlineRoomPlacements = null;
   // И край возвращается игроку: в комнате он был решением комнаты, а не его.
   releaseBoardViewAfterOnline();
+  clearOnlineRoomFromAddress();
   return true;
 }
 
@@ -8777,6 +8794,7 @@ function collectOnlineRoomSettings(){
 
 function publishOnlineRoomSettings(){
   if(!onlineSession || !isOnlineHost()) return false;
+  onlineSession.settingsPublished = true;
   return sendSettings(collectOnlineRoomSettings());
 }
 
@@ -9051,6 +9069,49 @@ function forgetHostRoom(){
   }
 }
 
+// Адрес страницы — это и есть ссылка на свой стол.
+//
+// У гостя она была с самого начала: он по ней и пришёл. У хозяина адрес оставался
+// пустым, потому что он входит кнопкой, — и вернуться за тот же стол завтра он не мог
+// ничем, кроме двенадцатичасовой памяти браузера. Теперь комната с местом прописываются
+// в адрес, и у обоих появляется одинаковый способ вернуться: открыть ту же страницу.
+//
+// replaceState, а не push: лобби — не отдельный шаг истории, и «назад» не должно водить
+// по его состояниям.
+function writeOnlineRoomIntoAddress(session){
+  if(!session) return "";
+  const location = window.location;
+  const params = new URLSearchParams(location?.search || "");
+  params.set("room", session.room);
+  params.set("seat", session.seat);
+  const адрес = `${location.pathname}?${params.toString()}${location.hash || ""}`;
+  try {
+    window.history?.replaceState?.(null, "", адрес);
+  } catch(_error){
+    // Внутри чужой рамки адрес менять может быть нельзя. Тогда возвращение за стол
+    // останется на памяти браузера — хуже, чем было, не станет.
+  }
+  return адрес;
+}
+
+// Ушли из-за стола — адрес обязан перестать на него звать. Иначе перезагрузка молча
+// усадит обратно в комнату, из которой только что вышли.
+function clearOnlineRoomFromAddress(){
+  const location = window.location;
+  const params = new URLSearchParams(location?.search || "");
+  if(!params.has("room") && !params.has("seat")) return "";
+  params.delete("room");
+  params.delete("seat");
+  const хвост = params.toString();
+  const адрес = `${location.pathname}${хвост ? `?${хвост}` : ""}${location.hash || ""}`;
+  try {
+    window.history?.replaceState?.(null, "", адрес);
+  } catch(_error){
+    // См. выше: не вышло — значит не вышло.
+  }
+  return адрес;
+}
+
 // Ссылка для друга: та же страница, но место — свободное.
 function buildOnlineInviteLink(){
   if(!onlineSession) return "";
@@ -9085,7 +9146,18 @@ function receiveOnlinePresence(payload){
   if(!seats || typeof seats !== "object") return false;
   const wasFull = isOnlineTableFull();
   onlinePresence = { blue: seats.blue === true, green: seats.green === true };
-  console.log("[online] за столом", onlinePresence);
+
+  // Хозяина стола называет комната — до того, как мы решим, кому начинать партию.
+  if(onlineSession && (payload.host === "blue" || payload.host === "green")){
+    onlineSession.hostSeat = payload.host;
+  }
+  console.log("[online] за столом", { ...onlinePresence, хозяин: onlineSession?.hostSeat ?? null });
+
+  // Хозяином можно стать здесь: вернувшись завтра по ссылке, своего нажатия Online мы не
+  // помним, и настройки комнаты уехали бы от неё впустую.
+  if(isOnlineHost() && onlineSession && !onlineSession.settingsPublished){
+    publishOnlineRoomSettings();
+  }
 
   refreshOnlineLobbyUi();
 
@@ -9121,6 +9193,7 @@ function startOnlineMatchAsHost(){
   if(gameMode) return false;              // уже играем
   if(!isOnlineTableFull()) return false;  // играть не с кем
   postOnlineEnvelope("start", { start: true });
+  забытьПриехавшееДоНачала();
   applyOnlineMenuState();
   handlePlayStart();
   return true;
@@ -9129,6 +9202,7 @@ function startOnlineMatchAsHost(){
 function receiveOnlineStart(){
   if(!onlineSession || isOnlineHost()) return false;
   if(gameMode) return false;
+  забытьПриехавшееДоНачала();
   applyOnlineMenuState();
   handlePlayStart();
   return true;
@@ -9150,6 +9224,7 @@ function createOnlineRoom(){
   const session = startOnlineSession({ seat, room, relay, host: true });
   if(!session) return null;
   rememberHostRoom(room, seat);
+  writeOnlineRoomIntoAddress(session);
   showOnlineLobby();
   return session;
 }
@@ -9407,6 +9482,24 @@ function publishOnlineStateAfterTurn(movedColor){
 // полёта, оборвал бы его на середине: у отправителя полёт уже кончился, у нас ещё нет.
 function isBoardIdleForRemoteInput(){
   return flyingPoints.length === 0 && !isAimSessionActive();
+}
+
+// Начинается партия — всё, что приехало ДО неё, устарело.
+//
+// Комната придерживает последний снимок и отдаёт его каждому, кто вошёл: на этом держится
+// возвращение после обрыва. Но тот же снимок достаётся и тем, кто просто вернулся за свой
+// стол назавтра, — а у них впереди НОВАЯ партия. Применённый после начала, он роняет
+// свежую доску во вчерашнюю позицию.
+//
+// Замерено на стенде: сыграли, закрыли обе страницы, открыли их же назавтра — и оба
+// получали раунд 7 и счёт 5:3 вместо начала, при том что доска была расставлена заново.
+//
+// Комната выбрасывает придержанный снимок, едва увидит «start», но тем, кто вошёл раньше,
+// он к этому мигу уже отдан. Поэтому очередь чистится и здесь, у себя.
+function забытьПриехавшееДоНачала(){
+  const было = onlineInbox.length;
+  onlineInbox = [];
+  return было;
 }
 
 function drainOnlineInbox(){

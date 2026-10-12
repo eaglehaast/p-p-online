@@ -102,6 +102,7 @@ function устройство(край){
     'this.api = { startOnlineSession, isOnlineHost, buildOnlineInviteLink,',
     '  сесть: (opts) => startOnlineSession({ createTransport: () => провод, ...opts }),',
     '  место: () => onlineSession && onlineSession.seat,',
+    '  слово: (место) => { onlineSession.hostSeat = место; },',
     '  вызовы: () => вызовы,',
     '  край: () => getBoardViewSeat() };',
   ].join('\n'), sandbox);
@@ -180,11 +181,31 @@ function устройство(край){
 // константа осталась ровно одним — чтением старых записей о своей комнате.
 {
   const роль = extractFunctionSource(source, 'isOnlineHost');
-  assert(/onlineSession\?\.host === true/.test(роль),
-    '6: роль хозяина читается не из сессии');
-  for(const слово of ['blue', 'green', 'getOnlineSeatColor', 'ONLINE_LEGACY_HOST_SEAT']){
+  assert(/onlineSession\.hostSeat/.test(роль),
+    '6: роль хозяина больше не спрашивают у комнаты — вернувшись завтра по ссылке, '
+    + 'хозяином не окажется никто');
+  assert(/onlineSession\.host === true/.test(роль),
+    '6b: пропал запасной ответ на время до первого слова комнаты — настройки комнаты '
+    + 'не успеют уехать');
+  assert(/onlineSession\.seat === хозяинСтола/.test(роль),
+    '6b2: решает не совпадение своего места с хозяйским — значит решает что-то другое');
+  for(const слово of ['getOnlineSeatColor', 'ONLINE_LEGACY_HOST_SEAT']){
     assert(!роль.includes(слово),
-      `6b: роль хозяина снова смотрит на «${слово}» — значит она опять привязана к цвету`);
+      `6c0: роль хозяина снова смотрит на «${слово}» — значит она опять привязана к цвету`);
+  }
+
+  // Цвет в функции упоминается, но только как проверка, что комната назвала осмысленное
+  // место. Что это не признак хозяина — доказывается поведением: при хозяине-зелёном
+  // синий не хозяин, и наоборот.
+  for(const [хозяинСтола, моё, ждём] of [['green', 'blue', false], ['green', 'green', true],
+                                         ['blue', 'green', false], ['blue', 'blue', true]]){
+    const я = устройство('green');
+    я.сесть({ seat: моё, room: 'стол', host: true });   // своё нажатие говорит «хозяин»
+    я.слово(хозяинСтола);                                // а комната — своё
+    assert(я.isOnlineHost() === ждём,
+      `6c: комната назвала хозяином ${хозяинСтола}, место своё ${моё} — роль вышла `
+      + `${я.isOnlineHost()}, а должна ${ждём}. Слово комнаты важнее своего нажатия: `
+      + 'иначе вчерашний хозяин и сегодняшний начнут спорить');
   }
 
   const мест = source.split('ONLINE_LEGACY_HOST_SEAT').length - 1;

@@ -118,6 +118,15 @@ export function createRoom(){
     // Когда место опустело. null — оно занято или ещё ни разу не занималось.
     seatFreedAt: { blue: null, green: null },
     kept: Object.create(null),
+    // Чей это стол. Первый, кто за него сел, называет его своим — и это держится всю
+    // жизнь комнаты: переживает сон, уход обоих и ночь.
+    //
+    // Роль нужна, чтобы решал кто-то ОДИН: чьи настройки в силе и когда начинается
+    // партия. Сам клиент знать этого не может. Он знает только, нажимал ли Online в
+    // ЭТОЙ вкладке, — а завтра за стол вернутся оба по ссылкам, и нажимавшего не будет
+    // ни одного. Двое гостей сели бы за полный стол, и начать партию стало бы некому:
+    // оба смотрели бы на «ожидание» и ничего бы не происходило.
+    hostSeat: null,
     joinCount: 0,
   };
 }
@@ -176,6 +185,11 @@ export function joinRoom(room, { seat, version, connection, key, now = Date.now(
   room.seatFreedAt[seat] = null;
   room.joinCount += 1;
 
+  // Стол достаётся первому севшему и больше не переходит. Назначить его позже уже не по
+  // чему: завтра оба придут одинаково — по ссылке.
+  const hostAssigned = room.hostSeat === null;
+  if(hostAssigned) room.hostSeat = seat;
+
   // Порядок важен: настройки должны примениться до снимка, иначе гость на мгновение
   // окажется со снимком чужой партии на своей карте.
   //
@@ -187,7 +201,14 @@ export function joinRoom(room, { seat, version, connection, key, now = Date.now(
     .filter((envelope) => envelope !== undefined)
     .map((envelope) => ({ ...envelope, replay: true }));
 
-  return { ok: true, evicted: evicted === connection ? null : evicted, replay, seatKeys: { ...room.seatKeys } };
+  return {
+    ok: true,
+    evicted: evicted === connection ? null : evicted,
+    replay,
+    seatKeys: { ...room.seatKeys },
+    hostSeat: room.hostSeat,
+    hostAssigned,
+  };
 }
 
 // Куда переслать пакет и надо ли его придержать.
@@ -204,11 +225,20 @@ export function routeEnvelope(room, seat, envelope){
     room.kept[type] = envelope;
   }
 
+  // «start» — начинается НОВАЯ партия, и придержанный снимок описывает ту, которой уже
+  // нет. Отдать его вошедшему значило бы уронить свежее начало во вчерашнюю позицию.
+  // Комнате для этого не нужно знать, что внутри снимка: достаточно, что он устарел.
+  //
+  // Настройки при этом остаются: они правила стола, а не партии.
+  const droppedState = type === "start" && room.kept.state !== undefined;
+  if(droppedState) delete room.kept.state;
+
   const otherSeat = seat === "blue" ? "green" : "blue";
   return {
     deliverTo: room.seats[otherSeat] ? otherSeat : null,
     connection: room.seats[otherSeat] ?? null,
     kept,
+    droppedState,
   };
 }
 
@@ -253,7 +283,9 @@ export function buildPresenceEnvelope(room){
     from: "room",
     seat: "room",
     seq: room.presenceSeq,
-    payload: { seats: getRoomPresence(room) },
+    // Вместе с присутствием едет и хозяин стола: по нему каждый клиент понимает, его ли
+    // это роль. Решать это самому клиенту не по чему — см. hostSeat в createRoom.
+    payload: { seats: getRoomPresence(room), host: room.hostSeat ?? null },
   };
 }
 
