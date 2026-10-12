@@ -8273,9 +8273,19 @@ const ONLINE_RELAY_URL = "wss://paper-wings-relay.eaglehaast.workers.dev";
 // Через сколько пытаться снова после обрыва. Растёт, но не бесконечно: интернет,
 // пропавший на полчаса, не повод переставать проверять.
 const ONLINE_RECONNECT_DELAYS_MS = Object.freeze([500, 1000, 2000, 4000, 8000, 15000]);
-// Создатель комнаты — синий. Не потому, что синий главнее, а потому, что решать, чьи
-// настройки в силе, должен ОДИН из двоих, и выбран он должен быть заранее.
-const ONLINE_HOST_SEAT = "blue";
+// Роль хозяина комнаты нужна одна на двоих и заранее: решать, чьи настройки в силе и
+// когда начинать, должен ОДИН из двоих. Раньше её отмечали цветом — создатель всегда
+// синий, — и со стороны это выглядело так, будто в онлайне цвет не выбирается вовсе:
+// кнопка смены стороны в меню есть, а на комнату она не влияла.
+//
+// Теперь роль живёт в самой сессии (onlineSession.host), и ставит её тот, кто нажал
+// Online. Из адреса она приехать не может: по ссылке приходят в гости, а не хозяевами.
+// Цвет после этого свободен — хозяин играет тем краем, который выбрал в меню, а другу в
+// ссылке уезжает противоположный.
+//
+// Прежние записи о своей комнате цвета не хранили, и заведены они были под синего: ровно
+// это и значит здесь «как было раньше».
+const ONLINE_LEGACY_HOST_SEAT = "blue";
 // Версия того, что едет по проводу. Пакет чужой версии отвергается ЦЕЛИКОМ: иначе игра
 // разложила бы его наполовину и разъехалась бы у двоих тихо и не сразу. Ровно то же
 // правило, что у снимка партии (MATCH_STATE_VERSION).
@@ -8322,8 +8332,9 @@ function parseOnlineSeatFromSearch(search, location = window.location){
   return { seat, room, relay };
 }
 
-function isOnlineHostSeat(){
-  return getOnlineSeatColor() === ONLINE_HOST_SEAT;
+// Хозяин комнаты — тот, кто её ЗАВЁЛ, а не тот, кому достался синий цвет.
+function isOnlineHost(){
+  return onlineSession?.host === true;
 }
 
 function getOnlineSeatColor(){
@@ -8549,6 +8560,9 @@ function startOnlineSession(options = {}){
     seat: seatInfo.seat,
     room: seatInfo.room,
     relay: seatInfo.relay || null,
+    // Хозяин ли я этой комнате. Ставится здесь и только здесь: завести комнату можно
+    // одним способом — нажать Online. Всё, что приезжает из адреса, — это гость.
+    host: options.host === true,
     // Свой номер нужен, чтобы не принять собственный пакет за чужой. BroadcastChannel
     // себе не отвечает, но ретранслятор при переподключении досылает придержанное, и без
     // этой проверки мы бы разыграли собственный ход второй раз.
@@ -8600,10 +8614,10 @@ function startOnlineSession(options = {}){
     seat: onlineSession.seat,
     room: onlineSession.room,
     transport: transport.kind,
-    хозяин: isOnlineHostSeat(),
+    хозяин: isOnlineHost(),
   });
   // Настройки создателя комнаты уезжают сразу и лежат в комнате, пока гость не придёт.
-  if(isOnlineHostSeat()) publishOnlineRoomSettings();
+  if(isOnlineHost()) publishOnlineRoomSettings();
   return onlineSession;
 }
 
@@ -8762,7 +8776,7 @@ function collectOnlineRoomSettings(){
 }
 
 function publishOnlineRoomSettings(){
-  if(!onlineSession || !isOnlineHostSeat()) return false;
+  if(!onlineSession || !isOnlineHost()) return false;
   return sendSettings(collectOnlineRoomSettings());
 }
 
@@ -8771,7 +8785,7 @@ function applyOnlineRoomSettings(roomSettings){
   // Создатель свои же настройки обратно не принимает, и принимаются они один раз:
   // переподключившись, гость получит их снова — но партия к тому времени уже идёт, и
   // перенастраивать её посреди хода было бы хуже, чем ничего не делать.
-  if(isOnlineHostSeat() || onlineSession.settingsApplied) return false;
+  if(isOnlineHost() || onlineSession.settingsApplied) return false;
   onlineSession.settingsApplied = true;
 
   // Порядок: сначала правила (они перечитывают настройки из своего хранилища), потом
@@ -8997,28 +9011,35 @@ function resolveSeatKey(room, seat){
 const ONLINE_HOST_ROOM_STORAGE_KEY = "online.hostRoom";
 const ONLINE_HOST_ROOM_TTL_MS = 12 * 60 * 60 * 1000;
 
-function rememberHostRoom(room){
+// Вместе с комнатой запоминается и цвет, под который она заведена: в выписанной ссылке
+// стоит противоположное место, и без цвета нельзя понять, верна ли ещё та ссылка.
+function rememberHostRoom(room, seat){
   try {
     window.localStorage?.setItem(ONLINE_HOST_ROOM_STORAGE_KEY,
-      JSON.stringify({ room, at: Date.now() }));
+      JSON.stringify({ room, seat, at: Date.now() }));
   } catch(_error){
     // Приватный режим: комната проживёт до перезагрузки — то есть ровно до той беды, от
     // которой это и спасает. Лучше, чем ничего: внутри одной страницы ссылка верна.
   }
 }
 
+// Возвращает { room, seat } или null. Цвета в записи может не быть — её сделала прежняя
+// версия игры, когда хозяин всегда был синим; это и есть её цвет.
 function recallHostRoom(){
   try {
     const сохранённое = JSON.parse(
       window.localStorage?.getItem(ONLINE_HOST_ROOM_STORAGE_KEY) || "null");
     const room = сохранённое?.room;
-    if(typeof room !== "string" || !room) return "";
+    if(typeof room !== "string" || !room) return null;
     const когда = сохранённое?.at;
-    if(!Number.isFinite(когда) || Date.now() - когда > ONLINE_HOST_ROOM_TTL_MS) return "";
-    return room.slice(0, ONLINE_ROOM_MAX_LENGTH);
+    if(!Number.isFinite(когда) || Date.now() - когда > ONLINE_HOST_ROOM_TTL_MS) return null;
+    const seat = ONLINE_SEAT_COLORS.includes(сохранённое?.seat)
+      ? сохранённое.seat
+      : ONLINE_LEGACY_HOST_SEAT;
+    return { room: room.slice(0, ONLINE_ROOM_MAX_LENGTH), seat };
   } catch(_error){
     // Испорченная запись — то же самое, что её отсутствие: заведём новую комнату.
-    return "";
+    return null;
   }
 }
 
@@ -9096,7 +9117,7 @@ function receiveOnlinePresence(payload){
 // сообщением по тому же проводу — раньше любого хода, потому что порядок пакетов
 // сохраняется.
 function startOnlineMatchAsHost(){
-  if(!onlineSession || !isOnlineHostSeat()) return false;
+  if(!onlineSession || !isOnlineHost()) return false;
   if(gameMode) return false;              // уже играем
   if(!isOnlineTableFull()) return false;  // играть не с кем
   postOnlineEnvelope("start", { start: true });
@@ -9106,7 +9127,7 @@ function startOnlineMatchAsHost(){
 }
 
 function receiveOnlineStart(){
-  if(!onlineSession || isOnlineHostSeat()) return false;
+  if(!onlineSession || isOnlineHost()) return false;
   if(gameMode) return false;
   applyOnlineMenuState();
   handlePlayStart();
@@ -9116,12 +9137,19 @@ function receiveOnlineStart(){
 function createOnlineRoom(){
   const relay = getConfiguredRelayUrl();
   if(!relay) return null;
+  // Цвет — тот, что выбран в меню: за какой край игрок сел, тем и играет. Хозяином он тут
+  // не потому, что синий, а потому, что комнату завёл он.
+  const seat = getBoardViewSeat();
   // Своя прежняя комната, если она ещё в силе: ровно на неё выписана ссылка, которая,
-  // возможно, уже лежит у друга в переписке. Новая заводится, только когда прежней нет.
-  const room = recallHostRoom() || makeOnlineRoomId();
-  const session = startOnlineSession({ seat: ONLINE_HOST_SEAT, room, relay });
+  // возможно, уже лежит у друга в переписке. Новая заводится, когда прежней нет — или
+  // когда игрок с тех пор сменил край: в выписанной ссылке стоит место напротив, и после
+  // смены она зовёт друга ровно туда, где теперь сидим мы. Держаться за такую комнату
+  // незачем, она всё равно встретила бы друга отказом «место занято».
+  const прежняя = recallHostRoom();
+  const room = прежняя && прежняя.seat === seat ? прежняя.room : makeOnlineRoomId();
+  const session = startOnlineSession({ seat, room, relay, host: true });
   if(!session) return null;
-  rememberHostRoom(room);
+  rememberHostRoom(room, seat);
   showOnlineLobby();
   return session;
 }
@@ -9171,7 +9199,7 @@ function спрятатьПодсказкуЛобби(){
 function обновитьЗазывание(){
   const меню = document.getElementById("modeMenu");
   if(!(меню instanceof HTMLElement)) return;
-  const зовём = Boolean(onlineSession) && !gameMode && isOnlineHostSeat()
+  const зовём = Boolean(onlineSession) && !gameMode && isOnlineHost()
     && !isOnlineTableFull() && !onlineInviteSent
     && onlineLobbyFocusBtn === onlineSendLinkBtn;
   меню.classList.toggle("is-online-alone", зовём);
@@ -9181,9 +9209,9 @@ function applyOnlineMenuState(){
   const меню = document.getElementById("modeMenu");
   if(!(меню instanceof HTMLElement)) return;
   const вЛобби = Boolean(onlineSession) && !gameMode;
-  меню.classList.toggle("is-online-host", вЛобби && isOnlineHostSeat());
-  меню.classList.toggle("is-online-guest", вЛобби && !isOnlineHostSeat());
-  if(вЛобби && isOnlineHostSeat()){
+  меню.classList.toggle("is-online-host", вЛобби && isOnlineHost());
+  меню.classList.toggle("is-online-guest", вЛобби && !isOnlineHost());
+  if(вЛобби && isOnlineHost()){
     // Значение сбрасывается только на входе. Иначе прилетевшее в эти же миллисекунды
     // известие о соперника вернуло бы самолётики с «Cancel» обратно на полпути.
     if(onlineLobbyFocusBtn !== onlineSendLinkBtn && onlineLobbyFocusBtn !== onlineCancelBtn){
@@ -9445,8 +9473,8 @@ function getOnlineStatus(){
     transport: onlineSession.transport.kind,
     relay: onlineSession.relay,
     связь: onlineSession.transport.status?.() ?? "unknown",
-    хозяин: isOnlineHostSeat(),
-    настройкиКомнаты: isOnlineHostSeat() ? "свои" : (onlineSession.settingsApplied ? "приняты" : "ждём"),
+    хозяин: isOnlineHost(),
+    настройкиКомнаты: isOnlineHost() ? "свои" : (onlineSession.settingsApplied ? "приняты" : "ждём"),
     sent: onlineSession.outSeq,
     lastSeen: { ...onlineSession.lastSeenSeqByPeer },
     inbox: onlineInbox.length,
@@ -52014,7 +52042,7 @@ function startRematchRound(){
   // Создатель комнаты сразу присылает снимок нового матча. Обе стороны запускают его
   // одним и тем же кодом и должны получить одно и то же — но проверять это догадкой
   // дороже, чем прислать один пакет.
-  if(onlineSession && isOnlineHostSeat()){
+  if(onlineSession && isOnlineHost()){
     sendState(serializeMatchState());
   }
 }

@@ -46,8 +46,10 @@ function extractFunctionSource(text, name){
 //
 // Хранилище общее на весь стенд — это и есть localStorage, переживающий перезагрузку:
 // «перезагрузка» здесь означает собрать стенд заново поверх того же хранилища.
-function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_000_000_000 }){
+// Край — то, что выбрано в меню этого устройства: комната заводится под него.
+function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_000_000_000 }, край = 'green'){
   const sandbox = {
+    boardViewSeat: край,
     Object, Array, Math, JSON, String, Number, URLSearchParams, URL, crypto,
     console: { log: () => {}, warn: () => {} },
     Date: { now: () => сейчас.ms },
@@ -61,12 +63,14 @@ function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_0
       },
     },
     // Сессия не нужна: проверяется выбор имени комнаты, а не то, что с ним дальше делают.
-    startOnlineSession: ({ room, seat }) => ({ room, seat }),
+    startOnlineSession: ({ room, seat, host }) => ({ room, seat, host }),
     showOnlineLobby: () => {},
   };
   vm.createContext(sandbox);
   vm.runInContext([
-    source.match(/const ONLINE_HOST_SEAT = "[^"]*";/)[0],
+    source.match(/const ONLINE_LEGACY_HOST_SEAT = "[^"]*";/)[0],
+    source.match(/const ONLINE_SEAT_COLORS = Object\.freeze\(\[[^\]]*\]\);/)[0],
+    extractFunctionSource(source, 'getBoardViewSeat'),
     source.match(/const ONLINE_ROOM_ID_ALPHABET = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_LENGTH = \d+;/)[0],
     source.match(/const ONLINE_ROOM_MAX_LENGTH = \d+;/)[0],
@@ -92,7 +96,9 @@ function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_0
   const хранилище = new Map();
   const до = makeDevice(хранилище).api.createOnlineRoom();
   assert(до && до.room, '1: комната не завелась вовсе');
-  assert(до.seat === 'blue', '1a: хозяин садится не на место хозяина');
+  assert(до.seat === 'green',
+    `1a: хозяин сел на «${до.seat}», а в меню у него выбран зелёный край`);
+  assert(до.host === true, '1c: заведя комнату, игрок не отметил себя её хозяином');
 
   const после = makeDevice(хранилище).api.createOnlineRoom();
   assert(после.room === до.room,
@@ -150,7 +156,51 @@ function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_0
     '4b: суточной давности комната всё ещё в силе — срок перестал действовать');
 }
 
-// === 5. Испорченная запись не ломает онлайн ===
+// === 5. Сменил край — комната заводится заново ===
+//
+// В ссылке, уже отправленной другу, стоит место НАПРОТИВ нашего. Пересев, мы заняли бы
+// ровно то место, куда она зовёт друга, и комната встретила бы его отказом «место
+// занято» — при живой и правильной на вид ссылке.
+//
+// Поэтому смена края равна «завести новую комнату»: прежняя ссылка всё равно уже неверна,
+// и лучше выписать новую сразу, чем ждать, пока друг упрётся.
+{
+  const хранилище = new Map();
+  const зелёным = makeDevice(хранилище, { ms: 1_700_000_000_000 }, 'green').api.createOnlineRoom();
+  const синим = makeDevice(хранилище, { ms: 1_700_000_000_000 }, 'blue').api.createOnlineRoom();
+  assert(синим.seat === 'blue', '5: после смены края хозяин сел на прежнее место');
+  assert(синим.room !== зелёным.room,
+    '5b: сменив край, хозяин остался в прежней комнате — ссылка зовёт друга ровно на то '
+    + 'место, которое он теперь занял сам');
+
+  // А без смены края — всё как было: та же комната переживает перезагрузку.
+  const сноваСиним = makeDevice(хранилище, { ms: 1_700_000_000_000 }, 'blue').api.createOnlineRoom();
+  assert(сноваСиним.room === синим.room,
+    '5c: комната сменилась на ровном месте — проверка 1 держится только на отсутствии '
+    + 'памяти о крае');
+}
+
+// === 6. Запись прежней версии читается как синяя ===
+//
+// Записи, сделанные до того, как цвет стал выбираться, цвета не хранят, и заведены они
+// были под синего хозяина. Прочитать их как «зелёные» значило бы на ровном месте считать
+// ссылку верной там, где она зовёт друга на наше же место.
+{
+  const хранилище = new Map([['online.hostRoom',
+    JSON.stringify({ room: 'oldroom', at: 1_700_000_000_000 })]]);
+  const синим = makeDevice(хранилище, { ms: 1_700_000_000_000 }, 'blue').api.createOnlineRoom();
+  assert(синим.room === 'oldroom',
+    '6: запись прежней версии не признана своей — хозяин-синий потерял отправленную ссылку');
+
+  const хранилище2 = new Map([['online.hostRoom',
+    JSON.stringify({ room: 'oldroom', at: 1_700_000_000_000 })]]);
+  const зелёным = makeDevice(хранилище2, { ms: 1_700_000_000_000 }, 'green').api.createOnlineRoom();
+  assert(зелёным.room !== 'oldroom',
+    '6b: запись прежней версии прочитана как зелёная — а ссылка на ту комнату зовёт друга '
+    + 'на зелёное место, которое мы сами и заняли');
+}
+
+// === 7. Испорченная запись не ломает онлайн ===
 //
 // В localStorage попадает что угодно: чужое расширение, оборванная запись, ручная правка.
 // Цена ошибки здесь — не «забыли комнату», а «кнопка Online перестала работать».
