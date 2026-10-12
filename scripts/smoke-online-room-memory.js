@@ -82,6 +82,8 @@ function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_0
     extractFunctionSource(source, 'rememberHostRoom'),
     extractFunctionSource(source, 'recallHostRoom'),
     extractFunctionSource(source, 'forgetHostRoom'),
+    // Адрес страницы в этом стенде не проверяется — он живёт в smoke-online-same-table.
+    'function writeOnlineRoomIntoAddress(){ return ""; }',
     extractFunctionSource(source, 'createOnlineRoom'),
     'this.api = { createOnlineRoom, forgetHostRoom, recallHostRoom, makeOnlineRoomId };',
   ].join('\n'), sandbox);

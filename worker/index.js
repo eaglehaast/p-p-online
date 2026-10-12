@@ -94,6 +94,12 @@ export class Room {
         const когда = отпущены.get(`freed:${seat}`);
         if(typeof когда === "number") this.room.seatFreedAt[seat] = когда;
       }
+
+      // И чей это стол. Без хранилища проснувшаяся комната считала бы себя ничьей, и
+      // хозяином стал бы тот, кто первым постучался после сна, — а сон у пошаговой игры
+      // случается посреди партии.
+      const хозяин = await state.storage.get("hostSeat");
+      if(RELAY_SEATS.includes(хозяин)) this.room.hostSeat = хозяин;
     });
   }
 
@@ -123,6 +129,13 @@ export class Room {
     this.state.storage.delete(`freed:${seat}`).catch((error) => {
       console.warn("[room] не удалось снять отметку об уходе", { seat, error });
     });
+
+    // Хозяин стола записывается один раз — в тот единственный вход, который его назначил.
+    if(joined.hostAssigned){
+      this.state.storage.put("hostSeat", this.room.hostSeat).catch((error) => {
+        console.warn("[room] не удалось запомнить хозяина стола", { seat, error });
+      });
+    }
 
     // Прежнее соединение на этом месте закрываем ПОСЛЕ того, как новое принято: иначе
     // закрытие успело бы сработать как «игрок ушёл» и освободить только что занятое место.
@@ -177,6 +190,14 @@ export class Room {
         await this.state.storage.put(envelope.t, envelope);
       } catch(error){
         console.warn("[room] не удалось придержать пакет", { type: envelope?.t, error });
+      }
+    }
+    // Новая партия — старому снимку в хранилище делать нечего.
+    if(routed.droppedState){
+      try {
+        await this.state.storage.delete("state");
+      } catch(error){
+        console.warn("[room] не удалось выбросить старый снимок", { error });
       }
     }
     if(!routed.connection) return;
