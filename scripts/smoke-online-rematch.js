@@ -235,7 +235,7 @@ function makeTable(){
   const startFn = extractFunctionSource(source, 'startRematchRound');
   assert(/randomMapPairSequenceNumber = null/.test(startFn),
     '6f: запомненный выбор карты сбрасывается — иначе реванш пойдёт на карте прошлого матча');
-  assert(/isOnlineHostSeat\(\)/.test(startFn) && /sendState\(serializeMatchState\(\)\)/.test(startFn),
+  assert(/isOnlineHost\(\)/.test(startFn) && /sendState\(serializeMatchState\(\)\)/.test(startFn),
     '6g: создатель комнаты присылает снимок нового матча — проверять догадкой дороже, ' +
     'чем прислать один пакет');
 }

@@ -44,7 +44,12 @@ const markup = fs.readFileSync('index.html', 'utf8');
 const styles = fs.readFileSync('styles.css', 'utf8');
 
 // Стенд одного устройства: настоящий код лобби, последствия записываются.
-function makeSide(seat, { search = '', room = 'stand', origin = 'https://example.test', relayUrl = '' } = {}){
+//
+// Роль хозяина живёт в самой сессии и с цветом больше не связана. Здесь по умолчанию
+// оставлена прежняя пара (синий — хозяин): так короче, и ни одна проверка в этом файле не
+// про цвет. Что роль и цвет независимы, доказывает smoke-online-side-is-chosen.
+function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
+  origin = 'https://example.test', relayUrl = '' } = {}){
   const parsedOrigin = new URL(origin);
   const log = [];
   const sent = [];
@@ -53,7 +58,7 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
     console: { log: () => {}, warn: (...a) => log.push(['warn', ...a]) },
     gameMode: null,
     onlineSession: {
-      seat, room,
+      seat, room, host,
       transport: { kind: 'stand', status: () => 'online' },
     },
     window: { location: { origin, pathname: '/game/', search,
@@ -68,7 +73,6 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
   };
   vm.createContext(sandbox);
   vm.runInContext([
-    source.match(/const ONLINE_HOST_SEAT = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_ALPHABET = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_LENGTH = \d+;/)[0],
     'let onlinePresence = null;',
@@ -84,14 +88,14 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
     extractFunctionSource(source, 'buildOnlineInviteLink'),
     extractFunctionSource(source, 'isOnlineTableFull'),
     extractFunctionSource(source, 'getOnlineSeatColor'),
-    extractFunctionSource(source, 'isOnlineHostSeat'),
+    extractFunctionSource(source, 'isOnlineHost'),
     extractFunctionSource(source, 'receiveOnlinePresence'),
     extractFunctionSource(source, 'startOnlineMatchAsHost'),
     extractFunctionSource(source, 'receiveOnlineStart'),
     extractFunctionSource(source, 'refreshOnlineLobbyUi'),
     extractFunctionSource(source, 'getOnlineTroubleText'),
     'this.api = { isOnlineAvailable, makeOnlineRoomId, buildOnlineInviteLink,',
-    '             getConfiguredRelayUrl, isRelayAddressAllowed, isOnlineHostSeat,',
+    '             getConfiguredRelayUrl, isRelayAddressAllowed, isOnlineHost,',
     '             isOnlineTableFull, receiveOnlinePresence, receiveOnlineStart,',
     '             startOnlineMatchAsHost, getOnlineTroubleText, refreshOnlineLobbyUi,',
     '             presence: () => onlinePresence };',
@@ -364,9 +368,8 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
       playBtn: null,
       applyMenuButtonSkin: () => {},
       gameMode: inGame ? 'online' : null,
-      onlineSession: { seat },
+      onlineSession: { seat, host: seat === 'blue' },
       onlinePresence: presence,
-      ONLINE_HOST_SEAT: 'blue',
       // Здесь проверяется онлайновый замок, поэтому карты считаем приехавшими: иначе
       // «Play» гасил бы второй замок, и проверка ничего не говорила бы про первый.
       mapsUnavailable: false,
@@ -380,7 +383,7 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
     vm.createContext(sandbox);
     vm.runInContext([
       extractFunctionSource(source, 'getOnlineSeatColor'),
-      extractFunctionSource(source, 'isOnlineHostSeat'),
+      extractFunctionSource(source, 'isOnlineHost'),
       extractFunctionSource(source, 'isOnlineTableFull'),
       extractFunctionSource(source, 'syncPlayButtonSkin'),
       'syncPlayButtonSkin(true); this.disabled = playBtn.disabled;',
@@ -520,7 +523,7 @@ function makeSide(seat, { search = '', room = 'stand', origin = 'https://example
 
   // Гаснуть оно обязано по трём поводам сразу.
   for(const [условие, зачем] of [
-    ['isOnlineHostSeat()', 'у гостя нажимать нечего — «Send link» ему не показывают'],
+    ['isOnlineHost()', 'у гостя нажимать нечего — «Send link» ему не показывают'],
     ['!isOnlineTableFull()', 'соперник пришёл, и внимание переходит к загоревшемуся «Play»'],
     ['!onlineInviteSent', 'друга уже позвали, дело сделано — дальше только ждать'],
     ['onlineLobbyFocusBtn === onlineSendLinkBtn', 'выбор ушёл с кнопки, звать больше не на что'],

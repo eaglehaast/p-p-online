@@ -49,7 +49,8 @@ const source = fs.readFileSync('script.js', 'utf8');
 const P = Number(source.match(/const ONLINE_PROTOCOL_VERSION = (\d+);/)[1]);
 
 // Клиентский стенд: одно «устройство» со своей копией онлайн-слоя.
-function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic', settings = null } = {}){
+function makeClient(seat, { room = 'stand', host = false, placements = {}, ruleset = 'classic',
+  settings = null } = {}){
   const log = [];
   const sent = [];
   const sandbox = {
@@ -133,7 +134,7 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
     source.match(/const ONLINE_CHANNEL_PREFIX = "[^"]*";/)[0],
     source.match(/const ONLINE_PROTOCOL_VERSION = \d+;/)[0],
     source.match(/const ONLINE_RELAY_URL = "[^"]*";/)[0],
-    source.match(/const ONLINE_HOST_SEAT = "[^"]*";/)[0],
+    source.match(/const ONLINE_LEGACY_HOST_SEAT = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_SETTING_KEYS = Object\.freeze\(\[[\s\S]*?\]\);/)[0],
     source.match(/const ONLINE_ROOM_SETTING_LEGACY_KEYS = Object\.freeze\(\{[\s\S]*?\}\);/)[0],
     'let onlineSession = null; let onlineInbox = []; let onlineTurnDraft = null;',
@@ -148,7 +149,7 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
     extractFunctionSource(source, 'isRemoteColor'),
     extractFunctionSource(source, 'resolveOnlineRelayAddress'),
     extractFunctionSource(source, 'parseOnlineSeatFromSearch'),
-    extractFunctionSource(source, 'isOnlineHostSeat'),
+    extractFunctionSource(source, 'isOnlineHost'),
     extractFunctionSource(source, 'getOnlineSeatColor'),
     extractFunctionSource(source, 'getSharedRandomFraction'),
     extractFunctionSource(source, 'isOnlineMatchActive'),
@@ -191,7 +192,7 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
     '  startOnlineSession, stopOnlineSession, receiveOnlineEnvelope, drainOnlineInbox,',
     '  publishOnlineTurnMove, publishOnlineStateAfterTurn, publishOnlineRoomSettings,',
     '  collectOnlineRoomSettings, applyOnlineRoomSettings, loadMapTesterPlacements,',
-    '  isOnlineHostSeat, isLocalColor, getSharedRandomFraction,',
+    '  isOnlineHost, isLocalColor, getSharedRandomFraction,',
     '  parseOnlineSeatFromSearch, resolveOnlineRelayAddress,',
     '  session: () => onlineSession,',
     '  inboxSize: () => onlineInbox.length,',
@@ -200,7 +201,9 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
   ].join('\n'), sandbox);
 
   const transport = sandbox.makeTransport();
-  sandbox.api.startOnlineSession({ seat, room, createTransport: () => transport });
+  // Роль приходит не от цвета, а от того, кто завёл комнату: в жизни её ставит нажатие
+  // Online, здесь — этот флаг.
+  sandbox.api.startOnlineSession({ seat, room, host, createTransport: () => transport });
   return { seat, sandbox, log, sent, transport, api: sandbox.api };
 }
 
@@ -422,6 +425,7 @@ const relay = await import('../worker/room.js');
   // У гостя ДРУГАЯ раскладка карт и другие настройки — ровно тот случай, из-за которого
   // общий жребий выбрал бы разные карты.
   const host = makeClient('blue', {
+    host: true,
     placements: { cells: 'hard', turtle: 'easy' },
     settings: { flightRangeCells: 44, accuracyPercent: 60, addAA: false, sharpEdges: false,
                 flagsEnabled: false, addCargo: false, arcadeMode: true, mapIndex: 5,
@@ -435,8 +439,8 @@ const relay = await import('../worker/room.js');
                 randomizeMapEachRound: false, flameStyle: 'inferno' },
   });
 
-  assert(host.api.isOnlineHostSeat() === true && guest.api.isOnlineHostSeat() === false,
-    '3: создатель комнаты один, и выбран он заранее');
+  assert(host.api.isOnlineHost() === true && guest.api.isOnlineHost() === false,
+    '3: создатель комнаты один, и роль эта не от цвета, а от того, кто её завёл');
 
   const settingsEnvelope = host.sent.find((e) => e.t === 'settings');
   assert(settingsEnvelope,
