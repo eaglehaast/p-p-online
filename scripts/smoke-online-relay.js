@@ -119,6 +119,14 @@ function makeClient(seat, { room = 'stand', placements = {}, ruleset = 'classic'
     extractFunctionSource(source, 'getBoardViewSeat'),
     extractFunctionSource(source, 'getOpposingSeat'),
     extractFunctionSource(source, 'getAiPlayerColor'),
+    // Вход в комнату разворачивает доску под своё место, поэтому эти три вещи нужны и
+    // здесь. Настоящий setBoardViewSeat трогает корень документа и хранилище, которых в
+    // стенде нет, — его заменяет присваивание, а сам разворот проверяет отдельный
+    // smoke-online-board-side.
+    'function setBoardViewSeat(seat){ boardViewSeat = seat === "blue" ? "blue" : "green"; }',
+    'let boardViewSeatBeforeOnline = null;',
+    extractFunctionSource(source, 'takeBoardViewForOnlineSeat'),
+    extractFunctionSource(source, 'releaseBoardViewAfterOnline'),
     source.match(/const ONLINE_SEAT_COLORS = Object\.freeze\(\[[^\]]*\]\);/)[0],
     source.match(/const ONLINE_ROOM_FALLBACK = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_MAX_LENGTH = \d+;/)[0],

@@ -140,6 +140,13 @@ function buildTable(){
       extractFunctionSource(source, 'getBoardViewSeat'),
       extractFunctionSource(source, 'getOpposingSeat'),
       extractFunctionSource(source, 'getAiPlayerColor'),
+      // Вход в комнату разворачивает доску под своё место — значит и здесь это нужно.
+      // Настоящий setBoardViewSeat трогает корень документа и хранилище, которых в стенде
+      // нет; сам разворот проверяет отдельный smoke-online-board-side.
+      'function setBoardViewSeat(seat){ boardViewSeat = seat === "blue" ? "blue" : "green"; }',
+      'let boardViewSeatBeforeOnline = null;',
+      extractFunctionSource(source, 'takeBoardViewForOnlineSeat'),
+      extractFunctionSource(source, 'releaseBoardViewAfterOnline'),
       source.match(/const ONLINE_SEAT_COLORS = Object\.freeze\(\[[^\]]*\]\);/)[0],
       source.match(/const ONLINE_ROOM_FALLBACK = "[^"]*";/)[0],
       source.match(/const ONLINE_ROOM_MAX_LENGTH = \d+;/)[0],
