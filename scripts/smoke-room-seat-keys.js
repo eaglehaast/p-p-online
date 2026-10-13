@@ -130,9 +130,9 @@ const OTHER = 'sovsemdrugojkljuc567';
 {
   // Именно в вызове joinRoom, а не где угодно в файле: строка «key: seatKey» есть и в
   // разборе адреса, и проверка по ней прошла бы на обезвреженном вызове.
-  assert(/joinRoom\(room, \{ seat, version, connection, key: seatKey \}\)/.test(localSource),
+  assert(/joinRoom\(room, \{ seat, version, connection, key: seatKey[,}]/.test(localSource),
     '5: локальный сервер не передаёт ключ места в комнату — на своей машине защиты не будет');
-  assert(/connection: server, key \}/.test(workerSource),
+  assert(/connection: server, key[,}]/.test(workerSource),
     '5b: облачный сервер не передаёт ключ места');
   assert(/key: \(parsed\.searchParams\.get\("key"\) \|\| ""\)/.test(fs.readFileSync('worker/room.js', 'utf8')),
     '5c: ключ больше не читается из адреса подключения');

@@ -118,8 +118,8 @@ export function createRoom(){
     // Когда место опустело. null — оно занято или ещё ни разу не занималось.
     seatFreedAt: { blue: null, green: null },
     kept: Object.create(null),
-    // Чей это стол. Первый, кто за него сел, называет его своим — и это держится всю
-    // жизнь комнаты: переживает сон, уход обоих и ночь.
+    // Чей это стол. Называет его своим тот, кто его ЗАВЁЛ (нажал Online), и это
+    // держится всю жизнь комнаты: переживает сон, уход обоих и ночь.
     //
     // Роль нужна, чтобы решал кто-то ОДИН: чьи настройки в силе и когда начинается
     // партия. Сам клиент знать этого не может. Он знает только, нажимал ли Online в
@@ -158,7 +158,7 @@ export function isSeatClaimHeld(room, seat, now = Date.now()){
 //
 // Вытесненное соединение возвращается наружу: закрыть его — дело вызывающего, комната
 // сокетов не знает.
-export function joinRoom(room, { seat, version, connection, key, now = Date.now() }){
+export function joinRoom(room, { seat, version, connection, key, claimHost = false, now = Date.now() }){
   if(!RELAY_SEATS.includes(seat)){
     return { ok: false, error: RELAY_ERRORS.BAD_SEAT };
   }
@@ -185,10 +185,29 @@ export function joinRoom(room, { seat, version, connection, key, now = Date.now(
   room.seatFreedAt[seat] = null;
   room.joinCount += 1;
 
-  // Стол достаётся первому севшему и больше не переходит. Назначить его позже уже не по
-  // чему: завтра оба придут одинаково — по ссылке.
-  const hostAssigned = room.hostSeat === null;
+  // Стол достаётся заводившему и больше не переходит.
+  //
+  // Просто «первый севший» выглядел проще, но на стенде вышло вот что: друг открывает
+  // ссылку на комнату, которой никто не заводил (хозяин с тех пор сменил край или его
+  // двенадцать часов истекли), — и становится её хозяином. На экране у него «Send link»
+  // вместо ожидания, а пришедший следом настоящий хозяин оказывается гостем за своим же
+  // столом.
+  //
+  // Поэтому право назвать стол своим привозят с собой, и только нажавший Online. Никто не
+  // привёз — у стола нет хозяина, и начинать на нём нечего: там и правда никого.
+  let hostAssigned = claimHost === true && room.hostSeat === null;
   if(hostAssigned) room.hostSeat = seat;
+
+  // Но если за столом УЖЕ ДВОЕ, а хозяина так и нет — его надо назначить, иначе эти двое
+  // просидят друг напротив друга вечно: начать партию некому. Такое бывает, когда обе
+  // ссылки ведут в комнату, которой никто не заводил.
+  //
+  // Достаётся он тому, кто пришёл первым и ждал: у него больше прав на этот стол, чем у
+  // пришедшего только что.
+  if(room.hostSeat === null && room.seats[otherSeatOf(seat)] !== null){
+    room.hostSeat = otherSeatOf(seat);
+    hostAssigned = true;
+  }
 
   // Порядок важен: настройки должны примениться до снимка, иначе гость на мгновение
   // окажется со снимком чужой партии на своей карте.
@@ -216,6 +235,11 @@ export function joinRoom(room, { seat, version, connection, key, now = Date.now(
 // Пересылается он ровно одному — второму месту. Рассылка «всем, кроме отправителя»
 // выглядела бы так же при двух игроках, но молча начала бы работать иначе, если за
 // столом когда-нибудь окажется третий.
+// Второе место за столом.
+export function otherSeatOf(seat){
+  return seat === "blue" ? "green" : "blue";
+}
+
 export function routeEnvelope(room, seat, envelope){
   if(!RELAY_SEATS.includes(seat)) return { deliverTo: null, kept: false };
 
@@ -233,7 +257,7 @@ export function routeEnvelope(room, seat, envelope){
   const droppedState = type === "start" && room.kept.state !== undefined;
   if(droppedState) delete room.kept.state;
 
-  const otherSeat = seat === "blue" ? "green" : "blue";
+  const otherSeat = otherSeatOf(seat);
   return {
     deliverTo: room.seats[otherSeat] ? otherSeat : null,
     connection: room.seats[otherSeat] ?? null,
@@ -303,5 +327,7 @@ export function parseJoinRequest(url){
     seat: (parsed.searchParams.get("seat") || "").trim().toLowerCase(),
     version: Number(parsed.searchParams.get("v")),
     key: (parsed.searchParams.get("key") || "").trim(),
+    // «Этот стол завёл я». Комната верит на слово ровно один раз — пока хозяина нет.
+    claimHost: parsed.searchParams.get("host") === "1",
   };
 }

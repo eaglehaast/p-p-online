@@ -156,6 +156,9 @@ function buildTable(){
       source.match(/const ONLINE_LEGACY_HOST_SEAT = "[^"]*";/)[0],
       source.match(/const ONLINE_ROOM_SETTING_KEYS = Object\.freeze\(\[[\s\S]*?\]\);/)[0],
       'let onlineSession = null; let onlineInbox = []; let onlineTurnDraft = null;',
+    // Будильник пустого стола в этих стендах не заводится (о присутствии им не
+    // рассказывают), но выход из комнаты его гасит — значит переменная нужна.
+    'let onlineEmptyTableTimer = null;',
       'let onlineRoomPlacements = null;',
       extractFunctionSource(source, 'getColorController'),
       extractFunctionSource(source, 'isLocalColor'),

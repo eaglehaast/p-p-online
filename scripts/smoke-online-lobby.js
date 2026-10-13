@@ -54,7 +54,11 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
   const log = [];
   const sent = [];
   const sandbox = {
-    Object, Array, Math, JSON, String, URLSearchParams, URL, Uint8Array, crypto,
+    Object, Array, Math, JSON, String, URLSearchParams, URL, Uint8Array, crypto, Number, Date,
+    // Будильник пустого стола: стенд записывает заведённые сроки, а не ждёт их.
+    будильники: [],
+    setTimeout: (fn, ms) => { sandbox.будильники.push(ms); return sandbox.будильники.length; },
+    clearTimeout: () => {},
     console: { log: () => {}, warn: (...a) => log.push(['warn', ...a]) },
     gameMode: null,
     onlineSession: {
@@ -76,6 +80,8 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
     source.match(/const ONLINE_ROOM_ID_ALPHABET = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_LENGTH = \d+;/)[0],
     'let onlinePresence = null;',
+    'let onlineEmptyTableTimer = null;',
+    source.match(/const ONLINE_EMPTY_TABLE_NOTICE_MS = [^;]*;/)[0],
     source.match(/const ONLINE_RELAY_ALLOWED_HOSTS = Object\.freeze\(\[[^\]]*\]\);/)[0],
     extractFunctionSource(source, 'resolveOnlineRelayAddress'),
     extractFunctionSource(source, 'isLocalPageOrigin'),
@@ -87,6 +93,8 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
     extractFunctionSource(source, 'makeOnlineRoomId'),
     extractFunctionSource(source, 'buildOnlineInviteLink'),
     extractFunctionSource(source, 'isOnlineTableFull'),
+    extractFunctionSource(source, 'следитьЗаПустымСтолом'),
+    extractFunctionSource(source, 'isOnlineTableEmptyForLong'),
     extractFunctionSource(source, 'getOnlineSeatColor'),
     extractFunctionSource(source, 'isOnlineHost'),
     // Настройки комнаты уезжают по слову комнаты «хозяин — ты», и отметка об этом живёт
@@ -105,7 +113,9 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
     '             getConfiguredRelayUrl, isRelayAddressAllowed, isOnlineHost,',
     '             isOnlineTableFull, receiveOnlinePresence, receiveOnlineStart,',
     '             startOnlineMatchAsHost, getOnlineTroubleText, refreshOnlineLobbyUi,',
-    '             presence: () => onlinePresence };',
+    '             presence: () => onlinePresence,',
+    '             пустоДавно: isOnlineTableEmptyForLong,',
+    '             одниС: (когда) => { onlineSession.aloneSince = когда; } };',
   ].join('\n'), sandbox);
   return { seat, api: sandbox.api, log, sent, sandbox };
 }
@@ -392,6 +402,8 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
       extractFunctionSource(source, 'getOnlineSeatColor'),
       extractFunctionSource(source, 'isOnlineHost'),
       extractFunctionSource(source, 'isOnlineTableFull'),
+    extractFunctionSource(source, 'следитьЗаПустымСтолом'),
+    extractFunctionSource(source, 'isOnlineTableEmptyForLong'),
       extractFunctionSource(source, 'syncPlayButtonSkin'),
       'syncPlayButtonSkin(true); this.disabled = playBtn.disabled;',
     ].join('\n'), sandbox);

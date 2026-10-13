@@ -138,6 +138,9 @@ function makeClient(seat, { room = 'stand', host = false, placements = {}, rules
     source.match(/const ONLINE_ROOM_SETTING_KEYS = Object\.freeze\(\[[\s\S]*?\]\);/)[0],
     source.match(/const ONLINE_ROOM_SETTING_LEGACY_KEYS = Object\.freeze\(\{[\s\S]*?\}\);/)[0],
     'let onlineSession = null; let onlineInbox = []; let onlineTurnDraft = null;',
+    // Будильник пустого стола в этих стендах не заводится (о присутствии им не
+    // рассказывают), но выход из комнаты его гасит — значит переменная нужна.
+    'let onlineEmptyTableTimer = null;',
     'let onlineRoomPlacements = null;',
     // Настоящая loadMapTesterPlacements: именно её подмена раскладкой комнаты и
     // проверяется, поэтому берём её из script.js, а не пишем заглушку.

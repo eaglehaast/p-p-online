@@ -104,10 +104,10 @@ export class Room {
   }
 
   async fetch(request){
-    const { seat, version, key } = parseJoinRequest(request.url);
+    const { seat, version, key, claimHost } = parseJoinRequest(request.url);
     const [client, server] = Object.values(new WebSocketPair());
 
-    const joined = joinRoom(this.room, { seat, version, connection: server, key });
+    const joined = joinRoom(this.room, { seat, version, connection: server, key, claimHost });
     if(!joined.ok){
       server.accept();
       server.close(4000, joined.error);
