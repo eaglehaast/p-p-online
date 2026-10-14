@@ -173,10 +173,21 @@ function стенд({ вКомнате = true, вПартии = true } = {}){
   assert(/id="leaveMatchConfirm"[\s\S]{0,200}role="dialog"/.test(markup),
     '6d: вопрос не объявлен диалогом');
 
-  // Кнопки «да/нет» — те же, что в «Play again?»: другой пары в игре нет.
-  assert(/leave-confirm__btn--yes \{[^}]*playagain\/yes\.webp/.test(styles)
-    && /leave-confirm__btn--no \{[^}]*playagain\/no\.webp/.test(styles),
-    '6e: у выхода завелись свои кнопки «да/нет» — в игре уже есть ровно одна такая пара');
+  // Кнопки — буквами по дереву, теми же, что вопрос над ними.
+  //
+  // Готовые «YES/NO» из «Play again?» сюда не подошли: глянцевые кружки спорят с деревом
+  // и золотом, и окно распадалось на две разные игры.
+  const кнопка = правило('.leave-confirm__btn');
+  assert(кнопка, '6e: у кнопок вопроса нет своего оформления');
+  assert(!/playagain/.test(кнопка),
+    '6e2: вернулись глянцевые кружки из «Play again?» — на деревянной плашке они чужие');
+  assert(/Cinzel/.test(кнопка),
+    '6e3: кнопки набраны не тем шрифтом, что вопрос над ними');
+  assert(/id="leaveConfirmYes"[\s\S]{0,160}>YES</.test(markup)
+    && /id="leaveConfirmNo"[\s\S]{0,160}>NO</.test(markup),
+    '6e4: на кнопках не написано, что они делают');
+  assert(!/id="leaveConfirmYes"[\s\S]{0,160}visually-hidden/.test(markup),
+    '6e5: надпись на кнопке снова спрятана от глаз — а картинки под ней больше нет');
 }
 
 // === 7. Нажатие ведёт к вопросу, а не к выходу ===
