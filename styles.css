@@ -4352,6 +4352,138 @@ button, .control-box { transition: all 0.3s ease; }
    В портрете это угол кадра: полоса инвентаря кончается на x=410, дальше свободно.
    В горизонтали свободного хвоста не было, поэтому полосы там ужаты (см.
    INVENTORY_LANDSCAPE_SCALE) ровно до портретной пропорции. */
+/* Запасной выход из онлайновой партии.
+
+   Место — верхний правый угол кадра, зеркально кнопке поворота (та стоит в нижнем
+   правом, на пересечении средних линий колонки счётчика и полосы инвентаря). Полосы
+   инвентаря занимают кадр y 19..74 сверху и 733..788 снизу, колонка счётчика —
+   x 411..459: отсюда центр 435 x 46.5 и left/top ниже.
+
+   Приглушена так же, как кнопка поворота, и по той же причине: это запасной выход, а
+   не часть игры. Крестик симметричен, поэтому в горизонтали его не надо разворачивать
+   встречно — в отличие от стрелки поворота. */
+.leave-match {
+  position: absolute;
+  left: 419px;
+  top: 30.5px;
+  width: 32px;
+  height: 32px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  z-index: 350;
+  transition: opacity 0.15s ease;
+  opacity: 0.55;
+}
+
+.leave-match:not([hidden]) { display: flex; }
+.leave-match:hover { opacity: 1; }
+.leave-match:focus-visible { outline: 2px solid #1a73e8; outline-offset: 3px; opacity: 1; }
+.leave-match:active { transform: scale(0.94); }
+
+.leave-match__icon {
+  width: 22px;
+  height: 22px;
+  display: block;
+  pointer-events: none;
+}
+
+/* В горизонтали кадр повёрнут целиком, и этот угол уезжает вниз-вправо экрана — туда,
+   где уже стоит кнопка поворота. Поэтому здесь крестик переезжает в тот угол кадра,
+   который после поворота оказывается ВВЕРХУ СЛЕВА экрана: малое x, большое y.
+   Полоса инвентаря в горизонтали ужата к началу (0.8772), её конец освобождает этот
+   угол — ровно так же, как для кнопки поворота. */
+html.is-board-landscape .leave-match {
+  left: 25px;
+  top: 744.5px;
+}
+
+/* Спрашиваем перед разрывом связи.
+
+   Своего спрайта у этой панели нет и заводить его незачем: оформление взято у
+   подсказок инвентаря (как у лобби), а «да/нет» — готовые кнопки из «Play again?».
+   Контейнер той панели не подходит: в его картинку вписан вопрос «PLAY AGAIN?». */
+.leave-confirm {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 460px;
+  height: 800px;
+  z-index: 400;
+}
+
+.leave-confirm[hidden] { display: none; }
+
+/* Занавес глушит нажатия по полю: вопрос задан, и пока на него не ответили, ходить
+   нельзя. Прозрачный он только наполовину — доска должна остаться видимой, иначе
+   непонятно, что именно мы бросаем. */
+.leave-confirm__veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 14, 8, 0.45);
+}
+
+.leave-confirm__box {
+  position: absolute;
+  left: 80px;
+  top: 300px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.leave-confirm__text {
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--inventory-tooltip-padding, 8px 12px);
+  background: var(--inventory-tooltip-background, rgba(210,190,150,0.97));
+  color: var(--inventory-tooltip-color, #251d14);
+  font-family: var(--inventory-tooltip-font-family, "Palatino Linotype", Palatino, serif);
+  font-size: var(--inventory-tooltip-font-size, 12px);
+  font-weight: var(--inventory-tooltip-font-weight, 700);
+  line-height: var(--inventory-tooltip-line-height, 1.4);
+  text-align: center;
+  white-space: pre-line;
+  border-radius: var(--inventory-tooltip-border-radius, 6px);
+  border: var(--inventory-tooltip-border, 1px solid rgba(90,65,40,0.35));
+  box-shadow: var(--inventory-tooltip-box-shadow, 0 8px 18px rgba(0,0,0,0.18));
+}
+
+.leave-confirm__buttons {
+  display: flex;
+  gap: 26px;
+}
+
+.leave-confirm__btn {
+  width: 73px;
+  height: 68px;
+  border: 0;
+  padding: 0;
+  background: center / contain no-repeat;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.leave-confirm__btn:hover { filter: brightness(1.04) drop-shadow(0 1px 1px rgba(0,0,0,0.14)); }
+.leave-confirm__btn:active { transform: translateY(3px) scale(0.97); filter: brightness(0.95); }
+.leave-confirm__btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: 3px; }
+.leave-confirm__btn--yes { background-image: url('ui_gamescreen/playagain/yes.webp'); }
+.leave-confirm__btn--no { background-image: url('ui_gamescreen/playagain/no.webp'); }
+
+/* В горизонтали кадр повёрнут, и панель разворачивается встречно — как все
+   центрованные оверлеи игрового экрана (см. #endGameButtons). */
+html.is-board-landscape .leave-confirm__box {
+  transform-origin: 50% 50%;
+  transform: rotate(-90deg);
+}
+
 .orientation-toggle {
   position: absolute;
   /* Центр кнопки стоит на пересечении средних линий дизайн-сетки: колонки счётчика

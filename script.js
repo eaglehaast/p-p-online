@@ -179,6 +179,55 @@ function prefersDesktopLandscapeBoard(){
     && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 }
 
+// Запасной выход из онлайновой партии.
+//
+// В игре за одним устройством и против компьютера из партии выводит простая
+// перезагрузка страницы, и отдельной кнопки там не нужно. В комнате перезагрузка теперь
+// возвращает за тот же стол — своим же адресом, — и уйти из неё иначе как правкой адреса
+// руками стало нельзя. Особенно обидно это, когда соперник просто ушёл.
+function вОнлайновойПартии(){
+  return Boolean(onlineSession) && Boolean(gameMode);
+}
+
+function syncLeaveMatchButton(){
+  const кнопка = document.getElementById("leaveMatchBtn");
+  if(!(кнопка instanceof HTMLElement)) return false;
+  const нужна = вОнлайновойПартии();
+  кнопка.hidden = !нужна;
+  if(!нужна) спрятатьВопросОВыходе();
+  return нужна;
+}
+
+function показатьВопросОВыходе(){
+  const вопрос = document.getElementById("leaveMatchConfirm");
+  if(!(вопрос instanceof HTMLElement)) return false;
+  if(!вОнлайновойПартии()) return false;
+  вопрос.hidden = false;
+  return true;
+}
+
+function спрятатьВопросОВыходе(){
+  const вопрос = document.getElementById("leaveMatchConfirm");
+  if(!(вопрос instanceof HTMLElement)) return false;
+  вопрос.hidden = true;
+  return true;
+}
+
+// Уйти совсем: рвём связь, забываем комнату и возвращаемся в меню.
+//
+// Ровно то же, что делает «Cancel» в лобби, и по той же причине: это «я закончил», а не
+// «отойду на минуту». Прежняя ссылка после этого мертва — иначе друг, открывший её
+// завтра, молча сядет за стол, за которым нас нет.
+function уйтиИзОнлайновойПартии(){
+  спрятатьВопросОВыходе();
+  if(!onlineSession) return false;
+  stopOnlineSession();
+  forgetHostRoom();
+  onlinePresence = null;
+  resetGame({ forceMenu: true });
+  return true;
+}
+
 function setScreenMode(mode) {
   const wasGame = document.body.classList.contains('screen--game');
   document.body.classList.toggle('screen--menu', mode === 'MENU');
@@ -195,6 +244,9 @@ function setScreenMode(mode) {
     setBoardLandscape(prefersDesktopLandscapeBoard());
   }
   syncMapEditorResetButtonVisibility();
+  // Экран сменился — значит могла смениться и нужда в запасном выходе. Это
+  // единственное место, где экраны переключаются, поэтому спрашивать больше негде.
+  if(typeof syncLeaveMatchButton === "function") syncLeaveMatchButton();
   syncFieldCssVars();
 }
 
@@ -7837,6 +7889,7 @@ const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
+
 const onlineSendLinkBtn = document.getElementById("onlineSendLinkBtn");
 const onlineCancelBtn = document.getElementById("onlineCancelBtn");
 const lobbyToast = document.getElementById("lobbyToast");
@@ -21548,6 +21601,36 @@ if(onlineSendLinkBtn instanceof HTMLElement){
     // Молчать тут нельзя тем более: не сработало ничего, и без этой строки человек будет
     // жать снова и снова.
     показатьПодсказкуЛобби("Could not copy the link.\nCheck clipboard permissions.");
+  });
+}
+
+// Запасной выход из партии: крестик, вопрос, ответ.
+{
+  const крестик = document.getElementById("leaveMatchBtn");
+  const вопрос = document.getElementById("leaveMatchConfirm");
+  const да = document.getElementById("leaveConfirmYes");
+  const нет = document.getElementById("leaveConfirmNo");
+
+  if(крестик instanceof HTMLElement){
+    крестик.addEventListener("click", () => { показатьВопросОВыходе(); });
+  }
+  if(да instanceof HTMLElement){
+    да.addEventListener("click", () => { уйтиИзОнлайновойПартии(); });
+  }
+  if(нет instanceof HTMLElement){
+    нет.addEventListener("click", () => { спрятатьВопросОВыходе(); });
+  }
+  // Нажатие мимо кнопок — тоже «нет»: вопрос задан нами, и отказаться от него человек
+  // должен уметь, не целясь.
+  if(вопрос instanceof HTMLElement){
+    вопрос.addEventListener("click", (событие) => {
+      if(событие.target === вопрос || событие.target?.classList?.contains?.("leave-confirm__veil")){
+        спрятатьВопросОВыходе();
+      }
+    });
+  }
+  document.addEventListener("keydown", (событие) => {
+    if(событие.key === "Escape") спрятатьВопросОВыходе();
   });
 }
 
