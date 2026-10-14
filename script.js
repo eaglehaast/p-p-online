@@ -8449,7 +8449,7 @@ function createBroadcastTransport(room){
 // требование. Игра про обрыв не знает вовсе: пока сокета нет, пакеты копятся здесь, а
 // после подключения уезжают в том же порядке. Пошаговой игре это ничего не стоит —
 // сопернику всё равно нечего показывать, пока ход не сделан.
-function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey){
+function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey, claimHost){
   if(typeof WebSocket !== "function" || !relayUrl) return null;
 
   const handlers = [];
@@ -8469,7 +8469,10 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey)
 
   const address = `${relayUrl.replace(/\/+$/, "")}/room/${encodeURIComponent(room)}`
     + `?seat=${encodeURIComponent(seat)}&v=${ONLINE_PROTOCOL_VERSION}`
-    + `&key=${encodeURIComponent(seatKey || "")}`;
+    + `&key=${encodeURIComponent(seatKey || "")}`
+    // «Стол завёл я»: говорит это только нажавший Online. Пришедший по ссылке молчит —
+    // иначе он забрал бы себе чужой стол, едва тот окажется ничьим.
+    + (claimHost ? "&host=1" : "");
 
   const flush = () => {
     while(outbox.length > 0 && socket?.readyState === WebSocket.OPEN){
@@ -8559,7 +8562,7 @@ function startOnlineSession(options = {}){
       // без нашего участия и в любой момент. Значит, о нём надо не спрашивать, а
       // узнавать: иначе на экране навсегда застывает то, что было в миг открытия.
       ? createWebSocketTransport(room, seatInfo.relay, seatInfo.seat, refreshOnlineLobbyUi,
-        resolveSeatKey(room, seatInfo.seat))
+        resolveSeatKey(room, seatInfo.seat), options.host === true)
       : createBroadcastTransport(room));
   const transport = createTransport(seatInfo.room);
   if(!transport){
@@ -8576,6 +8579,8 @@ function startOnlineSession(options = {}){
     host: options.host === true,
     // Место хозяина стола, как его называет комната. null — ещё не говорила.
     hostSeat: null,
+    // С какого мига мы за столом одни. null — не одни.
+    aloneSince: null,
     // Уехали ли уже настройки комнаты. Хозяином можно СТАТЬ по слову комнаты, позже
     // входа, — и тогда настройки надо отправить в тот момент, а не при входе.
     settingsPublished: false,
@@ -8639,6 +8644,10 @@ function startOnlineSession(options = {}){
 
 function stopOnlineSession(){
   if(!onlineSession) return false;
+  if(onlineEmptyTableTimer !== null){
+    clearTimeout(onlineEmptyTableTimer);
+    onlineEmptyTableTimer = null;
+  }
   try { onlineSession.transport.close(); } catch(_error){ /* провод уже закрыт */ }
   onlineSession = null;
   onlineInbox = [];
@@ -9141,6 +9150,46 @@ function isOnlineTableFull(){
   return Boolean(onlinePresence?.blue && onlinePresence?.green);
 }
 
+// Через сколько сказать пришедшему по ссылке, что за столом никого нет.
+//
+// Пятнадцать секунд — верхняя ступень лестницы переподключений
+// (ONLINE_RECONNECT_DELAYS_MS). Хозяин, у которого моргнул интернет, успевает вернуться
+// внутри этого срока, и надпись не соврёт ему вдогонку. Срок короче мелькал бы у каждого,
+// кто на секунду провалился в лифте, — а надпись «тут никого» тем и ценна, что ей верят.
+const ONLINE_EMPTY_TABLE_NOTICE_MS = 15_000;
+let onlineEmptyTableTimer = null;
+
+// Пустой стол — это НЕ событие, а его отсутствие.
+//
+// Всё остальное в лобби показывается в ответ на что-то: приехал пакет, сменилось
+// состояние связи. Здесь показывать надо ровно потому, что ничего не происходит, — а
+// значит нужен будильник: иначе надпись дождалась бы следующего события, которого за
+// пустым столом может не случиться вовсе.
+function следитьЗаПустымСтолом(){
+  if(onlineEmptyTableTimer !== null){
+    clearTimeout(onlineEmptyTableTimer);
+    onlineEmptyTableTimer = null;
+  }
+  if(!onlineSession) return;
+  if(isOnlineTableFull()){
+    onlineSession.aloneSince = null;
+    return;
+  }
+  if(!Number.isFinite(onlineSession.aloneSince)) onlineSession.aloneSince = Date.now();
+  const осталось = ONLINE_EMPTY_TABLE_NOTICE_MS - (Date.now() - onlineSession.aloneSince);
+  if(осталось <= 0) return;
+  onlineEmptyTableTimer = setTimeout(() => {
+    onlineEmptyTableTimer = null;
+    showOnlineTrouble();
+  }, осталось);
+}
+
+function isOnlineTableEmptyForLong(now = Date.now()){
+  if(!onlineSession || isOnlineTableFull()) return false;
+  const с = onlineSession.aloneSince;
+  return Number.isFinite(с) && now - с >= ONLINE_EMPTY_TABLE_NOTICE_MS;
+}
+
 function receiveOnlinePresence(payload){
   const seats = payload?.seats;
   if(!seats || typeof seats !== "object") return false;
@@ -9152,6 +9201,7 @@ function receiveOnlinePresence(payload){
     onlineSession.hostSeat = payload.host;
   }
   console.log("[online] за столом", { ...onlinePresence, хозяин: onlineSession?.hostSeat ?? null });
+  следитьЗаПустымСтолом();
 
   // Хозяином можно стать здесь: вернувшись завтра по ссылке, своего нажатия Online мы не
   // помним, и настройки комнаты уехали бы от неё впустую.
@@ -9328,6 +9378,18 @@ function getOnlineTroubleText(){
   }
   if(connection !== "online" && connection !== "connecting"){
     return "Connection lost. Retrying…";
+  }
+  // За столом никого, и уже давно.
+  //
+  // Это главное, чего пришедшему по ссылке не говорили вовсе: экран ожидания одинаков и
+  // когда друг сейчас подойдёт, и когда его тут нет и не будет. Ссылка живёт двенадцать
+  // часов, так что открыть её без хозяина — обычное дело, а не редкий случай.
+  //
+  // Показываем не по роли, а по тому, КАК человек сюда попал. Нажавший Online знает, чего
+  // ждёт: у него на экране «Send link». А пришедшему по ссылке обещали, что за столом
+  // кто-то есть, — и вот ему это сказать и надо.
+  if(onlineSession.host !== true && isOnlineTableEmptyForLong()){
+    return "Nobody is at this table yet. The link still works, or press Cancel to play alone.";
   }
   return "";
 }

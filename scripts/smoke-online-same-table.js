@@ -70,9 +70,20 @@ function extractFunctionSource(text, name){
   const стол = createRoom();
   assert(стол.hostSeat === null, '1: у новой комнаты уже есть хозяин — назначен он не входом');
 
-  // Первым сел зелёный. Цвет здесь ни при чём: важно, что он первый.
+  // Пришедший по ссылке стол себе не забирает, даже если он первый и стол ничей. Иначе
+  // друг, открывший ссылку на комнату, которой никто не заводил, стал бы её хозяином: у
+  // него «Send link» вместо ожидания, а настоящий хозяин — гостем за своим же столом.
+  const мимо = joinRoom(стол, {
+    seat: 'blue', version: RELAY_PROTOCOL_VERSION, connection: { id: 0 }, key: 'k-blue-mimo00000',
+  });
+  assert(мимо.ok, `1a2: вход по ссылке отвергнут (${мимо.error})`);
+  assert(стол.hostSeat === null,
+    `1a3: стол достался пришедшему по ссылке («${стол.hostSeat}») — он его не заводил`);
+
+  // А заводивший — забирает. Цвет здесь ни при чём: важно, что это он нажал Online.
   const первый = joinRoom(стол, {
     seat: 'green', version: RELAY_PROTOCOL_VERSION, connection: { id: 1 }, key: 'k-green-00000000',
+    claimHost: true,
   });
   assert(первый.ok, `1b: первый вход отвергнут (${первый.error})`);
   assert(стол.hostSeat === 'green', `1c: стол достался «${стол.hostSeat}», а сел первым зелёный`);
@@ -80,8 +91,11 @@ function extractFunctionSource(text, name){
 
   // Второй вход хозяина не переназначает — иначе каждое переподключение меняло бы
   // главного, и настройки комнаты поехали бы по второму кругу.
+  // Тот же пришедший по ссылке, вернувшийся со своим ключом, — и даже с претензией на
+  // стол: он уже чей-то, и второй раз его не отдают.
   const второй = joinRoom(стол, {
-    seat: 'blue', version: RELAY_PROTOCOL_VERSION, connection: { id: 2 }, key: 'k-blue-000000000',
+    seat: 'blue', version: RELAY_PROTOCOL_VERSION, connection: { id: 2 }, key: 'k-blue-mimo00000',
+    claimHost: true,
   });
   assert(второй.ok, `1e: второй вход отвергнут (${второй.error})`);
   assert(стол.hostSeat === 'green', '1f: второй вошедший отобрал стол у первого');
@@ -93,6 +107,25 @@ function extractFunctionSource(text, name){
     `1h: в сообщении о присутствии хозяин «${весть.payload.host}» — клиентам неоткуда узнать роль`);
   assert(весть.payload.seats && весть.payload.seats.green === true,
     '1h2: присутствие перестало сообщать, кто за столом');
+
+  // Но ничей стол, за которым УЖЕ ДВОЕ, хозяина получает: иначе эти двое просидят друг
+  // напротив друга вечно — начать партию некому. Такое бывает, когда обе ссылки ведут в
+  // комнату, которой никто не заводил.
+  {
+    const ничей = createRoom();
+    joinRoom(ничей, {
+      seat: 'green', version: RELAY_PROTOCOL_VERSION, connection: { id: 11 }, key: 'k-green-n0000000',
+    });
+    assert(ничей.hostSeat === null, '1i: стол достался одиночке, пришедшему по ссылке');
+    const второй = joinRoom(ничей, {
+      seat: 'blue', version: RELAY_PROTOCOL_VERSION, connection: { id: 12 }, key: 'k-blue-n00000000',
+    });
+    assert(ничей.hostSeat === 'green',
+      `1j: за полным столом хозяин «${ничей.hostSeat}» — двое будут ждать друг друга вечно, `
+      + 'начать некому');
+    assert(второй.hostAssigned === true,
+      '1k: назначение хозяина за полным столом не записывается — после сна комнаты оно пропадёт');
+  }
 
   // === 2. Новая партия выбрасывает вчерашний снимок ===
   routeEnvelope(стол, 'green', { t: 'state', payload: { вчера: true } });
@@ -125,6 +158,11 @@ function extractFunctionSource(text, name){
     '3b: хозяин стола не записывается — после сна комната его не вспомнит');
   assert(/joined\.hostAssigned/.test(workerSource),
     '3c: хозяин пишется не только в тот вход, который его назначил');
+  assert(/claimHost/.test(workerSource),
+    '3c2: облачная комната не принимает слово «этот стол завёл я» — хозяина не будет ни у кого');
+  const локальный = fs.readFileSync('worker/local-server.js', 'utf8');
+  assert(/claimHost/.test(локальный),
+    '3c3: локальный сервер это слово теряет — на своей машине стол останется ничьим');
   assert(/storage\.delete\("state"\)/.test(workerSource),
     '3d: выброшенный снимок остаётся в хранилище — после сна комната отдаст его снова');
 }
