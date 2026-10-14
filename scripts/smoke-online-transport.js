@@ -176,6 +176,7 @@ function buildTable(){
       extractFunctionSource(source, 'getOnlineSeatColor'),
       extractFunctionSource(source, 'getSharedRandomFraction'),
       extractFunctionSource(source, 'isOnlineMatchActive'),
+      'function receiveOnlineRejoin(){ return false; }',
       extractFunctionSource(source, 'startOnlineSession'),
       'function clearOnlineRoomFromAddress(){ return ""; }',
       extractFunctionSource(source, 'stopOnlineSession'),
