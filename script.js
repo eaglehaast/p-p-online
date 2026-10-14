@@ -9180,8 +9180,40 @@ function следитьЗаПустымСтолом(){
   if(осталось <= 0) return;
   onlineEmptyTableTimer = setTimeout(() => {
     onlineEmptyTableTimer = null;
-    showOnlineTrouble();
+    обновитьНадписьПустогоСтола();
   }, осталось);
+}
+
+// Что говорят пришедшему по ссылке, когда за столом никого.
+//
+// Две строки, как у остальных подсказок: что случилось и что с этим делать. Третьего
+// предложения тут быть не должно — это ответ на немой вопрос «я вообще туда попал?», а не
+// инструкция.
+const ONLINE_EMPTY_TABLE_TEXT =
+  "Nobody is at this table yet.\nThe link still works. Press Cancel to play alone.";
+
+// Надпись встаёт НА МЕСТО крутящихся самолётов, а не рядом с ними.
+//
+// Вертушка означает «идёт дело»: что-то грузится, кто-то вот-вот подключится. Ровно этого
+// здесь и не происходит, и крутиться ей в такую минуту — врать. Поэтому самолёты уходят, а
+// на их место встаёт надпись — тем же оформлением, что и остальные подсказки игры, и с
+// медленным дыханием вместо вращения: жизнь на экране остаётся, обещание — нет.
+function обновитьНадписьПустогоСтола(){
+  const показывать = Boolean(onlineSession) && !gameMode
+    && onlineSession.host !== true
+    && isOnlineTableEmptyForLong()
+    // Беда со связью важнее: она в своей панели, и спорить им не о чем.
+    && getOnlineTroubleText() === "";
+  if(показывать){
+    показатьПодсказкуЛобби(ONLINE_EMPTY_TABLE_TEXT, { вместоСамолётов: true });
+    return true;
+  }
+  // Гасим только СВОЮ надпись: «Link sent.» у хозяина живёт в том же окошке, и трогать её
+  // отсюда нельзя.
+  if(lobbyToast instanceof HTMLElement && lobbyToast.classList.contains("is-empty-table")){
+    спрятатьПодсказкуЛобби();
+  }
+  return false;
 }
 
 function isOnlineTableEmptyForLong(now = Date.now()){
@@ -9304,9 +9336,14 @@ function createOnlineRoom(){
 //
 // Уходит она вместе с лобби, и это единственный способ её убрать.
 */
-function показатьПодсказкуЛобби(текст){
+function показатьПодсказкуЛобби(текст, { вместоСамолётов = false } = {}){
   if(!(lobbyToast instanceof HTMLElement)) return false;
   lobbyToast.textContent = String(текст ?? "");
+  // Два разных места у одного окошка: ответ на нажатие висит под кнопками, а «за столом
+  // никого» — там, где крутились самолёты, и вместо них.
+  lobbyToast.classList.toggle("is-empty-table", вместоСамолётов === true);
+  document.getElementById("modeMenu")?.classList?.toggle("is-table-empty",
+    вместоСамолётов === true);
   lobbyToast.hidden = false;
   // Кадр между появлением в разметке и зажиганием: без него переход не успевает начаться,
   // и надпись возникает рывком.
@@ -9316,7 +9353,8 @@ function показатьПодсказкуЛобби(текст){
 
 function спрятатьПодсказкуЛобби(){
   if(!(lobbyToast instanceof HTMLElement)) return false;
-  lobbyToast.classList.remove("is-visible");
+  lobbyToast.classList.remove("is-visible", "is-empty-table");
+  document.getElementById("modeMenu")?.classList?.remove("is-table-empty");
   lobbyToast.hidden = true;
   return true;
 }
@@ -9354,6 +9392,7 @@ function applyOnlineMenuState(){
   // лобби уже позади.
   updateModePlanesPosition(onlineLobbyFocusBtn || undefined);
   showOnlineTrouble();
+  обновитьНадписьПустогоСтола();
   // Пока соперника нет, начинать нечего: «Play» гаснет и загорается сам. Он же и есть
   // единственный указатель на то, что гость пришёл, — отдельной строки состояния больше
   // нет и не нужно.
@@ -9379,18 +9418,8 @@ function getOnlineTroubleText(){
   if(connection !== "online" && connection !== "connecting"){
     return "Connection lost. Retrying…";
   }
-  // За столом никого, и уже давно.
-  //
-  // Это главное, чего пришедшему по ссылке не говорили вовсе: экран ожидания одинаков и
-  // когда друг сейчас подойдёт, и когда его тут нет и не будет. Ссылка живёт двенадцать
-  // часов, так что открыть её без хозяина — обычное дело, а не редкий случай.
-  //
-  // Показываем не по роли, а по тому, КАК человек сюда попал. Нажавший Online знает, чего
-  // ждёт: у него на экране «Send link». А пришедшему по ссылке обещали, что за столом
-  // кто-то есть, — и вот ему это сказать и надо.
-  if(onlineSession.host !== true && isOnlineTableEmptyForLong()){
-    return "Nobody is at this table yet. The link still works, or press Cancel to play alone.";
-  }
+  // «За столом никого» сюда не относится: это не беда со связью, и живёт оно не в этой
+  // панели, а на месте вертушки — см. обновитьНадписьПустогоСтола.
   return "";
 }
 

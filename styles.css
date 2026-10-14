@@ -4834,6 +4834,32 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
   display: none;
 }
 
+/* «За столом никого»: надпись встаёт НА МЕСТО вертушки, а вертушка уходит.
+
+   Крутящиеся самолёты означают «идёт дело»: что-то грузится, кто-то вот-вот подключится.
+   Ровно этого здесь и не происходит — крутиться им в такую минуту значит обещать. Место
+   у надписи то же (вертушка занимала 355..530), поэтому столбик гостя не прыгает:
+   надпись, объяснение, «Cancel».
+
+   Дыхание вместо вращения: экран остаётся живым, но ничего не обещает. Три строки сюда
+   влезают, поэтому коробка шире обычной подсказки. */
+#menuLayer #modeMenu.is-table-empty .mode-menu__waiting-spinner { display: none; }
+
+#menuLayer #modeMenu .lobby-toast.is-empty-table {
+  top: 352px;
+  left: 95px;
+  width: 270px;
+}
+
+#menuLayer #modeMenu .lobby-toast.is-empty-table.is-visible {
+  animation: lobbyToastBreath 2.4s ease-in-out infinite;
+}
+
+@keyframes lobbyToastBreath {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.62; }
+}
+
 #menuLayer #modeMenu .lobby-toast.is-visible {
   opacity: 1;
 }
@@ -4841,6 +4867,10 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
 @media (prefers-reduced-motion: reduce) {
   #menuLayer #modeMenu .lobby-toast {
     transition: none;
+  }
+  /* Дыхание — украшение, а не сообщение: без него надпись говорит то же самое. */
+  #menuLayer #modeMenu .lobby-toast.is-empty-table.is-visible {
+    animation: none;
   }
 }
 
