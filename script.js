@@ -8325,10 +8325,9 @@ function parseOnlineSeatFromSearch(search, location = window.location){
   if(!ONLINE_SEAT_COLORS.includes(seat)) return null;
   const roomRaw = (params.get("room") || "").trim();
   const room = roomRaw ? roomRaw.slice(0, ONLINE_ROOM_MAX_LENGTH) : ONLINE_ROOM_FALLBACK;
-  const relayRaw = (params.get("relay") || "").trim();
-  const relay = relayRaw
-    ? resolveOnlineRelayAddress(relayRaw, location)
-    : ONLINE_RELAY_URL;
+  // По тем же правилам, что и у создателя комнаты: адрес из ссылки — чужой ввод, кем бы
+  // ссылка ни была прислана.
+  const relay = resolveRelayFromLink(params.get("relay"), location);
   return { seat, room, relay };
 }
 
@@ -8914,19 +8913,55 @@ function isRelayAddressAllowed(address, location){
   return isLocalPageOrigin(location);
 }
 
+// Хостинги, где игра ЛЕЖИТ, а не работает.
+//
+// Они раздают файлы и ничего больше: сокета там нет и быть не может. «relay=auto» значит
+// «ретранслятор там же, откуда открыта страница», и на таком хостинге это пустое обещание —
+// игра будет вечно стучаться в адрес собственной страницы и молчать. Ни ошибки, ни
+// объяснения: просто «Play» никогда не загорается. Мы сами на этом потеряли полчаса при
+// отладке, а ссылка с таким хвостом может уехать и другу.
+//
+// Список именно такой, а не «всё, кроме своей машины»: по локальной сети и через туннель
+// «auto» — единственное, что работает, и адрес там у каждого свой. Поэтому запрещаем ровно
+// там, где точно знаем, что сокетов нет.
+const ONLINE_STATIC_PAGE_HOSTS = Object.freeze(["github.io", "itch.io", "itch.zone"]);
+
+function isStaticPageHost(location){
+  const host = (location?.hostname || "").toLowerCase();
+  return ONLINE_STATIC_PAGE_HOSTS.some((имя) => host === имя || host.endsWith(`.${имя}`));
+}
+
+// Один ответ на вопрос «куда подключаться» — общий для обоих путей.
+//
+// Путей ровно два, и до сих пор они расходились: создатель комнаты читал адрес с проверкой
+// (getConfiguredRelayUrl), а пришедший по ссылке — без всякой. То есть защита стояла у
+// того, кто ссылку ПИШЕТ, и отсутствовала у того, кому её ПРИСЫЛАЮТ. Ровно наоборот.
+function resolveRelayFromLink(relayRaw, location = window.location){
+  const изСсылки = String(relayRaw ?? "").trim();
+  if(!изСсылки) return ONLINE_RELAY_URL;
+
+  if(изСсылки === "auto"){
+    // Увести «auto» никуда не может — это адрес самой страницы. Но и привести ему некуда,
+    // если страница просто лежит на хостинге.
+    if(isStaticPageHost(location)){
+      console.warn("[online] relay=auto отсюда не работает: страница лежит на хостинге, "
+        + "сокета там нет — подключаемся к обычному ретранслятору",
+        { host: location?.hostname || "" });
+      return ONLINE_RELAY_URL;
+    }
+    return resolveOnlineRelayAddress(изСсылки, location);
+  }
+
+  const адрес = resolveOnlineRelayAddress(изСсылки, location);
+  if(isRelayAddressAllowed(адрес, location)) return адрес;
+
+  console.warn("[online] адрес ретранслятора из ссылки отклонён", { relay: изСсылки });
+  return ONLINE_RELAY_URL;
+}
+
 function getConfiguredRelayUrl(){
   const params = new URLSearchParams(window.location?.search || "");
-  const fromLink = (params.get("relay") || "").trim();
-  if(!fromLink) return ONLINE_RELAY_URL;
-
-  // «auto» увести никуда не может: это ровно тот адрес, откуда открыта сама страница.
-  if(fromLink === "auto") return resolveOnlineRelayAddress(fromLink, window.location);
-
-  const resolved = resolveOnlineRelayAddress(fromLink, window.location);
-  if(isRelayAddressAllowed(resolved, window.location)) return resolved;
-
-  console.warn("[online] адрес ретранслятора из ссылки отклонён", { relay: fromLink });
-  return ONLINE_RELAY_URL;
+  return resolveRelayFromLink(params.get("relay"), window.location);
 }
 
 // Онлайн вообще возможен? Только если есть адрес ретранслятора.
@@ -9136,9 +9171,9 @@ function buildOnlineInviteLink(){
   // цепочке приглашений, у каждого молча отвергался и у каждого выглядел бы как «друг
   // открыл ссылку, и ничего не происходит».
   const relayInLink = (new URLSearchParams(location?.search || "").get("relay") || "").trim();
-  if(relayInLink === "auto"){
+  if(relayInLink === "auto" && !isStaticPageHost(location)){
     params.set("relay", "auto");
-  } else if(relayInLink
+  } else if(relayInLink !== "auto" && relayInLink
     && isRelayAddressAllowed(resolveOnlineRelayAddress(relayInLink, location), location)){
     params.set("relay", relayInLink);
   }
