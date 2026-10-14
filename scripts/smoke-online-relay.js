@@ -151,6 +151,13 @@ function makeClient(seat, { room = 'stand', host = false, placements = {}, rules
     extractFunctionSource(source, 'isAiColor'),
     extractFunctionSource(source, 'isRemoteColor'),
     extractFunctionSource(source, 'resolveOnlineRelayAddress'),
+    source.match(/const ONLINE_RELAY_ALLOWED_HOSTS = Object\.freeze\(\[[\s\S]*?\]\);/)[0],
+    extractFunctionSource(source, 'isLocalPageOrigin'),
+    extractFunctionSource(source, 'getRelayHost'),
+    extractFunctionSource(source, 'isRelayAddressAllowed'),
+    source.match(/const ONLINE_STATIC_PAGE_HOSTS = Object\.freeze\(\[[\s\S]*?\]\);/)[0],
+    extractFunctionSource(source, 'isStaticPageHost'),
+    extractFunctionSource(source, 'resolveRelayFromLink'),
     extractFunctionSource(source, 'parseOnlineSeatFromSearch'),
     extractFunctionSource(source, 'isOnlineHost'),
     extractFunctionSource(source, 'getOnlineSeatColor'),
@@ -634,8 +641,11 @@ const relay = await import('../worker/room.js');
     '8b: выбирает между ними адрес ретранслятора');
 
   const parse = extractFunctionSource(source, 'parseOnlineSeatFromSearch');
-  assert(/params\.get\("relay"\)/.test(parse) && /ONLINE_RELAY_URL/.test(parse),
-    '8c: адрес берётся из ссылки, а по умолчанию — из настройки в коде');
+  assert(/params\.get\("relay"\)/.test(parse) && /resolveRelayFromLink/.test(parse),
+    '8c: адрес из ссылки больше не проходит через общее правило — у пришедшего по ссылке '
+    + 'проверки не останется вовсе, а ссылку присылают именно ему');
+  assert(/ONLINE_RELAY_URL/.test(extractFunctionSource(source, 'resolveRelayFromLink')),
+    '8c2: по умолчанию адрес берётся не из настройки в коде');
 
   // Обе реализации обязаны быть одинаковыми снаружи: иначе «заменить один провод другим»
   // окажется не заменой, а переписыванием.
@@ -670,9 +680,25 @@ const relay = await import('../worker/room.js');
     '8a3: через https — ОБЯЗАТЕЛЬНО wss: страница по https незашифрованный сокет не откроет, ' +
     'браузер молча его отвергнет');
 
-  // Явный адрес не трогаем, и без relay остаётся настройка из кода.
-  assert(parse('?seat=blue&relay=wss://relay.example', { protocol: 'https:', host: 'x' }).relay
-    === 'wss://relay.example', '8a4: явно указанный адрес остаётся как есть');
+  // Явный ЧУЖОЙ адрес из ссылки больше не принимается.
+  //
+  // Ссылку присылают — и присылает её кто угодно. Проверка до сих пор стояла только у
+  // того, кто ссылку ПИШЕТ (getConfiguredRelayUrl), а у того, кому её прислали, не было
+  // никакой: чужой адрес уезжал прямо в сокет. Теперь правило одно на обоих.
+  const АДРЕС_В_КОДЕ = /const ONLINE_RELAY_URL = "([^"]*)";/.exec(source)[1];
+  assert(parse('?seat=blue&relay=wss://evil.example',
+    { protocol: 'https:', host: 'x', hostname: 'x' }).relay === АДРЕС_В_КОДЕ,
+    '8a4: чужой адрес из присланной ссылки уехал в сокет — защита стоит у того, кто ссылку '
+    + 'пишет, и отсутствует у того, кому её шлют');
+
+  // А «auto» там, где игра просто ЛЕЖИТ, — пустое обещание: хостинг раздаёт файлы, сокета
+  // на нём нет. Прежде игра вечно стучалась в адрес собственной страницы и молчала.
+  for(const host of ['eaglehaast.github.io', 'html-classic.itch.zone', 'someone.itch.io']){
+    assert(parse('?seat=blue&relay=auto', { protocol: 'https:', host, hostname: host }).relay
+      === АДРЕС_В_КОДЕ,
+      `8a5: на ${host} «auto» принято за адрес ретранслятора — там только файлы, и ждать `
+      + 'соединения можно вечно');
+  }
   const configured = source.match(/const ONLINE_RELAY_URL = "([^"]*)";/)[1];
   assert(parse('?seat=blue', { protocol: 'https:', host: 'x' }).relay === configured,
     '8a5: без relay в ссылке берётся настройка из кода');

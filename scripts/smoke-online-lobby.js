@@ -87,7 +87,14 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
     extractFunctionSource(source, 'isLocalPageOrigin'),
     extractFunctionSource(source, 'getRelayHost'),
     extractFunctionSource(source, 'isRelayAddressAllowed'),
+    source.match(/const ONLINE_STATIC_PAGE_HOSTS = Object\.freeze\(\[[^\]]*\]\);/)[0],
+    extractFunctionSource(source, 'isStaticPageHost'),
+    extractFunctionSource(source, 'resolveRelayFromLink'),
     extractFunctionSource(source, 'getConfiguredRelayUrl'),
+    source.match(/const ONLINE_SEAT_COLORS = Object\.freeze\(\[[^\]]*\]\);/)[0],
+    source.match(/const ONLINE_ROOM_FALLBACK = "[^"]*";/)[0],
+    source.match(/const ONLINE_ROOM_MAX_LENGTH = \d+;/)[0],
+    extractFunctionSource(source, 'parseOnlineSeatFromSearch'),
     extractFunctionSource(source, 'isOnlineAvailable'),
     extractFunctionSource(source, 'makeRandomString'),
     extractFunctionSource(source, 'makeOnlineRoomId'),
@@ -111,6 +118,7 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
     extractFunctionSource(source, 'getOnlineTroubleText'),
     'this.api = { isOnlineAvailable, makeOnlineRoomId, buildOnlineInviteLink,',
     '             getConfiguredRelayUrl, isRelayAddressAllowed, isOnlineHost,',
+    '             parseOnlineSeatFromSearch, isStaticPageHost,',
     '             isOnlineTableFull, receiveOnlinePresence, receiveOnlineStart,',
     '             startOnlineMatchAsHost, getOnlineTroubleText, refreshOnlineLobbyUi,',
     '             presence: () => onlinePresence,',
@@ -196,7 +204,9 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
   assert(публичный.getConfiguredRelayUrl() === '',
     '1g6: с обычной страницы адрес из локальной сети принимается');
 
-  // «auto» разрешено всегда: это адрес самой страницы, увести он никуда не может.
+  // «auto» разрешено там, где страницу кто-то РАЗДАЁТ со своей машины: это адрес самой
+  // страницы, увести он никуда не может, и на нём держится вся игра по локальной сети и
+  // через туннель.
   assert(наСайте('?relay=auto').getConfiguredRelayUrl() === 'wss://example.test',
     '1g7: «auto» перестало работать — на нём держится и локальная сеть, и туннель');
 
@@ -206,6 +216,73 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
   side.api.getConfiguredRelayUrl();
   assert(side.log.some(([kind, text]) => kind === 'warn' && /отклонён/.test(String(text))),
     '1g8: об отказе нигде не сказано');
+}
+
+// === 1h. «auto» там, где игра просто ЛЕЖИТ, — пустое обещание ===
+//
+// Хостинг раздаёт файлы и ничего больше: сокета на нём нет и быть не может. «auto» значит
+// «ретранслятор там же, откуда открыта страница» — и игра вечно стучалась в адрес
+// собственной страницы и молчала. Ни ошибки, ни объяснения: «Play» просто никогда не
+// загорается. На этом один раз потеряли полчаса при отладке, а ссылка с таким хвостом
+// может уехать и другу.
+//
+// Запрещаем ровно там, где точно знаем, что сокетов нет, — а не «везде, кроме своей
+// машины»: по локальной сети и через туннель «auto» единственное, что работает.
+{
+  const АДРЕС = 'wss://relay.paperwings.test';
+  const где = (origin) => makeSide('blue', { search: '?relay=auto', origin, relayUrl: АДРЕС });
+
+  for(const origin of ['https://eaglehaast.github.io', 'https://html-classic.itch.zone',
+                       'https://someone.itch.io']){
+    const сторона = где(origin);
+    assert(сторона.api.getConfiguredRelayUrl() === АДРЕС,
+      `1h: на ${origin} «auto» принято за адрес ретранслятора — там только файлы, и ждать `
+      + 'соединения можно вечно');
+    assert(сторона.log.some(([вид, текст]) => вид === 'warn' && /relay=auto/.test(String(текст))),
+      `1h2: на ${origin} про отброшенный «auto» нигде не сказано — в консоли будет тишина, `
+      + 'как и на экране');
+  }
+
+  // А там, где страницу раздают со своей машины, всё по-прежнему.
+  for(const origin of ['http://192.168.1.50:8099', 'https://x.trycloudflare.com',
+                       'http://localhost:8099']){
+    const свой = где(origin).api.getConfiguredRelayUrl();
+    assert(свой !== АДРЕС && /^wss?:\/\//.test(свой),
+      `1h3: на ${origin} «auto» перестало работать («${свой}») — а это единственное, что `
+      + 'сводит страницу и ретранслятор по локальной сети и через туннель');
+  }
+
+  // Ссылка другу не тащит «auto» оттуда, где мы его сами не приняли: у него он отработает
+  // так же впустую, и так же молча.
+  const наХостинге = makeSide('blue', {
+    search: '?relay=auto', origin: 'https://eaglehaast.github.io', relayUrl: АДРЕС,
+  });
+  assert(!/relay=/.test(наХостинге.api.buildOnlineInviteLink()),
+    '1h4: отброшенный «auto» всё равно уезжает другу в ссылке');
+}
+
+// === 1i. У пришедшего по ссылке те же правила, что у хозяина ===
+//
+// Проверка 1g стояла на getConfiguredRelayUrl — то есть у того, кто ссылку ПИШЕТ. А тот,
+// кому её прислали, читал адрес другой дорогой (parseOnlineSeatFromSearch) и принимал
+// что угодно. Защита стояла не с той стороны.
+{
+  const АДРЕС = 'wss://relay.paperwings.test';
+  const гость = (search, origin = 'https://example.test') =>
+    makeSide('green', { search, origin, relayUrl: АДРЕС }).api;
+
+  assert(гость('?room=r&seat=green&relay=wss://evil.example')
+    .parseOnlineSeatFromSearch('?room=r&seat=green&relay=wss://evil.example').relay === АДРЕС,
+    '1i: чужой адрес из присланной ссылки уехал бы прямо в сокет');
+
+  const свой = гость('?room=r&seat=green&relay=auto', 'http://localhost:8099');
+  assert(свой.parseOnlineSeatFromSearch('?room=r&seat=green&relay=auto').relay
+    === 'ws://localhost:8099',
+    '1i2: у гостя перестало работать «auto» — по локальной сети он не подключится');
+
+  const наХостинге = гость('?room=r&seat=green&relay=auto', 'https://eaglehaast.github.io');
+  assert(наХостинге.parseOnlineSeatFromSearch('?room=r&seat=green&relay=auto').relay === АДРЕС,
+    '1i3: гость на хостинге поверил «auto» и ушёл стучаться в страницу');
 }
 
 // === 2. Ссылка другу ведёт на СВОБОДНОЕ место ===
