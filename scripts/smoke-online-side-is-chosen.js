@@ -83,6 +83,9 @@ function устройство(край){
     'function onRemoteSettings(){} function onRemoteRematch(){}',
     'function applyOnlineRoomSettings(){} function receiveOnlineRematchAnswer(){}',
     'function receiveOnlinePresence(){} function receiveOnlineStart(){}',
+    'function receiveOnlineRejoin(){}',
+    // «Я сел за стол заново» уезжает при каждой посадке — стенду достаточно его проглотить.
+    'function postOnlineEnvelope(){ return true; }',
     'function showOnlineLobby(){}',
     'function getConfiguredRelayUrl(){ return "wss://relay.example"; }',
     'function publishOnlineRoomSettings(){ вызовы.push({ настройки: onlineSession.seat }); return true; }',

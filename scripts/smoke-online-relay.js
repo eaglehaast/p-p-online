@@ -184,6 +184,7 @@ function makeClient(seat, { room = 'stand', host = false, placements = {}, rules
     extractFunctionSource(source, 'receiveOnlinePresence'),
     extractFunctionSource(source, 'startOnlineMatchAsHost'),
     extractFunctionSource(source, 'receiveOnlineStart'),
+    extractFunctionSource(source, 'receiveOnlineRejoin'),
     extractFunctionSource(source, 'refreshOnlineLobbyUi'),
     extractFunctionSource(source, 'getOnlineTroubleText'),
     'let onlinePresence = null;',

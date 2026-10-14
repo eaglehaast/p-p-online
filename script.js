@@ -1397,6 +1397,38 @@ function buildTransferTurnPlane(player, sideClass) {
   return plane;
 }
 
+// Доска сброшена не нами: следующая плашка начала раунда должна это сказать.
+//
+// Одноразовая пометка, а не состояние: сказать надо РОВНО про тот сброс, который только
+// что случился, и ровно один раз. Забытая взведённой, она объясняла бы чужим
+// перезапуском каждый следующий раунд.
+const TRANSFER_OPPONENT_RESTART_TEXT = "OPPONENT RESTARTED";
+let чужойПерезапускНаПлашке = false;
+
+function пометитьЧужойПерезапуск(){
+  чужойПерезапускНаПлашке = true;
+}
+
+// Начать заново ПОВЕРХ идущей партии.
+//
+// resetGame с forceGameScreen делает это целиком: обнуляет счёт и раунд, остаётся на
+// игровом экране и сам поднимает первый раунд. Добавлять к нему handlePlayStart нельзя —
+// раунд начнётся дважды, и это не теория: на стенде у стороны, остававшейся в партии,
+// выходил раунд 2 против раунда 1 у вернувшейся, а следом расходился и первый ход (он
+// считается от номера раунда).
+//
+// Пометка ставится ДО сброса: плашку начала раунда собирает он же.
+function перезапуститьсяЗаСоперником(){
+  пометитьЧужойПерезапуск();
+  resetGame({ forceGameScreen: true });
+}
+
+function взятьПометкуЧужогоПерезапуска(){
+  if(!чужойПерезапускНаПлашке) return "";
+  чужойПерезапускНаПлашке = false;
+  return TRANSFER_OPPONENT_RESTART_TEXT;
+}
+
 function buildTransferTurnTexts(player, roundValue) {
   const parsedRound = Number(roundValue);
   const safeRound = Number.isFinite(parsedRound) && parsedRound > 0
@@ -8601,6 +8633,10 @@ function startOnlineSession(options = {}){
     settingsHandlers: [],
     settingsApplied: false,
     rematchHandlers: [],
+    // «Я только что сел за стол заново». Отличает перезагрузку страницы от моргнувшего
+    // интернета: при обрыве связи сессия та же и пакета этого нет, при перезагрузке —
+    // сессия новая и он уезжает первым делом.
+    rejoinHandlers: [],
     presenceHandlers: [],
     startHandlers: [],
     // Ответы на «ещё раз?»: свой и соперника. null — ещё не ответил.
@@ -8628,6 +8664,7 @@ function startOnlineSession(options = {}){
   onRemoteRematch(receiveOnlineRematchAnswer);
   onlineSession.presenceHandlers.push(receiveOnlinePresence);
   onlineSession.startHandlers.push(receiveOnlineStart);
+  onlineSession.rejoinHandlers.push(receiveOnlineRejoin);
   onlinePresence = null;
   onlineInviteSent = false;
   console.log("[online] место за столом", {
@@ -8636,6 +8673,13 @@ function startOnlineSession(options = {}){
     transport: transport.kind,
     хозяин: isOnlineHost(),
   });
+  // «Я сел за стол заново» — первым делом, пока соперник ещё думает, что мы в той же
+  // партии. Пакет уедет, когда провод подключится: до тех пор он лежит в очереди.
+  //
+  // Шлют его ВСЕ и всегда, даже садясь за пустой стол: соперник сам разберётся, значит
+  // это что-нибудь для него или нет. Решать это здесь нельзя — мы в этот миг ещё не
+  // знаем ни кто за столом, ни чей он.
+  postOnlineEnvelope("rejoin", { fresh: true });
   // Настройки создателя комнаты уезжают сразу и лежат в комнате, пока гость не придёт.
   if(isOnlineHost()) publishOnlineRoomSettings();
   return onlineSession;
@@ -8750,6 +8794,7 @@ function receiveOnlineEnvelope(envelope){
     : envelope.t === "rematch" ? onlineSession.rematchHandlers
     : envelope.t === "presence" ? onlineSession.presenceHandlers
     : envelope.t === "start" ? onlineSession.startHandlers
+    : envelope.t === "rejoin" ? onlineSession.rejoinHandlers
     : null;
   if(!handlers) return false;
   for(const handler of handlers) handler(envelope.payload, envelope);
@@ -9305,21 +9350,51 @@ function receiveOnlinePresence(payload){
 // меню», а сидит на экране ожидания подключённым, и старт приезжает ему отдельным
 // сообщением по тому же проводу — раньше любого хода, потому что порядок пакетов
 // сохраняется.
-function startOnlineMatchAsHost(){
+function startOnlineMatchAsHost({ заново = false } = {}){
   if(!onlineSession || !isOnlineHost()) return false;
-  if(gameMode) return false;              // уже играем
+  if(gameMode && !заново) return false;   // уже играем
   if(!isOnlineTableFull()) return false;  // играть не с кем
   postOnlineEnvelope("start", { start: true });
   забытьПриехавшееДоНачала();
+  // Доска сбрасывается и у нас, хотя мы этого не просили: сбросить надо по-настоящему и
+  // сказать об этом себе тоже.
+  if(заново && gameMode){
+    перезапуститьсяЗаСоперником();
+    return true;
+  }
   applyOnlineMenuState();
   handlePlayStart();
   return true;
 }
 
+// Соперник перезагрузил страницу — значит у него партия началась заново, с пустой доски.
+//
+// Догонять его нечем: своего состояния он не помнит, а комната хранит только последний
+// снимок. Выбор был между «подсадить его в идущую партию» и «начать заново обоим», и
+// выбрано второе — потому что первое игра делать не умеет, а притворяться, что умеет,
+// хуже всего.
+//
+// Молчать тут нельзя тем более. До этой правки у перезагрузившегося гостя экран навсегда
+// застревал в ожидании, а хозяин доигрывал один: его ходы приезжали на доску, которой у
+// соперника уже нет, и состояния перемешивались.
+function receiveOnlineRejoin(){
+  if(!onlineSession || !isOnlineHost()) return false;
+  // Партии нет — начнётся обычным путём, по приходу соперника за стол.
+  if(!gameMode) return false;
+  return startOnlineMatchAsHost({ заново: true });
+}
+
 function receiveOnlineStart(){
   if(!onlineSession || isOnlineHost()) return false;
-  if(gameMode) return false;
+  // Идёт партия, а хозяин зовёт начинать заново — значит кто-то из нас двоих перезагрузил
+  // страницу. Прежде этот пакет здесь отбрасывался, и доски расходились: один играл новую
+  // партию, другой — старую, а ходы ездили между ними.
+  const вПартии = Boolean(gameMode);
   забытьПриехавшееДоНачала();
+  if(вПартии){
+    перезапуститьсяЗаСоперником();
+    return true;
+  }
   applyOnlineMenuState();
   handlePlayStart();
   return true;
@@ -52454,11 +52529,15 @@ function startNewRound(){
   turnIndex = lastFirstTurn;
   const roundStartTurnColor = turnColors[turnIndex] === "green" ? "green" : "blue";
   const roundStartTurnTexts = buildTransferTurnTexts(roundStartTurnColor, upcomingRoundNumber);
+  // Номер раунда уступает место только чужому перезапуску и только на одну плашку: раунд
+  // всё равно первый, и он виден в счётчике, а вот почему доска вдруг пуста — больше
+  // сказать негде.
+  const верхняяСтрока = взятьПометкуЧужогоПерезапуска() || roundStartTurnTexts.topText;
   showTransferFrame({
     mode: "turn",
     player: roundStartTurnColor,
     roundNumber: upcomingRoundNumber,
-    topText: roundStartTurnTexts.topText,
+    topText: верхняяСтрока,
     bottomText: roundStartTurnTexts.bottomText,
     autoHideMs: TRANSFER_FRAME_TURN_AUTO_HIDE_MS
   });
