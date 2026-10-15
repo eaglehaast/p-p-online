@@ -319,6 +319,43 @@
               <span>EndR</span>
             </button>
 
+            <!-- Выход из онлайновой партии.
+                 Нужен он только в онлайне: в игре за одним устройством и против
+                 компьютера из партии выводит простая перезагрузка страницы. А в
+                 комнате перезагрузка теперь возвращает за тот же стол — и уйти из неё
+                 иначе как правкой адреса руками стало нельзя.
+                 Неприметная: это запасной выход, а не часть игры. -->
+            <button
+              id="leaveMatchBtn"
+              class="leave-match"
+              type="button"
+              aria-label="Leave the match"
+              hidden
+            >
+              <img class="leave-match__icon"
+                   src="ui_gamescreen/gamescreen_outside/gs_leave_match.png"
+                   alt="" aria-hidden="true" draggable="false" width="96" height="96" />
+            </button>
+
+            <!-- Спрашиваем, прежде чем рвать связь: нажатие на крестик посреди партии
+                 слишком дорого стоит, чтобы верить ему на слово. Кнопки те же самые,
+                 что в «Play again?» — другой пары «да/нет» в игре нет и заводить её
+                 незачем. -->
+            <div id="leaveMatchConfirm" class="leave-confirm" role="dialog"
+                 aria-labelledby="leaveConfirmText" hidden>
+              <div class="leave-confirm__veil"></div>
+              <div class="leave-confirm__box">
+                <p id="leaveConfirmText" class="leave-confirm__text">Leave the match?
+Your opponent will be left alone.</p>
+                <div class="leave-confirm__buttons">
+                  <button id="leaveConfirmYes" class="leave-confirm__btn leave-confirm__btn--yes"
+                          type="button" aria-label="Leave">YES</button>
+                  <button id="leaveConfirmNo" class="leave-confirm__btn leave-confirm__btn--no"
+                          type="button" aria-label="Keep playing">NO</button>
+                </div>
+              </div>
+            </div>
+
             <!-- Поворот поля в горизонталь (десктоп). Живёт в правом нижнем углу
                  игрового экрана и остаётся там же в обеих ориентациях. -->
             <button
