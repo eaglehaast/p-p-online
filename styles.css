@@ -5140,28 +5140,39 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
    же разговор с игроком, просто в другом случае. */
 #menuLayer #modeMenu .menu-notice {
   position: absolute;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  width: 356px;
-  max-width: calc(100% - 32px);
-  /* Потолок высоты. Панель прижата к низу и растёт ВВЕРХ, а прямо над ней «Play» —
-     кнопка, которой партия начинается. Дотянувшись, панель отберёт нажатие: кнопка видна,
-     а играть нельзя, и по экрану этого не понять.
+  /* По центру кадра: это единственное место, где игра обращается к человеку словами, и
+     читают их там, куда смотрят.
 
-     Раньше потолок был у лобби, потому что расти умело оно. Лобби стало пунктами меню, а
-     роль «единственное место, где к игроку обращаются текстом» досталась этой панели: она
-     теперь говорит и про непришедшие карты, и про оборванную связь. Значит и потолок
-     переехал сюда. Арифметику стережёт smoke-online-lobby-fits. */
+     Раньше панель была прижата к низу и росла вверх, а всё правило вокруг неё было про
+     то, чтобы не дотянуться до «Play»: нажатие досталось бы ей, и партию стало бы не
+     начать. Теперь она нажатий не отбирает вовсе (pointer-events ниже), поэтому может
+     стоять посередине. */
+  left: 50%;
+  top: 400px;
+  transform: translate(-50%, -50%);
+  width: 270px;
+  max-width: calc(100% - 32px);
+  /* Потолок с прокруткой: текст тут короткий, но новый может оказаться длиннее любого
+     нынешнего, а расти без предела посреди экрана нельзя. */
   max-height: 256px;
   overflow-y: auto;
-  padding: 14px 16px 12px;
-  border-radius: 10px;
-  background: rgba(253, 250, 240, 0.96);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-  color: #2b2b2b;
-  font-family: inherit;
+  box-sizing: border-box;
+  /* Говорит игра — значит и выглядеть должно, как остальная её речь: подсказки инвентаря
+     и «link copied». Белая системная коробка с системной кнопкой была здесь единственным
+     чужим предметом на экране. */
+  padding: var(--inventory-tooltip-padding, 8px 12px);
+  background: var(--inventory-tooltip-background, rgba(210, 190, 150, 0.97));
+  color: var(--inventory-tooltip-color, #251d14);
+  font-family: var(--inventory-tooltip-font-family, "Palatino Linotype", Palatino, serif);
+  font-size: var(--inventory-tooltip-font-size, 12px);
+  font-weight: var(--inventory-tooltip-font-weight, 700);
+  line-height: var(--inventory-tooltip-line-height, 1.4);
   text-align: center;
+  border-radius: var(--inventory-tooltip-border-radius, 6px);
+  border: var(--inventory-tooltip-border, 1px solid rgba(90, 65, 40, 0.35));
+  box-shadow: var(--inventory-tooltip-box-shadow, 0 8px 18px rgba(0, 0, 0, 0.18));
+  /* Нажатия проходят насквозь: панель стоит поверх «Play», но кнопку не отбирает. */
+  pointer-events: none;
   z-index: 7;
 }
 
@@ -5169,29 +5180,33 @@ html.is-board-landscape #playerThinkHoof.is-south.is-goat-south {
 
 #menuLayer #modeMenu .menu-notice__text {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.25;
+  /* Размер и межстрочное — от панели, чтобы надпись была одним целым с подсказками. */
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-line;
 }
 
 #menuLayer #modeMenu .menu-notice__actions {
   display: flex;
   gap: 8px;
   justify-content: center;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 #menuLayer #modeMenu .menu-notice__btn {
-  padding: 7px 14px;
-  border: 1px solid rgba(0, 0, 0, 0.28);
-  border-radius: 6px;
-  background: #f3ede0;
-  color: #2b2b2b;
+  /* Своё нажатие кнопка принимает, иначе она была бы картинкой. */
+  pointer-events: auto;
+  padding: 4px 12px;
+  border: 1px solid rgba(90, 65, 40, 0.55);
+  border-radius: 5px;
+  background: rgba(192, 168, 126, 0.95);
+  color: inherit;
   font: inherit;
-  font-size: 13px;
+  letter-spacing: 0.4px;
   cursor: pointer;
 }
 
-#menuLayer #modeMenu .menu-notice__btn:hover { background: #ece4d3; }
+#menuLayer #modeMenu .menu-notice__btn:hover { background: rgba(206, 184, 143, 0.98); }
 
 /* ===== Своя сторона внизу =====
    Поле переворачивается преобразованием холста (см. setFieldTransform в script.js), а HUD
