@@ -74,7 +74,16 @@ function стенд({ вКомнате = true, вПартии = true } = {}){
     leaveConfirmText: { textContent: '' },
   };
   for(const узел of Object.values(узлы)) Object.setPrototypeOf(узел, sandbox.HTMLElement.prototype);
-  sandbox.document = { getElementById: (id) => узлы[id] || null };
+
+  // Метка «вопрос на экране» висит на корне страницы: по ней доска поднимается над
+  // слоем плашек.
+  const метки = new Set();
+  const корень = { classList: {
+    toggle: (имя, вкл) => { if(вкл) метки.add(имя); else метки.delete(имя); },
+    contains: (имя) => метки.has(имя),
+  } };
+  Object.setPrototypeOf(корень, sandbox.HTMLElement.prototype);
+  sandbox.document = { getElementById: (id) => узлы[id] || null, documentElement: корень };
 
   vm.createContext(sandbox);
   vm.runInContext([
@@ -82,6 +91,7 @@ function стенд({ вКомнате = true, вПартии = true } = {}){
     source.match(/const LEAVE_MATCH_TEXT_ONLINE = "[^"]*";/)[0],
     extractFunctionSource(source, 'вПартии'),
     extractFunctionSource(source, 'syncLeaveMatchButton'),
+    extractFunctionSource(source, 'отметитьВопросНаЭкране'),
     extractFunctionSource(source, 'показатьВопросОВыходе'),
     extractFunctionSource(source, 'спрятатьВопросОВыходе'),
     extractFunctionSource(source, 'уйтиИзПартии'),
@@ -91,7 +101,7 @@ function стенд({ вКомнате = true, вПартии = true } = {}){
     '  надпись: () => document.getElementById("leaveConfirmText").textContent,',
     '};',
   ].join('\n'), sandbox);
-  return { api: sandbox.api, узлы, стенд: sandbox };
+  return { api: sandbox.api, узлы, метки, стенд: sandbox };
 }
 
 // === 1. ГЛАВНОЕ: крестик есть только в онлайновой партии ===
@@ -402,6 +412,51 @@ function стенд({ вКомнате = true, вПартии = true } = {}){
   assert(глубина >= 1,
     '9i5: вопрос вынесли из #gameContainer — переменные поля туда не наследуются, и окно '
     + 'встанет по запасным числам');
+}
+
+// === 9j. Вопрос не прячется под плашку раунда ===
+//
+// Поймано живьём: человек входит в новый раунд, жмёт крестик — и видит на экране только
+// «ROUND 2 / YOUR TURN». Вопроса нет, крестик выглядит сломанным.
+//
+// Своё z-index: 400 вопросу не помогает: он лежит ВНУТРИ доски (#gameContainer), а
+// плашка — этажом выше, в #transferSystemHost; оба дети #gsFrame, и доска стоит там на
+// z 0. Соревнуются не числа у вопроса и плашки, а числа у их общих предков.
+//
+// Поэтому на время вопроса поднимается сама доска, и метку снимает тот же код, что
+// прячет вопрос: оставшись, она накроет плашки до конца партии.
+{
+  const х = стенд({ вКомнате: false, вПартии: true });
+  assert(х.метки.has('is-leave-asking') === false, '9j: метка стоит до вопроса');
+  х.api.спросить();
+  assert(х.метки.has('is-leave-asking') === true,
+    '9j2: вопрос открыт, а доска не поднята — плашка раунда накроет его целиком, и крестик '
+    + 'будет выглядеть сломанным');
+  х.api.забыть();
+  assert(х.метки.has('is-leave-asking') === false,
+    '9j3: метка осталась после ответа — поднятая доска накроет все плашки до конца партии');
+
+  // Уход по «да» и смена экрана — те же двери, и обе ведут через то же «спрятать».
+  const у = стенд({ вКомнате: true, вПартии: true });
+  у.api.спросить();
+  у.api.уйти();
+  assert(у.метки.has('is-leave-asking') === false, '9j4: ушли из партии, а метка уехала в меню');
+
+  const з = стенд({ вКомнате: false, вПартии: true });
+  з.api.спросить();
+  з.стенд.gameMode = null;
+  з.api.показать();
+  assert(з.метки.has('is-leave-asking') === false,
+    '9j5: партия кончилась, вопрос спрятан, а метка осталась');
+
+  // И само правило: поднимать нужно выше слоя, на котором живут плашки. Числа берём из
+  // кода — чтобы проверка ловила и то, что подняли слой плашек.
+  const правилоПодъёма = правило('html.is-leave-asking #gameStage');
+  assert(правилоПодъёма, '9j6: правила подъёма нет — метку некому читать');
+  const подъём = Number(/z-index:\s*(\d+)/.exec(правилоПодъёма)[1]);
+  const слойПлашек = Number(/TRANSFER_SYSTEM_HOST_Z_INDEX = (\d+)/.exec(source)[1]);
+  assert(подъём > слойПлашек,
+    `9j7: доску поднимают на ${подъём}, а плашки лежат на ${слойПлашек} — вопрос снова под ними`);
 }
 
 // === 10. Вопрос глушит нажатия по полю ===
