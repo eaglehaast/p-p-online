@@ -219,7 +219,11 @@ function syncLeaveMatchButton(){
   if(!(кнопка instanceof HTMLElement)) return false;
   const нужна = вПартии();
   кнопка.hidden = !нужна;
-  if(!нужна) спрятатьВопросОВыходе();
+  if(!нужна){
+    спрятатьВопросОВыходе();
+    // И надпись о забранном месте: она про партию, которой больше нет.
+    спрятатьНадписьНаПоле();
+  }
   return нужна;
 }
 
@@ -7963,6 +7967,15 @@ if(mapsErrorNoticeReloadBtn instanceof HTMLElement){
     window.location.reload();
   });
 }
+
+// Та же кнопка, но на поле: место за столом забрало другое окно, и перезагрузка забирает
+// его обратно сюда. Адрес стола для этого и оставлен в строке браузера.
+const gameNoticeReloadBtn = document.getElementById("gameNoticeReload");
+if(gameNoticeReloadBtn instanceof HTMLElement){
+  gameNoticeReloadBtn.addEventListener("click", () => {
+    window.location.reload();
+  });
+}
 // --- Ссылки автора -------------------------------------------------------
 //
 // Окошко за подписью внизу меню. Закрывается нажатием мимо, и это не украшение, а весь
@@ -9700,22 +9713,55 @@ function заметитьВытеснение(){
   // stopOnlineSession адрес стирает, потому что написан для ухода совсем. Без этого
   // кнопка перезагрузки открывала бы голое меню, и обещание в надписи было бы ложью.
   const стол = { room: onlineSession.room, seat: onlineSession.seat };
+  const вПартии = Boolean(gameMode);
   запискаОВытеснении = ONLINE_DISPLACED_TEXT;
   stopOnlineSession();
   writeOnlineRoomIntoAddress(стол);
   onlinePresence = null;
-  // Из партии уводим: играть в ней больше нечем — ходы соперника теперь едут в другое
-  // окно. Остаться на мёртвой доске хуже, чем вернуться в меню с объяснением.
+
+  if(вПартии){
+    // Говорим прямо на поле, а человека никуда не уводим.
+    //
+    // Первая версия уводила в главное меню — и это было неправдой о том, где человек
+    // находится: по ссылке в главное меню не попадают вовсе, туда его отправил бы
+    // только этот самый код. Доска остаётся последней картинкой партии, поверх неё
+    // объяснение и способ вернуть игру сюда.
+    показатьНадписьНаПоле(ONLINE_DISPLACED_TEXT);
+    return true;
+  }
+
+  // Партии ещё не было — значит ждали в лобби, и ждать больше нечего: лобби написало бы
+  // «WAITING…», то есть «соперник сейчас придёт», а стол занят нами же в другом окне.
+  // Отсюда уводит в меню и «Cancel».
   resetGame({ forceMenu: true });
-  // И в обычное меню, а не в лобби: лобби написало бы «WAITING…», то есть «соперник
-  // сейчас придёт». Никто не придёт — стол занят нами же в другом окне. Так же уводит
-  // отсюда «Cancel».
   hideOnlineLobby();
   selectedMode = "hotSeat";
   setStoredGameMode(selectedMode);
   lastModeSelectionButton = hotSeatBtn;
   updateModeSelection(hotSeatBtn);
   showOnlineTrouble();
+  return true;
+}
+
+// Надпись поверх доски. Метка на корне поднимает доску над слоем плашек — иначе плашка
+// начала раунда накроет надпись целиком, как накрывала вопрос о выходе.
+function показатьНадписьНаПоле(текст){
+  document.documentElement?.classList?.toggle("is-game-notice", true);
+  const узел = document.getElementById("gameNotice");
+  if(!(узел instanceof HTMLElement)) return false;
+  const строка = document.getElementById("gameNoticeText");
+  if(строка instanceof HTMLElement) строка.textContent = текст;
+  узел.hidden = false;
+  return true;
+}
+
+function спрятатьНадписьНаПоле(){
+  // Метку снимаем первой и без оглядки на узел: оставшись, она держала бы доску поднятой
+  // над плашками до конца партии.
+  document.documentElement?.classList?.toggle("is-game-notice", false);
+  const узел = document.getElementById("gameNotice");
+  if(!(узел instanceof HTMLElement)) return false;
+  узел.hidden = true;
   return true;
 }
 
