@@ -52808,8 +52808,17 @@ function getRandomPlayableMapIndex(upcomingRoundNumber = roundNumber + 1){
 
   const playableForRound = getPlayableMapIndicesForRound(upcomingRoundNumber);
   if(playableForRound.length === 0){
-    randomMapPairSequenceNumber = pairSequenceNumber;
-    randomMapPairIndex = 0;
+    // Выбирать не из чего. Почти всегда это значит, что карты ещё едут по сети — их сорок
+    // один файл, и resetGame бросает жребий сразу при загрузке страницы, задолго до их
+    // приезда.
+    //
+    // Отвечаем нулём: до загрузки это и есть значение по умолчанию. Но ответ НЕ
+    // запоминаем. Запомненный, он переживал приезд карт и возвращался уже при полном
+    // списке — а ноль в нём занимает «random», карта-заглушка из меню выбора.
+    //
+    // Замерено на стенде (карты гостю отдавались на 2.5 с медленнее): жребий у гостя
+    // {картВсего: 0, играбельных: 0} → запомнил 0 → хозяин играл на «x2», гость на
+    // «random». Ровно это и видно было на планшете, куда уехала ссылка.
     return 0;
   }
 
@@ -52817,7 +52826,9 @@ function getRandomPlayableMapIndex(upcomingRoundNumber = roundNumber + 1){
     getSharedRandomFraction(`map:${pairSequenceNumber}`) * playableForRound.length
   );
   randomMapPairSequenceNumber = pairSequenceNumber;
-  randomMapPairIndex = playableForRound[randomIndex] ?? 0;
+  // Запасной вариант — первая играбельная, а не ноль: ноль в списке карт занимает
+  // «random», сама карта-заглушка, и промах жребия выкладывал бы на поле именно её.
+  randomMapPairIndex = playableForRound[randomIndex] ?? playableForRound[0];
   return randomMapPairIndex;
 }
 
