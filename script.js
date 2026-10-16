@@ -8583,6 +8583,18 @@ function createBroadcastTransport(room){
 // требование. Игра про обрыв не знает вовсе: пока сокета нет, пакеты копятся здесь, а
 // после подключения уезжают в том же порядке. Пошаговой игре это ничего не стоит —
 // сопернику всё равно нечего показывать, пока ход не сделан.
+// Место забрала другая вкладка этого же браузера. Код и причина приходят от комнаты
+// (worker/index.js, worker/local-server.js): она закрывает прежнее соединение сама.
+const ONLINE_DISPLACED_CODE = 4001;
+const ONLINE_DISPLACED_REASON = "seat_taken_over";
+// Говорим то же, что говорят в таких случаях все: игра открыта в другом окне, и вот как
+// вернуть её сюда. Слово Reload в тексте не случайно — по нему панель извещений
+// показывает свою кнопку перезагрузки, и перезагрузка здесь действительно лечит: она
+// забирает место обратно в эту вкладку.
+const ONLINE_DISPLACED_TEXT = "This game is open in another window. Reload this page to play here.";
+// Записка переживает конец сессии: сказать надо уже после того, как связь закрыта.
+let запискаОВытеснении = "";
+
 function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey, claimHost){
   if(typeof WebSocket !== "function" || !relayUrl) return null;
 
@@ -8651,6 +8663,20 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey,
         announce();
         return;
       }
+      // 4001 — место забрало другое окно с тем же ключом, то есть вторая вкладка этого
+      // же браузера. Для комнаты это «вернувшийся», и она честно отдаёт место ему.
+      //
+      // Переподключаться тут нельзя: мы отберём место назад, та вкладка переподключится
+      // и отберёт его снова. Замерено — вкладки меняются местами по кругу, примерно раз
+      // в полминуты, и обе при этом молчат: человек видит замершую доску без единого
+      // слова. Поэтому вытеснение — это конец сессии, а не обрыв связи.
+      if(event?.code === ONLINE_DISPLACED_CODE){
+        closedForGood = true;
+        rejectReason = String(event.reason || ONLINE_DISPLACED_REASON);
+        console.warn("[online] место забрало другое окно", { причина: rejectReason });
+        announce();
+        return;
+      }
       scheduleReconnect();
       announce();
     };
@@ -8682,6 +8708,8 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey,
 }
 
 function startOnlineSession(options = {}){
+  // Снова садимся за стол — прежняя записка о вытеснении больше не про нас.
+  запискаОВытеснении = "";
   const seatInfo = options.seat
     ? { seat: options.seat, room: options.room || ONLINE_ROOM_FALLBACK, relay: options.relay || "" }
     : parseOnlineSeatFromSearch(window.location?.search || "");
@@ -8695,7 +8723,7 @@ function startOnlineSession(options = {}){
       // Лобби показывает состояние связи, а состояние это меняется само по себе —
       // без нашего участия и в любой момент. Значит, о нём надо не спрашивать, а
       // узнавать: иначе на экране навсегда застывает то, что было в миг открытия.
-      ? createWebSocketTransport(room, seatInfo.relay, seatInfo.seat, refreshOnlineLobbyUi,
+      ? createWebSocketTransport(room, seatInfo.relay, seatInfo.seat, приПеременеСвязи,
         resolveSeatKey(room, seatInfo.seat), options.host === true)
       : createBroadcastTransport(room));
   const transport = createTransport(seatInfo.room);
@@ -9652,8 +9680,50 @@ function applyOnlineMenuState(){
 // (по «Play») и чего мы ждём (по самому экрану). Осталось то, что глазами не увидеть, —
 // оборванная связь и отказ комнаты. Своего места для них не заводим: в меню уже живёт
 // панель извещений, та самая, что говорит о непришедших картах.
+// Связь меняется сама по себе, и лобби на это перерисовывается. Но одна перемена не
+// перерисовка, а конец: место забрали в другое окно.
+function приПеременеСвязи(){
+  if(заметитьВытеснение()) return;
+  refreshOnlineLobbyUi();
+}
+
+// Место забрала другая вкладка. Делаем то же, что делают все в таком случае: эту вкладку
+// отключаем и говорим ей, что игра теперь в другом окне и как вернуть её сюда. Молчать
+// нельзя — доска просто замрёт, и человек решит, что сломалась игра.
+function заметитьВытеснение(){
+  if(!onlineSession) return false;
+  const провод = onlineSession.transport;
+  if(провод?.status?.() !== "rejected") return false;
+  if(провод?.rejection?.() !== ONLINE_DISPLACED_REASON) return false;
+
+  // Адрес стола оставляем за собой: «играть здесь» — это вернуться за ТОТ ЖЕ стол, а
+  // stopOnlineSession адрес стирает, потому что написан для ухода совсем. Без этого
+  // кнопка перезагрузки открывала бы голое меню, и обещание в надписи было бы ложью.
+  const стол = { room: onlineSession.room, seat: onlineSession.seat };
+  запискаОВытеснении = ONLINE_DISPLACED_TEXT;
+  stopOnlineSession();
+  writeOnlineRoomIntoAddress(стол);
+  onlinePresence = null;
+  // Из партии уводим: играть в ней больше нечем — ходы соперника теперь едут в другое
+  // окно. Остаться на мёртвой доске хуже, чем вернуться в меню с объяснением.
+  resetGame({ forceMenu: true });
+  // И в обычное меню, а не в лобби: лобби написало бы «WAITING…», то есть «соперник
+  // сейчас придёт». Никто не придёт — стол занят нами же в другом окне. Так же уводит
+  // отсюда «Cancel».
+  hideOnlineLobby();
+  selectedMode = "hotSeat";
+  setStoredGameMode(selectedMode);
+  lastModeSelectionButton = hotSeatBtn;
+  updateModeSelection(hotSeatBtn);
+  showOnlineTrouble();
+  return true;
+}
+
 function getOnlineTroubleText(){
-  if(!onlineSession || gameMode) return "";
+  // Записка о вытеснении живёт дольше сессии: самой сессии в этот миг уже нет, а
+  // сказать надо именно теперь.
+  if(!onlineSession) return запискаОВытеснении;
+  if(gameMode) return "";
   const connection = onlineSession.transport.status?.() ?? "online";
   if(connection === "rejected"){
     // «Место занято» перезагрузкой не лечится: там сидит другой человек, и советовать
