@@ -223,6 +223,17 @@ function syncLeaveMatchButton(){
   return нужна;
 }
 
+// Плашка раунда живёт не на доске, а слоем выше неё: #transferSystemHost (z 320) лежит
+// в #gsFrame рядом с самой доской, а доска стоит там на z 0. Свои z-index: 400 вопрос
+// разыгрывает только с соседями ПО ДОСКЕ — и «ROUND 2 / YOUR TURN» накрывала его
+// целиком. Поэтому на время вопроса поднимаем доску: правило в styles.css.
+function отметитьВопросНаЭкране(открыт){
+  const корень = document.documentElement;
+  if(!(корень instanceof HTMLElement)) return false;
+  корень.classList.toggle("is-leave-asking", открыт === true);
+  return true;
+}
+
 function показатьВопросОВыходе(){
   const вопрос = document.getElementById("leaveMatchConfirm");
   if(!(вопрос instanceof HTMLElement)) return false;
@@ -234,10 +245,14 @@ function показатьВопросОВыходе(){
     строка.textContent = onlineSession ? LEAVE_MATCH_TEXT_ONLINE : LEAVE_MATCH_TEXT;
   }
   вопрос.hidden = false;
+  отметитьВопросНаЭкране(true);
   return true;
 }
 
 function спрятатьВопросОВыходе(){
+  // Метку снимаем первой и без оглядки на узел: доска, оставшаяся поднятой, накроет
+  // собой все плашки до конца партии.
+  отметитьВопросНаЭкране(false);
   const вопрос = document.getElementById("leaveMatchConfirm");
   if(!(вопрос instanceof HTMLElement)) return false;
   вопрос.hidden = true;
