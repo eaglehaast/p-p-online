@@ -9726,10 +9726,19 @@ function getOnlineTroubleText(){
   if(gameMode) return "";
   const connection = onlineSession.transport.status?.() ?? "online";
   if(connection === "rejected"){
-    // «Место занято» перезагрузкой не лечится: там сидит другой человек, и советовать
-    // обновить страницу — значит гонять его по кругу.
+    // «Место занято» перезагрузкой не лечится: место держится за тем, кто его занял,
+    // целую минуту после ухода, и обновлять страницу в эти секунды — ходить по кругу.
+    //
+    // А вот совет «попроси у друга новую ссылку» был просто неправдой. Замерено: чаще
+    // всего за местом сидит сам пришедший — ссылку открыли во встроенном браузере
+    // телеграма, а потом в Safari. Хранилища у них разные, ключ места разный, и для
+    // комнаты второй — посторонний, знающий ссылку. Друг тут ни при чём, и новая ссылка
+    // ничего не изменит: место занято на той же ссылке.
+    //
+    // Проверено на стенде: закрыть то окно, подождать минуту, открыть снова — садишься
+    // за свой стол и играешь.
     return onlineSession.transport.rejection?.() === "seat_taken"
-      ? "This seat is already taken. Ask your friend for a new link."
+      ? "This seat is taken in another app or browser.\nClose it there, then open this link again in a minute."
       : "Room refused the connection. Reload the page.";
   }
   if(connection !== "online" && connection !== "connecting"){
