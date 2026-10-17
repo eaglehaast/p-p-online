@@ -45,6 +45,8 @@ function assert(condition, message){
 const script = fs.readFileSync('script.js', 'utf8');
 const workerSource = fs.readFileSync('worker/index.js', 'utf8');
 const localSource = fs.readFileSync('worker/local-server.js', 'utf8');
+const styles = fs.readFileSync('styles.css', 'utf8');
+const html = fs.readFileSync('index.html', 'utf8');
 
 function stripComments(source){
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -232,48 +234,114 @@ const OTHER = 'sovsemdrugojkljuc567';
   assert(гдеВытеснение < гдеПереподключение,
     '9e: ветка вытеснения стоит ПОСЛЕ переподключения и ничего не меняет');
 
-  // И поведение целиком: сессия кончается, адрес стола остаётся, человеку сказано.
+  // И поведение целиком: сессия кончается, адрес стола остаётся, человеку сказано — и
+  // сказано ТАМ, ГДЕ ОН БЫЛ. Уводить в главное меню нельзя: по ссылке в него не
+  // попадают вовсе, туда человека отправил бы только этот самый код.
   const vm = require('vm');
-  const песочница = {
-    onlinePresence: {}, gameMode: 'online', selectedMode: 'online',
-    lastModeSelectionButton: null, hotSeatBtn: { id: 'hotSeat' },
-    сделано: [], адрес: null,
-    onlineSession: { room: 'стол', seat: 'blue',
-      transport: { status: () => 'rejected', rejection: () => причина[1] } },
-    stopOnlineSession(){ песочница.сделано.push('связь закрыта'); песочница.onlineSession = null; },
-    writeOnlineRoomIntoAddress(стол){ песочница.адрес = стол; },
-    resetGame(о){ песочница.сделано.push(`меню:${JSON.stringify(о)}`); песочница.gameMode = null; },
-    hideOnlineLobby(){ песочница.сделано.push('лобби убрано'); },
-    setStoredGameMode(м){ песочница.selectedMode = м; },
-    updateModeSelection(){ песочница.сделано.push('выбран режим'); },
-    showOnlineTrouble(){ песочница.сделано.push('надпись показана'); },
-    refreshOnlineLobbyUi(){ песочница.сделано.push('лобби перерисовано'); },
-  };
-  vm.createContext(песочница);
-  vm.runInContext([
-    /const ONLINE_DISPLACED_REASON = "[^"]+";/.exec(code)[0],
-    /const ONLINE_DISPLACED_TEXT = "[^"]+";/.exec(code)[0],
-    'let запискаОВытеснении = "";',
-    /function заметитьВытеснение\(\)\{[\s\S]*?\n\}/.exec(code)[0],
-    /function getOnlineTroubleText\(\)\{[\s\S]*?\n\}/.exec(code)[0],
-    'this.api = { заметить: заметитьВытеснение, беда: getOnlineTroubleText,',
-    '  текст: () => ONLINE_DISPLACED_TEXT };',
-  ].join('\n'), песочница);
+  function стенд({ вПартии }){
+    const метки = new Set();
+    const узлы = {
+      gameNotice: { hidden: true },
+      gameNoticeText: { textContent: '' },
+    };
+    const песочница = {
+      onlinePresence: {}, gameMode: вПартии ? 'online' : null,
+      selectedMode: 'online', lastModeSelectionButton: null, hotSeatBtn: { id: 'hotSeat' },
+      сделано: [], адрес: null, метки,
+      HTMLElement: function HTMLElement(){},
+      onlineSession: { room: 'стол', seat: 'blue',
+        transport: { status: () => 'rejected', rejection: () => причина[1] } },
+      stopOnlineSession(){ песочница.сделано.push('связь закрыта'); песочница.onlineSession = null; },
+      writeOnlineRoomIntoAddress(стол){ песочница.адрес = стол; },
+      resetGame(о){ песочница.сделано.push(`меню:${JSON.stringify(о)}`); песочница.gameMode = null; },
+      hideOnlineLobby(){ песочница.сделано.push('лобби убрано'); },
+      setStoredGameMode(м){ песочница.selectedMode = м; },
+      updateModeSelection(){ песочница.сделано.push('выбран режим'); },
+      showOnlineTrouble(){ песочница.сделано.push('надпись в меню'); },
+      refreshOnlineLobbyUi(){ песочница.сделано.push('лобби перерисовано'); },
+    };
+    for(const узел of Object.values(узлы)) Object.setPrototypeOf(узел, песочница.HTMLElement.prototype);
+    песочница.document = {
+      getElementById: (id) => узлы[id] || null,
+      documentElement: Object.setPrototypeOf({ classList: {
+        toggle: (имя, вкл) => { if(вкл) метки.add(имя); else метки.delete(имя); },
+        contains: (имя) => метки.has(имя),
+      } }, песочница.HTMLElement.prototype),
+    };
+    vm.createContext(песочница);
+    vm.runInContext([
+      /const ONLINE_DISPLACED_REASON = "[^"]+";/.exec(code)[0],
+      /const ONLINE_DISPLACED_TEXT = "[^"]+";/.exec(code)[0],
+      'let запискаОВытеснении = "";',
+      /function показатьНадписьНаПоле\(текст\)\{[\s\S]*?\n\}/.exec(code)[0],
+      /function заметитьВытеснение\(\)\{[\s\S]*?\n\}/.exec(code)[0],
+      /function getOnlineTroubleText\(\)\{[\s\S]*?\n\}/.exec(code)[0],
+      'this.api = { заметить: заметитьВытеснение, беда: getOnlineTroubleText,',
+      '  текст: () => ONLINE_DISPLACED_TEXT };',
+    ].join('\n'), песочница);
+    return { api: песочница.api, с: песочница, узлы, метки };
+  }
 
-  assert(песочница.api.заметить() === true, '9f: вытеснение не замечено');
-  assert(песочница.onlineSession === null, '9g: связь осталась жить — вкладка отберёт место назад');
-  assert(песочница.gameMode === null,
-    '9h: вытесненную вкладку оставили в партии, в которой её ходы уже никуда не едут');
-  assert(песочница.адрес && песочница.адрес.room === 'стол' && песочница.адрес.seat === 'blue',
-    '9i: адрес стола стёрт — кнопка перезагрузки откроет голое меню, и обещание «play here» '
-    + 'окажется ложью');
-  assert(песочница.selectedMode === 'hotSeat',
-    '9j: вкладку оставили в лобби — оно напишет «WAITING…», то есть «соперник сейчас придёт», '
-    + 'а стол занят нами же в другом окне');
-  assert(песочница.api.беда() === песочница.api.текст(),
-    '9k: человеку не сказали, почему партия кончилась');
-  assert(/Reload/.test(песочница.api.текст()),
-    '9l: в надписи нет слова Reload — панель не покажет кнопку, и вернуть игру будет нечем');
+  // В партии: остаёмся на поле, надпись поверх доски.
+  {
+    const в = стенд({ вПартии: true });
+    assert(в.api.заметить() === true, '9f: вытеснение не замечено');
+    assert(в.с.onlineSession === null, '9g: связь осталась жить — вкладка отберёт место назад');
+    assert(в.с.адрес && в.с.адрес.room === 'стол' && в.с.адрес.seat === 'blue',
+      '9h: адрес стола стёрт — кнопка перезагрузки откроет голое меню, и обещание '
+      + '«play here» окажется ложью');
+    assert(!в.с.сделано.some((д) => д.startsWith('меню:')),
+      '9i: человека увели в главное меню, хотя он пришёл по ссылке и в этом меню ни разу '
+      + 'не был — туда его отправляет только этот код');
+    assert(в.узлы.gameNotice.hidden === false && в.узлы.gameNoticeText.textContent === в.api.текст(),
+      '9j: на поле ничего не написано — доска просто замрёт');
+    assert(в.метки.has('is-game-notice'),
+      '9k: доску не подняли над слоем плашек — плашка начала раунда накроет надпись целиком, '
+      + 'как накрывала вопрос о выходе');
+  }
+
+  // Партии ещё не было: ждали в лобби, и ждать больше нечего.
+  {
+    const л = стенд({ вПартии: false });
+    assert(л.api.заметить() === true, '9l: вытеснение в лобби не замечено');
+    assert(л.с.сделано.some((д) => д.startsWith('меню:')),
+      '9m: из мёртвого лобби никуда не увели — оно так и будет писать «WAITING…»');
+    assert(л.с.selectedMode === 'hotSeat', '9n: в меню остался выбран онлайн');
+    assert(л.api.беда() === л.api.текст(), '9o: человеку не сказали, почему ожидание кончилось');
+    assert(л.узлы.gameNotice.hidden === true, '9p: надпись на поле показана там, где поля нет');
+  }
+
+  assert(/Reload/.test(/const ONLINE_DISPLACED_TEXT = "([^"]+)";/.exec(code)[1]),
+    '9q: в надписи нет слова Reload — ни кнопки, ни способа вернуть игру');
+}
+
+// === 10. Надпись на поле стоит там же, где вопрос о выходе, и не отбирает нажатий ===
+{
+  const правило = /\.game-notice\s*\{([^}]*)\}/.exec(styles);
+  assert(правило, '10: у надписи на поле нет оформления');
+  const блок = правило[1];
+  assert(/var\(--field-left/.test(блок) && /var\(--field-top/.test(блок),
+    '10b: надпись прибита числами, а не к центру поля — поле двигается от экрана к экрану');
+  assert(/transform:\s*translate\(-50%,\s*-50%\)/.test(блок),
+    '10c: надпись повешена на центр поля углом');
+  assert(/--inventory-tooltip-background/.test(блок),
+    '10d: надпись оформлена сама по себе, а не как остальная речь игры');
+  assert(/pointer-events:\s*none/.test(блок),
+    '10e: надпись ловит нажатия, а под ней доска');
+  const кнопкаПоля = /\.game-notice__btn\s*\{([^}]*)\}/.exec(styles);
+  assert(кнопкаПоля && /pointer-events:\s*auto/.test(кнопкаПоля[1]),
+    '10f: кнопка на поле не принимает нажатий — вернуть игру нечем');
+  const гор = /html\.is-board-landscape \.game-notice\s*\{([^}]*)\}/.exec(styles);
+  assert(гор && /translate\(-50%,\s*-50%\)\s*rotate\(-90deg\)/.test(гор[1]),
+    '10g: в горизонтали надпись не развёрнута встречно или потеряла смещение за центр');
+  const подъём = /html\.is-game-notice #gameStage\s*\{([^}]*)\}/.exec(styles);
+  const высота = подъём && /z-index:\s*(\d+)/.exec(подъём[1]);
+  const слойПлашек = Number(/TRANSFER_SYSTEM_HOST_Z_INDEX = (\d+)/.exec(script)[1]);
+  assert(высота && Number(высота[1]) > слойПлашек,
+    `10h: доску с надписью поднимают на ${высота ? высота[1] : 'ничто'}, а плашки лежат на `
+    + `${слойПлашек} — надпись окажется под плашкой раунда`);
+  assert(/id="gameNotice"/.test(html) && /id="gameNoticeReload"/.test(html),
+    '10i: в разметке нет надписи на поле или её кнопки');
 }
 
 console.log('smoke-room-seat-keys: OK');

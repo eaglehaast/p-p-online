@@ -4523,6 +4523,73 @@ html.is-board-landscape .leave-match {
 .leave-confirm__btn:active { transform: translateY(1px); background: rgba(20, 11, 4, 0.5); }
 .leave-confirm__btn:focus-visible { outline: 2px solid #f0d79a; outline-offset: 2px; }
 
+/* Надпись на поле: партия кончилась не по нашей воле.
+
+   Стоит по центру поля, по тем же переменным, что и вопрос о выходе, и теми же словами,
+   что говорят подсказки инвентаря: это речь игры, а не браузера.
+
+   Нажатия пропускает сквозь себя — под ней доска, и отбирать у неё нажатия незачем;
+   своё принимает только кнопка. */
+.game-notice {
+  position: absolute;
+  left: calc(var(--field-left, 50px) + var(--field-width, 360px) / 2);
+  top: calc(var(--field-top, 80px) + var(--field-height, 640px) / 2);
+  transform: translate(-50%, -50%);
+  width: 270px;
+  max-width: calc(100% - 32px);
+  box-sizing: border-box;
+  padding: var(--inventory-tooltip-padding, 8px 12px);
+  background: var(--inventory-tooltip-background, rgba(210, 190, 150, 0.97));
+  color: var(--inventory-tooltip-color, #251d14);
+  font-family: var(--inventory-tooltip-font-family, "Palatino Linotype", Palatino, serif);
+  font-size: var(--inventory-tooltip-font-size, 12px);
+  font-weight: var(--inventory-tooltip-font-weight, 700);
+  line-height: var(--inventory-tooltip-line-height, 1.4);
+  text-align: center;
+  white-space: pre-line;
+  border-radius: var(--inventory-tooltip-border-radius, 6px);
+  border: var(--inventory-tooltip-border, 1px solid rgba(90, 65, 40, 0.35));
+  box-shadow: var(--inventory-tooltip-box-shadow, 0 8px 18px rgba(0, 0, 0, 0.18));
+  pointer-events: none;
+  z-index: 400;
+}
+
+.game-notice[hidden] { display: none; }
+
+.game-notice__text { margin: 0; }
+
+.game-notice__actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.game-notice__btn {
+  pointer-events: auto;
+  padding: 4px 12px;
+  border: 1px solid rgba(90, 65, 40, 0.55);
+  border-radius: 5px;
+  background: rgba(192, 168, 126, 0.95);
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+}
+
+.game-notice__btn:hover { background: rgba(206, 184, 143, 0.98); }
+
+/* В горизонтали кадр повёрнут — разворачиваемся встречно, как вопрос о выходе. */
+html.is-board-landscape .game-notice {
+  transform-origin: 50% 50%;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+/* Пока надпись на экране, доску поднимают над слоем плашек — по той же причине, что и
+   вопрос о выходе: плашка раунда живёт этажом выше доски и накрыла бы надпись целиком. */
+html.is-game-notice #gameStage {
+  z-index: 500;
+}
+
 /* Пока вопрос на экране, доску поднимают над слоем плашек.
 
    Вопрос лежит ВНУТРИ доски (#gameContainer), а плашка раунда — этажом выше, в

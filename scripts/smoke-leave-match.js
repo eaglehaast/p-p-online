@@ -92,6 +92,9 @@ function стенд({ вКомнате = true, вПартии = true } = {}){
     extractFunctionSource(source, 'вПартии'),
     extractFunctionSource(source, 'syncLeaveMatchButton'),
     extractFunctionSource(source, 'отметитьВопросНаЭкране'),
+    // Смена экрана прячет и надпись «игра открыта в другом окне»: она про партию,
+    // которой больше нет.
+    extractFunctionSource(source, 'спрятатьНадписьНаПоле'),
     extractFunctionSource(source, 'показатьВопросОВыходе'),
     extractFunctionSource(source, 'спрятатьВопросОВыходе'),
     extractFunctionSource(source, 'уйтиИзПартии'),

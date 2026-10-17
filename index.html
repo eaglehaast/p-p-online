@@ -356,6 +356,18 @@ Your opponent will be left alone.</p>
               </div>
             </div>
 
+            <!-- Партия кончилась не по нашей воле: место за столом забрало другое окно.
+                 Говорим об этом ЗДЕСЬ, на поле, а не уводя человека в главное меню: по
+                 ссылке в меню и не попадают, туда его отправил бы только наш же код.
+                 Доска остаётся последней картинкой партии, поверх неё — объяснение и
+                 способ вернуть игру в эту вкладку. -->
+            <div id="gameNotice" class="game-notice" role="status" aria-live="polite" hidden>
+              <p id="gameNoticeText" class="game-notice__text"></p>
+              <div class="game-notice__actions">
+                <button id="gameNoticeReload" class="game-notice__btn" type="button">Reload</button>
+              </div>
+            </div>
+
             <!-- Поворот поля в горизонталь (десктоп). Живёт в правом нижнем углу
                  игрового экрана и остаётся там же в обеих ориентациях. -->
             <button
