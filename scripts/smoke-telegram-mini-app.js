@@ -75,6 +75,7 @@ function стенд({ адрес = "", мост = false, умеетГасить 
   vm.createContext(sandbox);
   vm.runInContext([
     source.match(/const TELEGRAM_SDK_URL = "[^"]*";/)[0],
+    extractFunctionSource(source, 'мостТелеграма'),
     extractFunctionSource(source, 'похожеНаТелеграм'),
     extractFunctionSource(source, 'наладитьТелеграм'),
     extractFunctionSource(source, 'подключитьТелеграм'),

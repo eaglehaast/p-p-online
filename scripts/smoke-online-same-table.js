@@ -184,6 +184,7 @@ function extractFunctionSource(text, name){
     vm.createContext(sandbox);
     vm.runInContext([
       extractFunctionSource(source, 'writeOnlineRoomIntoAddress'),
+      extractFunctionSource(source, 'очиститьХвостОтТелеграма'),
       extractFunctionSource(source, 'clearOnlineRoomFromAddress'),
       `this.итог = (${действие});`,
     ].join('\n'), sandbox);

@@ -91,6 +91,10 @@ async function нажать({ шторка = null, буфер = null, execComman
 
   vm.createContext(sandbox);
   vm.runInContext([
+    // Телеграма в этом стенде нет (window не объявлен вовсе) — мост не найдётся, и
+    // обработчик пойдёт обычным путём. Телеграмный путь проверяет smoke-telegram-invite.
+    extractFunctionSource(source, 'мостТелеграма'),
+    extractFunctionSource(source, 'послатьСсылкуЧерезТелеграм'),
     extractFunctionSource(source, 'скопироватьСсылку'),
     extractBlock(source, 'if(onlineSendLinkBtn instanceof HTMLElement){'),
   ].join('\n'), sandbox);
