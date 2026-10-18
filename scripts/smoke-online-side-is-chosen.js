@@ -94,6 +94,13 @@ function устройство(край){
     extractFunctionSource(source, 'getSharedRandomFraction'),
     extractFunctionSource(source, 'isOnlineHost'),
     extractFunctionSource(source, 'getOnlineSeatColor'),
+    // Телеграма в этом стенде нет: адрес обычный, моста в окне нет — ссылка выйдет
+    // обычная. Ботовую проверяет smoke-telegram-invite.
+    source.match(/const TELEGRAM_MINI_APP_LINK = "[^"]*";/)[0],
+    source.match(/const TELEGRAM_START_PARAM_PATTERN = [^;]*;/)[0],
+    extractFunctionSource(source, 'мостТелеграма'),
+    extractFunctionSource(source, 'похожеНаТелеграм'),
+    extractFunctionSource(source, 'телеграмноеПриглашение'),
     extractFunctionSource(source, 'buildOnlineInviteLink'),
     extractFunctionSource(source, 'resolveOnlineRelayAddress'),
     extractFunctionSource(source, 'isRelayAddressAllowed'),

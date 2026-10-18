@@ -98,6 +98,13 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
     extractFunctionSource(source, 'isOnlineAvailable'),
     extractFunctionSource(source, 'makeRandomString'),
     extractFunctionSource(source, 'makeOnlineRoomId'),
+    // Телеграма в этом стенде нет: адрес обычный, моста в окне нет — ссылка выйдет
+    // обычная. Ботовую проверяет smoke-telegram-invite.
+    source.match(/const TELEGRAM_MINI_APP_LINK = "[^"]*";/)[0],
+    source.match(/const TELEGRAM_START_PARAM_PATTERN = [^;]*;/)[0],
+    extractFunctionSource(source, 'мостТелеграма'),
+    extractFunctionSource(source, 'похожеНаТелеграм'),
+    extractFunctionSource(source, 'телеграмноеПриглашение'),
     extractFunctionSource(source, 'buildOnlineInviteLink'),
     extractFunctionSource(source, 'isOnlineTableFull'),
     extractFunctionSource(source, 'следитьЗаПустымСтолом'),
@@ -628,16 +635,16 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
       `7g1: зазывание не гаснет, когда ${зачем} (потерялось «${условие}»)`);
   }
 
-  // Отметка «позвали» ставится в обеих ветках отправки — и через системную шторку, и
-  // через буфер обмена. А вот отказ от шторки за отправку не считается: человек передумал,
-  // и подсказка ему ещё пригодится.
+  // Отметка «позвали» ставится в КАЖДОЙ ветке отправки: телеграмной, через системную
+  // шторку и через буфер обмена. А вот отказ от шторки за отправку не считается: человек
+  // передумал, и подсказка ему ещё пригодится.
   const блокОтправки = source.slice(
     source.indexOf('if(onlineSendLinkBtn instanceof HTMLElement){'),
     source.indexOf('if(onlineCancelBtn instanceof HTMLElement){'));
   const отметок = блокОтправки.split('onlineInviteSent = true').length - 1;
-  assert(отметок === 2,
-    `7g2: «позвали» отмечается ${отметок} раз вместо двух — одна из веток отправки `
-    + '(шторка или буфер) оставит зазывание навсегда');
+  assert(отметок === 3,
+    `7g2: «позвали» отмечается ${отметок} раз вместо трёх — одна из веток отправки `
+    + '(телеграм, шторка или буфер) оставит зазывание навсегда');
 
   // Тело первого catch — это отказ от шторки. Оно короткое и без вложенных скобок,
   // поэтому кончается на первой же закрывающей.
