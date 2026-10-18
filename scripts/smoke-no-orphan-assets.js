@@ -44,7 +44,10 @@ const SOURCES = ['script.js', 'settings.js', 'maps.js', 'styles.css', 'index.htm
 const text = SOURCES.map(f => fs.readFileSync(f, 'utf8')).join('\n');
 
 const ASSET_EXT = new Set(['.png', '.webp', '.gif', '.jpg', '.jpeg', '.ico', '.svg', '.woff2']);
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'scripts', 'docs', 'worker', '.github']);
+// dist — не исходники, а сборка: туда складывает архив для itch
+// scripts/build-itch.js, и это копии тех же файлов. Проверять их на «мёртвость» значит
+// ловить собственный вывод.
+const SKIP_DIRS = new Set(['.git', 'node_modules', 'scripts', 'docs', 'worker', '.github', 'dist']);
 
 function walk(dir, out = []){
   for(const entry of fs.readdirSync(dir, { withFileTypes: true })){

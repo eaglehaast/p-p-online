@@ -4,7 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Paper Wings!</title>
-  <link rel="icon" href="/p-p-online/favicon.ico">
+  <!-- Путь относительный, и это не придирка: абсолютный «/p-p-online/...» привязывает
+       страницу к одному адресу. Игра же лежит не только на github.io — её кладут
+       архивом на itch, где корень свой, и открывают внутри телеграма. Поймано сборкой
+       для itch: оттуда значок давал 404. -->
+  <link rel="icon" href="favicon.ico">
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="screen screen--menu menu-ready">
