@@ -239,7 +239,10 @@ const OTHER = 'sovsemdrugojkljuc567';
   // Главное: по этому коду переподключаться нельзя.
   const провод = /function createWebSocketTransport\([\s\S]*?\n\}/.exec(code);
   assert(провод, '9c: провод не найден');
-  const вЗакрытии = провод[0].slice(провод[0].indexOf('socket.onclose'));
+  // Ищем обработчик по «.onclose», а не по имени переменной: сокет в проводе теперь
+  // зовётся своим именем в каждом подключении — так его узнаёт обработчик, когда тот же
+  // провод успевает закрыться уже после замены.
+  const вЗакрытии = провод[0].slice(провод[0].indexOf('.onclose'));
   const гдеВытеснение = вЗакрытии.indexOf('ONLINE_DISPLACED_CODE');
   const гдеПереподключение = вЗакрытии.indexOf('scheduleReconnect');
   assert(гдеВытеснение !== -1,
