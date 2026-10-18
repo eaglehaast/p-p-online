@@ -24,6 +24,8 @@ import {
   joinRoom,
   routeEnvelope,
   RELAY_ERRORS,
+  RELAY_PONG_TEXT,
+  isPingMessage,
   isMessageTooLarge,
   leaveRoom,
   parseJoinRequest,
@@ -202,6 +204,12 @@ server.on("upgrade", (request, socket) => {
   broadcastPresence(room);
 
   connection.on("message", (text) => {
+    // Оклик: клиент проверяет, жив ли провод. В облаке на него отвечает сам движок, здесь
+    // отвечаем мы — иначе на своей машине связь «умирала» бы каждые полминуты.
+    if(isPingMessage(String(text))){
+      connection.send(RELAY_PONG_TEXT);
+      return;
+    }
     // Тот же предел, что в облаке: иначе на своей машине всё работало бы, а на сервере
     // рвалось — и ровно на том пакете, который не воспроизвести.
     if(isMessageTooLarge(String(text))){

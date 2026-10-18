@@ -13,6 +13,9 @@ import {
   RELAY_KEPT_TYPES,
   RELAY_ERRORS,
   RELAY_SEATS,
+  RELAY_PING_TEXT,
+  RELAY_PONG_TEXT,
+  isPingMessage,
   isMessageTooLarge,
   createRoom,
   joinRoom,
@@ -57,6 +60,25 @@ export class Room {
   constructor(state){
     this.state = state;
     this.room = createRoom();
+
+    // Отвечать на оклик клиента поручаем самому движку: он сделает это, НЕ будя комнату.
+    //
+    // Будить её каждые десять секунд нельзя — пошаговая игра молчит минутами, и спящий
+    // режим здесь не оптимизация, а условие бесплатности (см. acceptWebSocket ниже).
+    //
+    // Ставится в конструкторе, потому что конструктор отрабатывает и после пробуждения:
+    // поручение живёт в объекте, а объект сон не переживает.
+    //
+    // Движок старой версии этого не умеет — тогда оклик дойдёт до webSocketMessage и
+    // будет отвечен там же, руками. Разбудит комнату, зато провод проверяется всегда.
+    try {
+      if(typeof WebSocketRequestResponsePair === "function"){
+        state.setWebSocketAutoResponse?.(
+          new WebSocketRequestResponsePair(RELAY_PING_TEXT, RELAY_PONG_TEXT));
+      }
+    } catch(error){
+      console.warn("[room] автоответ на оклик не поставлен, отвечаем вручную", { error });
+    }
 
     // Спящий режим сохраняет СОЕДИНЕНИЯ, но не память: объект выгружается, а когда
     // приходит следующий пакет — собирается заново, с пустыми полями. Поэтому обе вещи,
@@ -165,6 +187,13 @@ export class Room {
 
   async webSocketMessage(socket, message){
     if(typeof message !== "string") return;
+
+    // Оклик, дошедший сюда, — это движок без автоответа (см. конструктор). Отвечаем сами:
+    // разбуженная комната дешевле разошедшейся партии.
+    if(isPingMessage(message)){
+      try { socket.send(RELAY_PONG_TEXT); } catch(_error){ /* уже отвалился */ }
+      return;
+    }
 
     // Слишком большой пакет закрывает соединение, а не отбрасывается молча.
     //

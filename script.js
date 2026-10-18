@@ -8599,6 +8599,26 @@ const ONLINE_RELAY_URL = "wss://paper-wings-relay.eaglehaast.workers.dev";
 // Через сколько пытаться снова после обрыва. Растёт, но не бесконечно: интернет,
 // пропавший на полчаса, не повод переставать проверять.
 const ONLINE_RECONNECT_DELAYS_MS = Object.freeze([500, 1000, 2000, 4000, 8000, 15000]);
+// Оклик комнаты и предел молчания.
+//
+// Сокет умеет умирать молча. На телефоне это обычное дело: сменилась сеть, вышли из
+// метро, вебвью телеграма уснул и проснулся — соединение остаётся в состоянии OPEN, а
+// пакеты по нему больше не ходят. Ни «закрылся», ни «ошибка» не случается, переподключение
+// не заводится, и оба продолжают играть каждый в свою партию.
+//
+// Замерено на стенде: у гостя молча умер провод, хозяин сходил — и через минуту у них
+// разные доски, при том что оба показывают «связь есть». Дальше всё и разъезжается: ход
+// возвращается к тому же цвету, самолёты не взлетают, огонь не гаснет.
+//
+// Единственный доступный признак — молчание в ответ на оклик. Десять секунд между
+// окликами и двадцать пять на ответ: три пропущенных подряд. Меньше — и лишнее
+// переподключение случалось бы на каждой секундной яме в метро, а оно рвёт живую связь.
+const ONLINE_PING_EVERY_MS = 10_000;
+const ONLINE_SILENCE_LIMIT_MS = 25_000;
+// Голое слово, а не пакет игры: такие сообщения умеет отвечать сам движок Cloudflare, не
+// будя комнату ото сна (worker/room.js, RELAY_PING_TEXT). Пошаговая игра молчит минутами,
+// и будить комнату каждые десять секунд значило бы платить за круглосуточную работу.
+const ONLINE_PING_TEXT = "ping";
 // Роль хозяина комнаты нужна одна на двоих и заранее: решать, чьи настройки в силе и
 // когда начинать, должен ОДИН из двоих. Раньше её отмечали цветом — создатель всегда
 // синий, — и со стороны это выглядело так, будто в онлайне цвет не выбирается вовсе:
@@ -8817,6 +8837,10 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey,
   // Первое подключение и обрыв — разные вещи, и говорить о них надо разное. Пока сокет
   // только открывается, «связь потеряна» — неправда: терять ещё нечего.
   let everOpened = false;
+  // Когда от комнаты последний раз приходило хоть что-нибудь. Ответ на оклик считается
+  // наравне с пакетом игры: нам важно не содержание, а что провод живой.
+  let lastHeardAt = 0;
+  let pingTimer = null;
   // Чем именно отказала комната: «место занято» и «не та версия» лечатся по-разному.
   let rejectReason = "";
   const announce = () => {
@@ -8836,6 +8860,45 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey,
     }
   };
 
+  const слышно = () => { lastHeardAt = Date.now(); };
+
+  // Проститься с проводом, который молчит, и начать сначала.
+  //
+  // Ждать от него onclose нельзя: мёртвым он остаётся минутами — браузер честно досылает
+  // в него пакеты, пока не истечёт его собственный срок, — а партия всё это время стоит.
+  // Поэтому отвязываемся сразу, а всё, что этот сокет скажет потом, нас уже не касается:
+  // обработчики сверяются с тем, какой сокет сейчас в работе.
+  const похоронитьПровод = (мёртвый) => {
+    if(socket !== мёртвый) return;
+    socket = null;
+    try { мёртвый.close(); } catch(_error){ /* и не надо */ }
+    scheduleReconnect();
+    announce();
+  };
+
+  // Оклик комнаты. Ответ приходит голым словом и до разбора пакетов не доходит — важно в
+  // нём ровно одно: он пришёл.
+  const следитьЗаПроводом = () => {
+    if(pingTimer !== null) return;
+    pingTimer = setInterval(() => {
+      const живой = socket;
+      if(живой?.readyState !== WebSocket.OPEN) return;
+      const молчит = Date.now() - lastHeardAt;
+      if(молчит > ONLINE_SILENCE_LIMIT_MS){
+        console.warn("[online] комната молчит, провод считаем мёртвым", { молчит });
+        похоронитьПровод(живой);
+        return;
+      }
+      try { живой.send(ONLINE_PING_TEXT); } catch(_error){ /* заметим по молчанию */ }
+    }, ONLINE_PING_EVERY_MS);
+  };
+
+  const перестатьСледить = () => {
+    if(pingTimer === null) return;
+    clearInterval(pingTimer);
+    pingTimer = null;
+  };
+
   const scheduleReconnect = () => {
     if(closedForGood || reconnectTimer !== null) return;
     const delay = ONLINE_RECONNECT_DELAYS_MS[
@@ -8848,26 +8911,40 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey,
 
   function connect(){
     if(closedForGood) return;
-    socket = new WebSocket(address);
-    socket.onopen = () => {
+    // Свой сокет каждый обработчик узнаёт по этой ссылке. Без сверки похороненный провод
+    // ещё успевает сказать «закрылся» — и его похоронка досталась бы живой связи,
+    // открытой вместо него; 4001 от него и вовсе завершил бы сессию насовсем.
+    const свой = new WebSocket(address);
+    socket = свой;
+    слышно();
+    свой.onopen = () => {
+      if(socket !== свой) return;
       attempt = 0;
       everOpened = true;
+      слышно();
+      следитьЗаПроводом();
       console.log("[online] связь есть", { room, seat });
       // Комната сама пришлёт придержанное: настройки создателя и последний снимок
       // партии. Просить об этом не надо — за тем она их и держит.
       flush();
       announce();
     };
-    socket.onmessage = (event) => {
+    свой.onmessage = (event) => {
+      if(socket !== свой) return;
+      // Жив провод или нет, решает сам факт сообщения, а не его содержание: ответ на
+      // оклик приходит голым словом и ниже отсеется на разборе.
+      слышно();
       let envelope = null;
       try { envelope = JSON.parse(event.data); } catch(_error){ return; }
       for(const handler of handlers) handler(envelope);
     };
-    socket.onclose = (event) => {
+    свой.onclose = (event) => {
+      if(socket !== свой) return;
       // 4000 — комната отказала (не то место, не та версия). Пробовать снова бессмысленно:
       // с тем же адресом откажет и в следующий раз.
       if(event?.code === 4000){
         closedForGood = true;
+        перестатьСледить();
         rejectReason = String(event.reason || "");
         console.error("[online] комната отказала", { причина: rejectReason });
         announce();
@@ -8882,6 +8959,7 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey,
       // слова. Поэтому вытеснение — это конец сессии, а не обрыв связи.
       if(event?.code === ONLINE_DISPLACED_CODE){
         closedForGood = true;
+        перестатьСледить();
         rejectReason = String(event.reason || ONLINE_DISPLACED_REASON);
         console.warn("[online] место забрало другое окно", { причина: rejectReason });
         announce();
@@ -8890,7 +8968,7 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey,
       scheduleReconnect();
       announce();
     };
-    socket.onerror = () => { try { socket.close(); } catch(_error){ /* уже закрыт */ } };
+    свой.onerror = () => { try { свой.close(); } catch(_error){ /* уже закрыт */ } };
   }
 
   connect();
@@ -8911,6 +8989,7 @@ function createWebSocketTransport(room, relayUrl, seat, onStatusChange, seatKey,
     receive(handler){ handlers.push(handler); },
     close(){
       closedForGood = true;
+      перестатьСледить();
       if(reconnectTimer !== null) clearTimeout(reconnectTimer);
       try { socket?.close(); } catch(_error){ /* уже закрыт */ }
     },
@@ -9130,8 +9209,23 @@ function receiveOnlineEnvelope(envelope){
   // Счёт ведётся по каждому отправителю отдельно — см. lastSeenSeqByPeer.
   const peerId = String(envelope.from ?? "");
   const lastSeen = onlineSession.lastSeenSeqByPeer[peerId] ?? 0;
-  if(!(envelope.seq > lastSeen)) return false;
-  onlineSession.lastSeenSeqByPeer[peerId] = envelope.seq;
+  if(envelope.seq > lastSeen){
+    onlineSession.lastSeenSeqByPeer[peerId] = envelope.seq;
+  } else if(envelope.replay !== true){
+    return false;
+  }
+  // Досланное комнатой при входе — не повтор, даже если номер не новее виденного.
+  //
+  // Комната придерживает ПОСЛЕДНИЙ снимок партии, чей бы он ни был, и отдаёт его каждому
+  // вошедшему. После обрыва это единственная общая правда о партии: наш собственный ход,
+  // сделанный в мёртвый провод, до неё не доехал и не доедет уже никогда.
+  //
+  // Пока такой снимок отбрасывался по номеру, разошедшиеся стороны не сходились обратно
+  // вовсе: связь восстанавливалась, доски оставались разными. Замерено на стенде — после
+  // возвращения гость так и оставался на ходу, который у хозяина давно сыгран.
+  //
+  // Применить его дважды не страшно: снимок описывает положение целиком, и второе
+  // применение ничего не меняет.
 
   const handlers = envelope.t === "move" ? onlineSession.moveHandlers
     : envelope.t === "state" ? onlineSession.stateHandlers
