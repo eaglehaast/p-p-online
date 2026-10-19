@@ -69,7 +69,9 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
                           protocol: parsedOrigin.protocol, host: parsedOrigin.host,
                           hostname: parsedOrigin.hostname } },
     postOnlineEnvelope: (type, payload) => { sent.push({ type, payload }); return true; },
-    handlePlayStart: () => log.push(['handlePlayStart']),
+    // Настоящий handlePlayStart поднимает игру из меню, и именно по gameMode хозяин
+    // потом НЕ начинает её второй раз. Без этого стенд проверял бы не ту защиту.
+    handlePlayStart: () => { sandbox.gameMode = 'online'; log.push(['handlePlayStart']); },
     applyOnlineMenuState: () => log.push(['applyOnlineMenuState']),
     syncPlayButtonSkin: (ready) => log.push(['play', ready]),
     HTMLElement: function HTMLElement(){},
@@ -369,10 +371,25 @@ function makeSide(seat, { host = seat === 'blue', search = '', room = 'stand',
     '4e: и сопернику уехало ровно одно «поехали»');
 
   // Известия о присутствии приходят и после начала — например, когда гость переподключился.
-  // Второе «поехали» означало бы перезапуск партии посреди игры.
+  // Второе «поехали» означало бы перезапуск партии посреди игры; не даёт его gameMode.
   хозяин.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
   assert(хозяин.sent.filter((e) => e.type === 'start').length === 1,
-    '4f: повторное известие о присутствии послало второе «поехали»');
+    '4f: повторное известие о присутствии послало второе «поехали» посреди партии');
+
+  // А вот ПОЛНЫЙ СТОЛ БЕЗ ПАРТИИ разбирается заново, сколько бы раз об этом ни сказали.
+  //
+  // Начало партии держалось на одном-единственном пакете: пропал он — и оба сидели
+  // подключённые за полным столом и ждали друг друга вечно. Теперь проверяется состояние,
+  // а не миг перехода.
+  const забывший = makeSide('blue', { relayUrl: 'wss://relay.example' });
+  забывший.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
+  assert(забывший.sent.filter((e) => e.type === 'start').length === 1,
+    '4g: стенд не отправил первое «поехали»');
+  забывший.sandbox.gameMode = null;   // «поехали» потерялось, партия так и не началась
+  забывший.api.receiveOnlinePresence({ seats: { blue: true, green: true } });
+  assert(забывший.sent.filter((e) => e.type === 'start').length === 2,
+    '4h: стол полон, партии нет, а хозяин больше не зовёт начинать — лобби повиснет '
+    + 'навсегда, и починит его только перезаход по ссылке');
 }
 
 // === 4b. Гость начинает не сам, а по слову хозяина ===

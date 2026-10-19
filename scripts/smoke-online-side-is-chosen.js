@@ -107,6 +107,14 @@ function устройство(край){
     extractFunctionSource(source, 'getRelayHost'),
     extractFunctionSource(source, 'isLocalPageOrigin'),
     source.match(/const ONLINE_RELAY_ALLOWED_HOSTS = Object\.freeze\(\[[^\]]*\]\);/)[0],
+        'let onlineHandshakeTimer = null;',
+    // Напоминание о себе стенду не нужно, но объявлено оно должно быть: посадка за стол
+    // его заводит.
+    'function setInterval(){ return 0; } function clearInterval(){}',
+    source.match(/const ONLINE_HANDSHAKE_RETRY_MS = [^;]*;/)[0],
+    extractFunctionSource(source, 'напомнитьОСебе'),
+    extractFunctionSource(source, 'следитьЗаНачаломПартии'),
+    extractFunctionSource(source, 'перестатьЖдатьНачала'),
     extractFunctionSource(source, 'startOnlineSession'),
     'const провод = { kind: "stand", receive(){}, post(){}, close(){}, status: () => "online" };',
     'this.api = { startOnlineSession, isOnlineHost, buildOnlineInviteLink,',
