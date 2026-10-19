@@ -163,6 +163,14 @@ function makeClient(seat, { room = 'stand', host = false, placements = {}, rules
     extractFunctionSource(source, 'getOnlineSeatColor'),
     extractFunctionSource(source, 'getSharedRandomFraction'),
     extractFunctionSource(source, 'isOnlineMatchActive'),
+        'let onlineHandshakeTimer = null;',
+    // Напоминание о себе стенду не нужно, но объявлено оно должно быть: посадка за стол
+    // его заводит.
+    'function setInterval(){ return 0; } function clearInterval(){}',
+    source.match(/const ONLINE_HANDSHAKE_RETRY_MS = [^;]*;/)[0],
+    extractFunctionSource(source, 'напомнитьОСебе'),
+    extractFunctionSource(source, 'следитьЗаНачаломПартии'),
+    extractFunctionSource(source, 'перестатьЖдатьНачала'),
     extractFunctionSource(source, 'startOnlineSession'),
     'function clearOnlineRoomFromAddress(){ return ""; }',
     extractFunctionSource(source, 'stopOnlineSession'),
