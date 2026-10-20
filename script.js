@@ -50451,77 +50451,99 @@ function drawProjectedPlaneGhost(ctx2d, color){
   ctx2d.drawImage(sprite, -PLANE_DRAW_W / 2, -PLANE_DRAW_H / 2, PLANE_DRAW_W, PLANE_DRAW_H);
 }
 
-function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0, alphaMultiplier = 1) {
-  if (!plane || glowStrength <= 0) {
-    return;
+// Метка «сейчас ходит эта сторона» — контур по силуэту самолёта.
+//
+// Прежняя делалась копией спрайта, размытой ctx.filter, поверх оригинала в режиме
+// «lighter». Идея верная — обвести самолёт, — а исполнение разваливалось вдвойне.
+//
+// Размытие холста меряется в пикселях ХОЛСТА и с масштабом не едет: замерено отдельным
+// стендом, хвост blur(4px) одинаков и при ctx.scale(1), и при ctx.scale(3). Холст же
+// растёт вместе с плотностью экрана — поэтому при приближении кант вырождался в тонкий
+// неоновый обвод, а при отдалении раздувался в муть. И «lighter» складывает свет: на
+// светлой бумаге край выгорает в белое, а в сафари эта пара рисует вокруг спрайта
+// прямоугольную коробку.
+//
+// Теперь контур строится из самого силуэта: спрайт штампуется по кругу со сдвигом В
+// ЕДИНИЦАХ ИГРЫ, перекрашивается в один цвет и запекается в заготовку — по одной на
+// сторону. На каждом кадре это один drawImage. Никакой браузерной обработки изображения,
+// толщина задана в единицах доски, значит на любом экране и в любом движке она одинакова.
+const TURN_OUTLINE_WIDTH = 1.0;      // толщина в единицах игры
+const TURN_OUTLINE_STAMPS = 16;      // сдвигов по кругу: меньше — видны углы
+const TURN_OUTLINE_OVERSAMPLE = 6;   // во столько раз плотнее печём заготовку
+const TURN_OUTLINE_ALPHA = 0.9;
+// Кант светлее самолёта, а не темнее: тёмный читается как тень и пачкает рисунок, а
+// светлый — как подсветка по краю. Подбиралось по снимкам доски.
+const TURN_OUTLINE_INK = Object.freeze({
+  blue: "rgb(110, 190, 255)",
+  green: "rgb(165, 225, 85)",
+});
+// Дыхание метки. Не мигание: доля прозрачности, медленно — столько, чтобы живое
+// отличалось от наклейки, и не столько, чтобы отвлекать.
+const TURN_MARK_BREATH_MS = 2600;
+
+const запечённыеКонтуры = new Map();
+
+// Заготовка контура: силуэт, раздутый во все стороны и залитый одним цветом.
+//
+// Печётся один раз на сторону. Спрайт 36 пикселей, поэтому печём с запасом по плотности:
+// на доске он растянут втрое, и контур, собранный впритык, выглядел бы ступеньками.
+function запечьКонтур(color, sprite){
+  const ключ = `${color}|${TURN_OUTLINE_WIDTH}|${TURN_OUTLINE_STAMPS}`;
+  const готовый = запечённыеКонтуры.get(ключ);
+  if(готовый) return готовый;
+  if(typeof document === "undefined") return null;
+
+  const сторона = (PLANE_DRAW_W + TURN_OUTLINE_WIDTH * 2) * TURN_OUTLINE_OVERSAMPLE;
+  const холст = document.createElement("canvas");
+  холст.width = сторона;
+  холст.height = сторона;
+  const к = холст.getContext("2d");
+  if(!к) return null;
+
+  const размер = PLANE_DRAW_W * TURN_OUTLINE_OVERSAMPLE;
+  const центр = сторона / 2;
+  const сдвиг = TURN_OUTLINE_WIDTH * TURN_OUTLINE_OVERSAMPLE;
+  к.imageSmoothingEnabled = true;
+  for(let i = 0; i < TURN_OUTLINE_STAMPS; i += 1){
+    const угол = (i / TURN_OUTLINE_STAMPS) * Math.PI * 2;
+    к.drawImage(sprite,
+      центр + Math.cos(угол) * сдвиг - размер / 2,
+      центр + Math.sin(угол) * сдвиг - размер / 2,
+      размер, размер);
   }
+  // Все штампы разом перекрашиваем в один цвет: иначе на перекрытиях копится плотность и
+  // контур выходит пятнистым.
+  к.globalCompositeOperation = "source-in";
+  к.fillStyle = TURN_OUTLINE_INK[color] || TURN_OUTLINE_INK.blue;
+  к.fillRect(0, 0, сторона, сторона);
 
-  const color = plane.color || "blue";
-  let spriteImg = null;
+  запечённыеКонтуры.set(ключ, холст);
+  return холст;
+}
 
-  if (color === "blue") {
-    spriteImg = bluePlaneImg;
-  } else if (color === "green") {
-    spriteImg = greenPlaneImg;
-  }
+function нарисоватьМеткуХода(ctx2d, plane, strength = 0, alphaMultiplier = 1) {
+  if (!plane || strength <= 0) return false;
 
-  const spriteReady = isSpriteReady(spriteImg);
+  const видимость = Math.max(0, Math.min(1, alphaMultiplier));
+  if (видимость <= 0.01) return false;
 
-  const blend = Math.max(0, Math.min(1, glowStrength));
-  const visibilityAlpha = Math.max(0, Math.min(1, alphaMultiplier));
+  const sprite = plane.color === "green" ? greenPlaneImg : bluePlaneImg;
+  if (!isSpriteReady(sprite)) return false;
+  const заготовка = запечьКонтур(plane.color === "green" ? "green" : "blue", sprite);
+  if (!заготовка) return false;
 
-  if (visibilityAlpha <= 0.01) {
-    return;
-  }
+  const доля = Math.max(0, Math.min(1, strength));
+  const сейчас = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  const дыхание = 0.86 + 0.14 * (0.5 + 0.5 * Math.sin((сейчас / TURN_MARK_BREATH_MS) * Math.PI * 2));
 
+  const сторона = PLANE_DRAW_W + TURN_OUTLINE_WIDTH * 2;
   ctx2d.save();
-
-  if (!spriteReady) {
-    ctx2d.restore();
-    return;
-  }
-
-  const nav = typeof navigator !== "undefined" ? navigator : null;
-  const ua = (nav?.userAgent || "").toLowerCase();
-  const hasTouchPoints = Boolean(nav && Number.isFinite(nav.maxTouchPoints) && nav.maxTouchPoints > 0);
-  const isAppleMobileLike = ua.includes("iphone")
-    || ua.includes("ipad")
-    || ua.includes("ipod")
-    || (ua.includes("macintosh") && hasTouchPoints);
-  const isWebKitBrowser = ua.includes("applewebkit")
-    && !ua.includes("crios")
-    && !ua.includes("fxios")
-    && !ua.includes("edgios");
-  const shouldUseSoftShadowFallback = isAppleMobileLike && isWebKitBrowser && hasCoarsePointerPreference();
-
-  const baseSize = PLANE_DRAW_W;
-  const drawSize = baseSize;
-  const offset = -drawSize / 2;
-
-  ctx2d.imageSmoothingEnabled = true;
-  if (shouldUseSoftShadowFallback) {
-    ctx2d.globalCompositeOperation = "source-over";
-    ctx2d.globalAlpha *= (0.2 + 0.32 * blend) * visibilityAlpha;
-    ctx2d.shadowColor = color === "blue"
-      ? "rgba(46, 141, 255, 0.85)"
-      : "rgba(146, 199, 62, 0.85)";
-    ctx2d.shadowBlur = 8 + 8 * blend;
-    ctx2d.shadowOffsetX = 0;
-    ctx2d.shadowOffsetY = 0;
-    ctx2d.filter = "none";
-    ctx2d.drawImage(spriteImg, offset, offset, drawSize, drawSize);
-  } else {
-    ctx2d.globalCompositeOperation = "lighter";
-    ctx2d.globalAlpha *= (0.3 + 0.45 * blend) * visibilityAlpha;
-    ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
-
-    const scale = 1 + 0.18 * blend;
-    const scaledDrawSize = baseSize * scale;
-    const scaledOffset = -scaledDrawSize / 2;
-    ctx2d.drawImage(spriteImg, scaledOffset, scaledOffset, scaledDrawSize, scaledDrawSize);
-  }
-
+  ctx2d.globalAlpha *= доля * видимость * дыхание * TURN_OUTLINE_ALPHA;
+  ctx2d.drawImage(заготовка, -сторона / 2, -сторона / 2, сторона, сторона);
   ctx2d.restore();
+  return true;
 }
 
 function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
@@ -50600,8 +50622,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
     : Math.max(0, Math.min(1, glow));
 
   if (blend > 0 && !isArcadePlaneRespawnEnabled() && !isInvisibilityFullyHidden && !isArcadeRespawnOutline) {
-    const glowStrength = blend * 1.25; // boost brightness slightly
-    drawPlaneSpriteGlow(ctx2d, plane, glowStrength, invisibilityVisualAlpha);
+    нарисоватьМеткуХода(ctx2d, plane, blend, invisibilityVisualAlpha);
   }
 
   ctx2d.shadowColor = "transparent";
