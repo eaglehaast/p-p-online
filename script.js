@@ -50451,77 +50451,73 @@ function drawProjectedPlaneGhost(ctx2d, color){
   ctx2d.drawImage(sprite, -PLANE_DRAW_W / 2, -PLANE_DRAW_H / 2, PLANE_DRAW_W, PLANE_DRAW_H);
 }
 
-function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0, alphaMultiplier = 1) {
-  if (!plane || glowStrength <= 0) {
-    return;
-  }
+// Метка «сейчас ходит эта сторона» — чернильная лужица под самолётом.
+//
+// Было: копия спрайта, размытая ctx.filter, поверх оригинала в режиме «lighter». Две
+// беды, и обе видны глазом.
+//
+// Размытие холста меряется в пикселях ХОЛСТА и с масштабом не едет: замерено отдельным
+// стендом — хвост blur(4px) остаётся одним и тем же и при ctx.scale(1), и при
+// ctx.scale(3). А холст растёт вместе с плотностью экрана. Поэтому при приближении кант
+// становится втрое тоньше относительно самолёта, при отдалении — втрое толще; на плотном
+// экране он вырождается в жёсткий неоновый обвод вплотную к спрайту.
+//
+// «lighter» же складывает свет: на светлой бумаге сумма упирается в белое, и у метки
+// появляется грязный край. В сафари та же пара (filter + lighter) рисует вокруг спрайта
+// прямоугольную коробку — её и видно при зуме. Обход для айфонов в коде уже стоял, то
+// есть на это наступали и раньше.
+//
+// Стало: радиальная заливка В ЕДИНИЦАХ ИГРЫ, обычным наложением, ПОД самолётом. Никакой
+// браузерной обработки изображения: градиент масштабируется вместе с доской и выглядит
+// одинаково на любом экране. И читается он как чернила, впитавшиеся в бумагу, — на поле
+// в клетку это к месту.
+const TURN_MARK_RADIUS = PLANE_DRAW_W * 0.80;
+const TURN_MARK_INK = Object.freeze({
+  blue: [36, 110, 196],
+  green: [96, 142, 38],
+});
+// Дыхание метки. Не мигание: доля прозрачности, медленно и в одну сторону — столько,
+// чтобы живое отличалось от пятна на бумаге, и не столько, чтобы отвлекать.
+const TURN_MARK_BREATH_MS = 2600;
 
-  const color = plane.color || "blue";
-  let spriteImg = null;
+function нарисоватьМеткуХода(ctx2d, plane, strength = 0, alphaMultiplier = 1) {
+  if (!plane || strength <= 0) return false;
 
-  if (color === "blue") {
-    spriteImg = bluePlaneImg;
-  } else if (color === "green") {
-    spriteImg = greenPlaneImg;
-  }
+  const видимость = Math.max(0, Math.min(1, alphaMultiplier));
+  if (видимость <= 0.01) return false;
 
-  const spriteReady = isSpriteReady(spriteImg);
-
-  const blend = Math.max(0, Math.min(1, glowStrength));
-  const visibilityAlpha = Math.max(0, Math.min(1, alphaMultiplier));
-
-  if (visibilityAlpha <= 0.01) {
-    return;
-  }
+  const доля = Math.max(0, Math.min(1, strength));
+  const [r, g, b] = TURN_MARK_INK[plane.color] || TURN_MARK_INK.blue;
+  const сейчас = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  const дыхание = 0.86 + 0.14 * (0.5 + 0.5 * Math.sin((сейчас / TURN_MARK_BREATH_MS) * Math.PI * 2));
+  const сила = доля * видимость * дыхание;
 
   ctx2d.save();
 
-  if (!spriteReady) {
-    ctx2d.restore();
-    return;
-  }
+  // Лужица: мягкая, ею метка держится на любом фоне — и на бумаге, и на кирпиче.
+  const заливка = ctx2d.createRadialGradient(0, 0, TURN_MARK_RADIUS * 0.16, 0, 0, TURN_MARK_RADIUS);
+  заливка.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${(0.30 * сила).toFixed(3)})`);
+  заливка.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${(0.15 * сила).toFixed(3)})`);
+  заливка.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+  ctx2d.fillStyle = заливка;
+  ctx2d.beginPath();
+  ctx2d.arc(0, 0, TURN_MARK_RADIUS, 0, Math.PI * 2);
+  ctx2d.fill();
 
-  const nav = typeof navigator !== "undefined" ? navigator : null;
-  const ua = (nav?.userAgent || "").toLowerCase();
-  const hasTouchPoints = Boolean(nav && Number.isFinite(nav.maxTouchPoints) && nav.maxTouchPoints > 0);
-  const isAppleMobileLike = ua.includes("iphone")
-    || ua.includes("ipad")
-    || ua.includes("ipod")
-    || (ua.includes("macintosh") && hasTouchPoints);
-  const isWebKitBrowser = ua.includes("applewebkit")
-    && !ua.includes("crios")
-    && !ua.includes("fxios")
-    && !ua.includes("edgios");
-  const shouldUseSoftShadowFallback = isAppleMobileLike && isWebKitBrowser && hasCoarsePointerPreference();
-
-  const baseSize = PLANE_DRAW_W;
-  const drawSize = baseSize;
-  const offset = -drawSize / 2;
-
-  ctx2d.imageSmoothingEnabled = true;
-  if (shouldUseSoftShadowFallback) {
-    ctx2d.globalCompositeOperation = "source-over";
-    ctx2d.globalAlpha *= (0.2 + 0.32 * blend) * visibilityAlpha;
-    ctx2d.shadowColor = color === "blue"
-      ? "rgba(46, 141, 255, 0.85)"
-      : "rgba(146, 199, 62, 0.85)";
-    ctx2d.shadowBlur = 8 + 8 * blend;
-    ctx2d.shadowOffsetX = 0;
-    ctx2d.shadowOffsetY = 0;
-    ctx2d.filter = "none";
-    ctx2d.drawImage(spriteImg, offset, offset, drawSize, drawSize);
-  } else {
-    ctx2d.globalCompositeOperation = "lighter";
-    ctx2d.globalAlpha *= (0.3 + 0.45 * blend) * visibilityAlpha;
-    ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
-
-    const scale = 1 + 0.18 * blend;
-    const scaledDrawSize = baseSize * scale;
-    const scaledOffset = -scaledDrawSize / 2;
-    ctx2d.drawImage(spriteImg, scaledOffset, scaledOffset, scaledDrawSize, scaledDrawSize);
-  }
+  // И кольцо: лужица одна читается вяло — на светлой бумаге её почти не видно, а
+  // спрашивают у метки ровно одно, «кто ходит», и ответ должен быть мгновенным. Тонкая
+  // линия даёт его, оставаясь спокойной: это обведённый карандашом самолёт, а не рамка
+  // выделения. Сплошная, а не пунктир: пунктир сразу читается как интерфейс.
+  ctx2d.strokeStyle = `rgba(${r}, ${g}, ${b}, ${(0.42 * сила).toFixed(3)})`;
+  ctx2d.lineWidth = 1.1;
+  ctx2d.beginPath();
+  ctx2d.arc(0, 0, TURN_MARK_RADIUS * 0.80, 0, Math.PI * 2);
+  ctx2d.stroke();
 
   ctx2d.restore();
+  return true;
 }
 
 function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
@@ -50600,8 +50596,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
     : Math.max(0, Math.min(1, glow));
 
   if (blend > 0 && !isArcadePlaneRespawnEnabled() && !isInvisibilityFullyHidden && !isArcadeRespawnOutline) {
-    const glowStrength = blend * 1.25; // boost brightness slightly
-    drawPlaneSpriteGlow(ctx2d, plane, glowStrength, invisibilityVisualAlpha);
+    нарисоватьМеткуХода(ctx2d, plane, blend, invisibilityVisualAlpha);
   }
 
   ctx2d.shadowColor = "transparent";
