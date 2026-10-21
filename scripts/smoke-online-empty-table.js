@@ -111,6 +111,8 @@ function стенд({ место = 'blue', хозяинСтола = 'green', з�
     'let onlineEmptyTableTimer = null;',
     extractFunctionSource(source, 'isOnlineHost'),
     extractFunctionSource(source, 'isOnlineTableFull'),
+    // Надпись об ушедшем сопернике — соседняя забота, у неё свой стенд.
+    'function обновитьНадписьОбУходе(){ return false; }',
     extractFunctionSource(source, 'следитьЗаПустымСтолом'),
     extractFunctionSource(source, 'isOnlineTableEmptyForLong'),
     extractFunctionSource(source, 'getOnlineTroubleText'),
