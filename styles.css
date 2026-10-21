@@ -4564,6 +4564,12 @@ html.is-board-landscape .leave-match {
   margin-top: 8px;
 }
 
+/* Надпись бывает и без кнопки: «Reload» отвечает на отобранное место, а про ушедшего
+   соперника перезагружать нечего. Правило обязательное, а не вежливость: hidden — это
+   всего лишь display: none из таблицы браузера, и свой display: flex его перебивает.
+   Без этой строки кнопка оставалась на экране при hidden = true — видно на снимке. */
+.game-notice__actions[hidden] { display: none; }
+
 .game-notice__btn {
   pointer-events: auto;
   padding: 4px 12px;

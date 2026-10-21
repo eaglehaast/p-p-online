@@ -290,7 +290,7 @@ const OTHER = 'sovsemdrugojkljuc567';
       /const ONLINE_DISPLACED_REASON = "[^"]+";/.exec(code)[0],
       /const ONLINE_DISPLACED_TEXT = "[^"]+";/.exec(code)[0],
       'let запискаОВытеснении = "";',
-      /function показатьНадписьНаПоле\(текст\)\{[\s\S]*?\n\}/.exec(code)[0],
+      /function показатьНадписьНаПоле\([\s\S]*?\n\}/.exec(code)[0],
       /function заметитьВытеснение\(\)\{[\s\S]*?\n\}/.exec(code)[0],
       /function getOnlineTroubleText\(\)\{[\s\S]*?\n\}/.exec(code)[0],
       'this.api = { заметить: заметитьВытеснение, беда: getOnlineTroubleText,',
