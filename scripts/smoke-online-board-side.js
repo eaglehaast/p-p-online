@@ -71,6 +71,7 @@ function стенд(выборИгрока){
     '}',
     'function syncMenuPlaneSides(){ вызовы.push({ меню: true }); }',
     'let boardViewSeatBeforeOnline = null;',
+    extractFunctionSource(source, 'rememberOnlineTable'),
     extractFunctionSource(source, 'takeBoardViewForOnlineSeat'),
     extractFunctionSource(source, 'releaseBoardViewAfterOnline'),
     'this.взять = takeBoardViewForOnlineSeat;',

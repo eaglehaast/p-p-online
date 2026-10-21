@@ -65,7 +65,7 @@ function стенд({ вКомнате = true, вПартии = true } = {}){
     gameMode: вПартии ? 'online' : null,
     HTMLElement: function HTMLElement(){},
     stopOnlineSession: () => { sandbox.сделано.push('связь'); sandbox.onlineSession = null; return true; },
-    forgetHostRoom: () => { sandbox.сделано.push('комната'); },
+    forgetOnlineTable: () => { sandbox.сделано.push('комната'); },
     resetGame: (о) => { sandbox.сделано.push(`меню:${JSON.stringify(о)}`); },
   };
   const узлы = {

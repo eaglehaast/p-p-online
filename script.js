@@ -301,7 +301,7 @@ function стартовыйПараметрТелеграма(location = (typeof
 // только как дверь в мини-приложение, отвечать на сообщения ему не придётся.
 //
 // Окно мини-приложения телеграм при этом может и свернуть — у разных клиентов по-разному.
-// Для игры это не беда: комната хозяина помнится (rememberHostRoom), и вернувшийся в игру
+// Для игры это не беда: стол помнится (rememberOnlineTable), и вернувшийся в игру
 // нажатием «Online» садится за ТОТ ЖЕ стол, на который только что выписал ссылку.
 function послатьСсылкуЧерезТелеграм(ссылка){
   const мост = мостТелеграма();
@@ -453,7 +453,7 @@ function уйтиИзПартии(){
   if(!вПартии()) return false;
   if(onlineSession){
     stopOnlineSession();
-    forgetHostRoom();
+    forgetOnlineTable();
     onlinePresence = null;
   }
   resetGame({ forceMenu: true });
@@ -9111,6 +9111,14 @@ function startOnlineSession(options = {}){
   onlineTurnDraft = null;
   // Своя половина — внизу, как и во всех остальных режимах игры.
   takeBoardViewForOnlineSeat(onlineSession.seat);
+  // Стол запоминается здесь, а не в кнопке «Online»: сюда приходят обе стороны — и
+  // хозяин кнопкой, и гость по ссылке, — а помнить стол нужно обоим.
+  //
+  // Только стол с ретранслятором: игра между вкладками живёт внутри одной страницы, и
+  // возвращаться в неё из меню некуда.
+  if(seatInfo.relay){
+    rememberOnlineTable(onlineSession.room, onlineSession.seat, onlineSession.host);
+  }
   // Кто ходит первым — второй жребий, который нельзя бросать порознь. Дальше он просто
   // чередуется по раундам, поэтому достаточно совпасть в начале.
   onlineSession.firstTurnBase = getSharedRandomFraction("first-turn") < 0.5 ? 0 : 1;
@@ -9598,44 +9606,55 @@ function resolveSeatKey(room, seat){
 //
 // Срок нужен, чтобы вернувшийся через неделю не оказался в комнате, ссылку на которую
 // кто-то всё ещё держит открытой: тот сядет за стол молча и неожиданно.
-const ONLINE_HOST_ROOM_STORAGE_KEY = "online.hostRoom";
-const ONLINE_HOST_ROOM_TTL_MS = 12 * 60 * 60 * 1000;
+//
+// Стол помнит не только хозяин. Прежде запись вёл лишь тот, кто нажал «Online», а у
+// гостя комната жила в адресе страницы — и этого хватало ровно до телеграма: смахнул
+// приложение, открыл заново кнопкой бота — адрес чистый, startapp в нём нет, комнаты
+// нет ниоткуда. Нажатие «Online» заводило НОВУЮ: человек садился за пустой стол, пока
+// друг ждал его в прежнем.
+//
+// Имя ключа оставлено прежним нарочно: по нему лежат столы, записанные до этой правки,
+// и переименование молча потеряло бы их у всех, кто сейчас в игре.
+const ONLINE_TABLE_STORAGE_KEY = "online.hostRoom";
+const ONLINE_TABLE_TTL_MS = 12 * 60 * 60 * 1000;
 
-// Вместе с комнатой запоминается и цвет, под который она заведена: в выписанной ссылке
-// стоит противоположное место, и без цвета нельзя понять, верна ли ещё та ссылка.
-function rememberHostRoom(room, seat){
+// Вместе с комнатой запоминается цвет, под который она заведена (в выписанной ссылке
+// стоит противоположное место, и без цвета нельзя понять, верна ли ещё та ссылка), и
+// роль: вернувшийся гость не должен назваться хозяином чужого стола.
+function rememberOnlineTable(room, seat, host){
   try {
-    window.localStorage?.setItem(ONLINE_HOST_ROOM_STORAGE_KEY,
-      JSON.stringify({ room, seat, at: Date.now() }));
+    window.localStorage?.setItem(ONLINE_TABLE_STORAGE_KEY,
+      JSON.stringify({ room, seat, host: host === true, at: Date.now() }));
   } catch(_error){
     // Приватный режим: комната проживёт до перезагрузки — то есть ровно до той беды, от
     // которой это и спасает. Лучше, чем ничего: внутри одной страницы ссылка верна.
   }
 }
 
-// Возвращает { room, seat } или null. Цвета в записи может не быть — её сделала прежняя
-// версия игры, когда хозяин всегда был синим; это и есть её цвет.
-function recallHostRoom(){
+// Возвращает { room, seat, host } или null. Цвета в записи может не быть — её сделала
+// прежняя версия игры, когда хозяин всегда был синим; это и есть её цвет. Роли там тоже
+// может не быть: тогда запись заведомо хозяйская, гость столов не помнил.
+function recallOnlineTable(){
   try {
     const сохранённое = JSON.parse(
-      window.localStorage?.getItem(ONLINE_HOST_ROOM_STORAGE_KEY) || "null");
+      window.localStorage?.getItem(ONLINE_TABLE_STORAGE_KEY) || "null");
     const room = сохранённое?.room;
     if(typeof room !== "string" || !room) return null;
     const когда = сохранённое?.at;
-    if(!Number.isFinite(когда) || Date.now() - когда > ONLINE_HOST_ROOM_TTL_MS) return null;
+    if(!Number.isFinite(когда) || Date.now() - когда > ONLINE_TABLE_TTL_MS) return null;
     const seat = ONLINE_SEAT_COLORS.includes(сохранённое?.seat)
       ? сохранённое.seat
       : ONLINE_LEGACY_HOST_SEAT;
-    return { room: room.slice(0, ONLINE_ROOM_MAX_LENGTH), seat };
+    return { room: room.slice(0, ONLINE_ROOM_MAX_LENGTH), seat, host: сохранённое?.host !== false };
   } catch(_error){
     // Испорченная запись — то же самое, что её отсутствие: заведём новую комнату.
     return null;
   }
 }
 
-function forgetHostRoom(){
+function forgetOnlineTable(){
   try {
-    window.localStorage?.removeItem(ONLINE_HOST_ROOM_STORAGE_KEY);
+    window.localStorage?.removeItem(ONLINE_TABLE_STORAGE_KEY);
   } catch(_error){
     // Нечего забывать.
   }
@@ -10055,16 +10074,20 @@ function createOnlineRoom(){
   // Цвет — тот, что выбран в меню: за какой край игрок сел, тем и играет. Хозяином он тут
   // не потому, что синий, а потому, что комнату завёл он.
   const seat = getBoardViewSeat();
-  // Своя прежняя комната, если она ещё в силе: ровно на неё выписана ссылка, которая,
-  // возможно, уже лежит у друга в переписке. Новая заводится, когда прежней нет — или
-  // когда игрок с тех пор сменил край: в выписанной ссылке стоит место напротив, и после
-  // смены она зовёт друга ровно туда, где теперь сидим мы. Держаться за такую комнату
-  // незачем, она всё равно встретила бы друга отказом «место занято».
-  const прежняя = recallHostRoom();
-  const room = прежняя && прежняя.seat === seat ? прежняя.room : makeOnlineRoomId();
-  const session = startOnlineSession({ seat, room, relay, host: true });
+  // Прежний стол, если он ещё в силе, — и возвращаемся за него, а не заводим новый:
+  //
+  //  • гостевой стол — всегда и на его место. Второе место там чужое, и выбор края в
+  //    меню его не касается: гостя за стол посадила ссылка, а не меню. Это и есть ответ
+  //    на «вернуться я не могу, потому что у меня нет комнаты»;
+  //  • свой стол — пока край тот же. Сменили край — в выписанной ссылке стоит место
+  //    напротив, и теперь она зовёт друга ровно туда, где сидим мы сами. Держаться за
+  //    такую комнату незачем: она всё равно встретила бы его отказом «место занято».
+  const прежний = recallOnlineTable();
+  const возвращаемся = Boolean(прежний) && (прежний.host !== true || прежний.seat === seat);
+  const session = возвращаемся
+    ? startOnlineSession({ seat: прежний.seat, room: прежний.room, relay, host: прежний.host })
+    : startOnlineSession({ seat, room: makeOnlineRoomId(), relay, host: true });
   if(!session) return null;
-  rememberHostRoom(room, seat);
   writeOnlineRoomIntoAddress(session);
   showOnlineLobby();
   return session;
@@ -22375,7 +22398,7 @@ if(onlineCancelBtn instanceof HTMLElement){
       // экран. Значит и прежняя ссылка должна умереть здесь, а не жить ещё двенадцать
       // часов — иначе друг, открывший её завтра, молча сядет за стол, за которым я уже
       // жду другого.
-      forgetHostRoom();
+      forgetOnlineTable();
       onlinePresence = null;
       hideOnlineLobby();
       selectedMode = "hotSeat";

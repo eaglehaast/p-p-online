@@ -63,7 +63,12 @@ function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_0
       },
     },
     // Сессия не нужна: проверяется выбор имени комнаты, а не то, что с ним дальше делают.
-    startOnlineSession: ({ room, seat, host }) => ({ room, seat, host }),
+    // Стол запоминает она же — как и настоящая startOnlineSession; что настоящая делает
+    // это на самом деле, проверяется отдельно, по исходнику (проверка 8).
+    startOnlineSession: ({ room, seat, host }) => {
+      sandbox.rememberOnlineTable(room, seat, host);
+      return { room, seat, host };
+    },
     showOnlineLobby: () => {},
   };
   vm.createContext(sandbox);
@@ -74,18 +79,20 @@ function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_0
     source.match(/const ONLINE_ROOM_ID_ALPHABET = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_LENGTH = \d+;/)[0],
     source.match(/const ONLINE_ROOM_MAX_LENGTH = \d+;/)[0],
-    source.match(/const ONLINE_HOST_ROOM_STORAGE_KEY = "[^"]*";/)[0],
-    source.match(/const ONLINE_HOST_ROOM_TTL_MS = [^;]*;/)[0],
+    source.match(/const ONLINE_TABLE_STORAGE_KEY = "[^"]*";/)[0],
+    source.match(/const ONLINE_TABLE_TTL_MS = [^;]*;/)[0],
     'function getConfiguredRelayUrl(){ return "wss://relay.example"; }',
     extractFunctionSource(source, 'makeRandomString'),
     extractFunctionSource(source, 'makeOnlineRoomId'),
-    extractFunctionSource(source, 'rememberHostRoom'),
-    extractFunctionSource(source, 'recallHostRoom'),
-    extractFunctionSource(source, 'forgetHostRoom'),
+    extractFunctionSource(source, 'rememberOnlineTable'),
+    extractFunctionSource(source, 'recallOnlineTable'),
+    extractFunctionSource(source, 'forgetOnlineTable'),
     // Адрес страницы в этом стенде не проверяется — он живёт в smoke-online-same-table.
     'function writeOnlineRoomIntoAddress(){ return ""; }',
     extractFunctionSource(source, 'createOnlineRoom'),
-    'this.api = { createOnlineRoom, forgetHostRoom, recallHostRoom, makeOnlineRoomId };',
+    'this.rememberOnlineTable = rememberOnlineTable;',
+    'this.api = { createOnlineRoom, forgetOnlineTable, recallOnlineTable, '
+      + 'rememberOnlineTable, makeOnlineRoomId };',
   ].join('\n'), sandbox);
   return { api: sandbox.api, хранилище, сейчас };
 }
@@ -129,14 +136,14 @@ function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_0
   const хранилище = new Map();
   const устройство = makeDevice(хранилище);
   const было = устройство.api.createOnlineRoom().room;
-  устройство.api.forgetHostRoom();
+  устройство.api.forgetOnlineTable();
   const стало = makeDevice(хранилище).api.createOnlineRoom().room;
   assert(стало !== было, '3: после «Cancel» хозяин вернулся в прежнюю комнату');
 
   // И сама кнопка обязана это звать: без вызова проверка выше проверяет пустоту.
   const отмена = source.slice(source.indexOf('if(onlineCancelBtn instanceof HTMLElement){'));
   const тело = отмена.slice(0, отмена.indexOf('\n}'));
-  assert(/forgetHostRoom\(\)/.test(тело),
+  assert(/forgetOnlineTable\(\)/.test(тело),
     '3b: «Cancel» больше не забывает комнату — старая ссылка переживёт выход');
 }
 
@@ -217,5 +224,77 @@ function makeDevice(хранилище = new Map(), сейчас = { ms: 1_700_0
   }
 }
 
+
+// === 8. ГЛАВНОЕ ДЛЯ ГОСТЯ: «Online» возвращает за стол друга, а не заводит новый ===
+//
+// У гостя комната жила только в адресе страницы. В телеграме этого не хватает: смахнул
+// приложение, открыл заново кнопкой бота — адрес чистый, startapp в нём нет. Нажатие
+// «Online» заводило НОВУЮ комнату, и человек садился за пустой стол, пока друг ждал его
+// в прежнем. Со стороны это снова выглядит как исправная работа: оба подключены, оба
+// ждут, просто за разными столами.
+{
+  const хранилище = new Map();
+  // Стол записывает сессия — ровно так, как она это делает, придя по ссылке гостем.
+  makeDevice(хранилище, { ms: 1_700_000_000_000 }, 'green')
+    .api.rememberOnlineTable('frndroom', 'green', false);
+  // В меню у гостя выбран ДРУГОЙ край: за стол его посадила ссылка, а не меню.
+  const вернулся = makeDevice(хранилище, { ms: 1_700_000_000_000 }, 'blue').api.createOnlineRoom();
+  assert(вернулся.room === 'frndroom',
+    `8: гость сел за новый стол (${вернулся.room}) вместо прежнего — друг остался ждать в старом`);
+  assert(вернулся.seat === 'green',
+    `8b: гость вернулся на место «${вернулся.seat}» вместо своего зелёного — это место друга`);
+  assert(вернулся.host === false,
+    '8c: вернувшийся гость назвался хозяином чужого стола — хозяев станет двое');
+}
+
+// === 9. Гостевой стол забывается так же, как свой ===
+{
+  const хранилище = new Map([['online.hostRoom', JSON.stringify(
+    { room: 'frndroom', seat: 'green', host: false, at: 1_700_000_000_000 })]]);
+  const устройство = makeDevice(хранилище, { ms: 1_700_000_000_000 }, 'blue');
+  устройство.api.forgetOnlineTable();
+  const после = makeDevice(хранилище, { ms: 1_700_000_000_000 }, 'blue').api.createOnlineRoom();
+  assert(после.room !== 'frndroom' && после.host === true,
+    '9: после «Cancel» гость всё ещё возвращается за чужой стол');
+}
+
+// === 10. Запись без роли — хозяйская ===
+//
+// Такие записи сделаны прежней версией игры, когда стол помнил только хозяин. Прочитать
+// их как гостевые значило бы войти в собственную комнату гостем: хозяина у стола не
+// стало бы вовсе, и партия не началась бы никогда.
+{
+  const хранилище = new Map([['online.hostRoom',
+    JSON.stringify({ room: 'oldroom', seat: 'blue', at: 1_700_000_000_000 })]]);
+  const свой = makeDevice(хранилище, { ms: 1_700_000_000_000 }, 'blue').api.createOnlineRoom();
+  assert(свой.room === 'oldroom' && свой.host === true,
+    '10: запись прежней версии прочитана не как хозяйская — хозяина у стола не осталось');
+}
+
+// === 11. Стол запоминает сама сессия, и только с ретранслятором ===
+//
+// Проверки выше стоят на заглушке startOnlineSession: она и пишет стол. Это верно ровно
+// до тех пор, пока настоящая делает то же самое, — а делать это должна именно она, через
+// неё проходят обе стороны: хозяин кнопкой и гость по ссылке.
+{
+  // Границы берём по соседям, а не разбором тела: у startOnlineSession в подписи стоит
+  // options = {}, и простая читалка функций выше обрывается на этих скобках.
+  const начало = source.indexOf('function startOnlineSession(');
+  const конец = source.indexOf('function stopOnlineSession(');
+  assert(начало !== -1 && конец > начало, '11: не найдена startOnlineSession');
+  const вход = source.slice(начало, конец).replace(/\s+/g, '');
+  assert(вход.includes(
+    'rememberOnlineTable(onlineSession.room,onlineSession.seat,onlineSession.host)'),
+    '11b: сессия перестала запоминать стол — у гостя он снова будет жить только в адресе');
+  assert(вход.includes('if(seatInfo.relay){rememberOnlineTable('),
+    '11c: стол запоминается и без ретранслятора — игра между вкладками живёт в одной '
+    + 'странице, и возвращаться в неё из меню некуда');
+
+  // И кнопка «Online» больше не пишет стол сама: две записи об одном столе разъедутся
+  // ровно в тот день, когда одну из них поправят.
+  const кнопка = extractFunctionSource(source, 'createOnlineRoom');
+  assert(!/rememberOnlineTable\(/.test(кнопка),
+    '11d: стол записывается дважды — в сессии и в кнопке');
+}
 
 console.log('smoke-online-room-memory: OK');

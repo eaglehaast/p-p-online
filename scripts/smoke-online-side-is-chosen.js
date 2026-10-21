@@ -68,11 +68,12 @@ function устройство(край){
     source.match(/const ONLINE_LEGACY_HOST_SEAT = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_ALPHABET = "[^"]*";/)[0],
     source.match(/const ONLINE_ROOM_ID_LENGTH = \d+;/)[0],
-    source.match(/const ONLINE_HOST_ROOM_STORAGE_KEY = "[^"]*";/)[0],
-    source.match(/const ONLINE_HOST_ROOM_TTL_MS = [^;]*;/)[0],
+    source.match(/const ONLINE_TABLE_STORAGE_KEY = "[^"]*";/)[0],
+    source.match(/const ONLINE_TABLE_TTL_MS = [^;]*;/)[0],
     extractFunctionSource(source, 'getBoardViewSeat'),
     'function setBoardViewSeat(seat){ boardViewSeat = seat; }',
     'let boardViewSeatBeforeOnline = null;',
+    extractFunctionSource(source, 'rememberOnlineTable'),
     extractFunctionSource(source, 'takeBoardViewForOnlineSeat'),
     'let onlineSession = null; let onlineInbox = []; let onlineTurnDraft = null;',
     'let onlinePresence = null; let onlineInviteSent = false;',
@@ -188,8 +189,12 @@ function устройство(край){
   const вход = extractFunctionSource(source, 'createOnlineRoom');
   assert(/const seat = getBoardViewSeat\(\);/.test(вход),
     '5: комната больше не спрашивает край у меню — цвет в онлайне снова не выбирается');
-  assert(/startOnlineSession\(\{ seat, room, relay, host: true \}\)/.test(вход),
-    '5b: заводя комнату, игрок не отмечает себя её хозяином — роль будет не у кого');
+  assert(/startOnlineSession\(\{ seat, room: makeOnlineRoomId\(\), relay, host: true \}\)/.test(вход),
+    '5b: заводя НОВУЮ комнату, игрок не отмечает себя её хозяином — роль будет не у кого');
+  // А возвращаясь за прежний стол — наоборот, берёт роль оттуда: вернувшийся гость не
+  // должен назваться хозяином чужого стола.
+  assert(/host: прежний\.host/.test(вход),
+    '5c: возвращаясь за стол, игрок назначает роль заново — гость станет хозяином чужой комнаты');
 }
 
 // === 6. Роль нигде не выводится из цвета ===
@@ -230,7 +235,7 @@ function устройство(край){
   assert(мест === 2,
     `6c: ONLINE_LEGACY_HOST_SEAT встречается ${мест} раз(а) вместо двух (объявление и `
     + 'чтение старой записи) — цвет хозяина снова что-то решает');
-  assert(/ONLINE_LEGACY_HOST_SEAT/.test(extractFunctionSource(source, 'recallHostRoom')),
+  assert(/ONLINE_LEGACY_HOST_SEAT/.test(extractFunctionSource(source, 'recallOnlineTable')),
     '6d: старые записи о своей комнате больше не читаются как синие');
 
   assert(!/\bONLINE_HOST_SEAT\b/.test(source.replace(/ONLINE_LEGACY_HOST_SEAT/g, '')),

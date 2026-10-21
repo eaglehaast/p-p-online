@@ -145,6 +145,7 @@ function buildTable(){
       // нет; сам разворот проверяет отдельный smoke-online-board-side.
       'function setBoardViewSeat(seat){ boardViewSeat = seat === "blue" ? "blue" : "green"; }',
       'let boardViewSeatBeforeOnline = null;',
+      extractFunctionSource(source, 'rememberOnlineTable'),
       extractFunctionSource(source, 'takeBoardViewForOnlineSeat'),
       extractFunctionSource(source, 'releaseBoardViewAfterOnline'),
       source.match(/const ONLINE_SEAT_COLORS = Object\.freeze\(\[[^\]]*\]\);/)[0],
