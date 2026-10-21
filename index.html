@@ -135,6 +135,29 @@
                  src="preload_animation.gif" alt="" width="175" height="175"
                  aria-hidden="true" draggable="false" />
 
+            <!-- За спиной остался стол, за который можно вернуться. Спрашиваем, а не
+                 садимся молча: «Online» значит «играть онлайн», и подменять его на
+                 «вернуться к прежнему другу» без единого слова нельзя — человек узнал бы
+                 об этом, только увидев в лобби чужое ожидание.
+
+                 Вопрос тот же самый, что перед выходом из партии, вплоть до классов:
+                 другой пары «да/нет» в игре нет и заводить её незачем. Своей картинки у
+                 него тоже нет — подложка общая, деревянная, та же, что у «ROUND 1». -->
+            <div id="onlineAgainConfirm" class="leave-confirm leave-confirm--menu" role="dialog"
+                 aria-labelledby="onlineAgainText" hidden>
+              <div class="leave-confirm__veil"></div>
+              <div class="leave-confirm__box">
+                <p id="onlineAgainText" class="leave-confirm__text">Play again with the same friend?
+NO opens a new table.</p>
+                <div class="leave-confirm__buttons">
+                  <button id="onlineAgainYes" class="leave-confirm__btn leave-confirm__btn--yes"
+                          type="button" aria-label="Same table">YES</button>
+                  <button id="onlineAgainNo" class="leave-confirm__btn leave-confirm__btn--no"
+                          type="button" aria-label="New table">NO</button>
+                </div>
+              </div>
+            </div>
+
             <!-- Карты не доехали. Панель, а не alert: игру открывают внутри рамки на чужой
                  странице (itch.io) и как мини-приложение телеграма, а там модальное окно
                  браузера могут и не показать — тогда игрок остался бы вовсе без объяснения.

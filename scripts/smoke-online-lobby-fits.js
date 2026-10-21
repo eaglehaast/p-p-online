@@ -49,7 +49,7 @@ const html = fs.readFileSync('index.html', 'utf8');
 // поимённо, чтобы список не разрастался незаметно.
 {
   const САМИ_ПО_СЕБЕ = ['menuSignature', 'swapSidesBtn'];
-  const В_ПАНЕЛЯХ = ['mapsErrorNoticeReload'];
+  const В_ПАНЕЛЯХ = ['mapsErrorNoticeReload', 'onlineAgainYes', 'onlineAgainNo'];
 
   const меню = /<div id="modeMenu"[\s\S]*?<div id="gsFrame"/.exec(html);
   assert(меню, '1d: разметка меню не найдена');
