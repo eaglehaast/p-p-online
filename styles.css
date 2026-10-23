@@ -4636,7 +4636,14 @@ html.is-board-landscape .leave-confirm__box {
   top: 744.5px;
   width: 32px;
   height: 32px;
-  display: none;
+  /* Кнопка есть везде, включая телефоны и планшеты. Прежде она пряталась под
+     @media (hover: hover) and (pointer: fine) — «на тач-устройствах ориентацию задаёт
+     сама система». Это оказалось неправдой дважды. Система задаёт ориентацию ЭКРАНА, а
+     не раскладки: повёрнутый планшет просто делает кадр мельче, горизонтальной доски из
+     этого не выходит. А вдвоём за одним планшетом сидят как раз рядом, а не друг
+     напротив друга, — то есть доска нужна боком. Значит выбор за человеком, и на
+     тач-устройстве он нужен не меньше, чем с мышью. */
+  display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -4680,13 +4687,6 @@ html.is-board-landscape .leave-confirm__box {
   transition:
     opacity 90ms ease-out,
     visibility 0s;
-}
-
-/* Только для мыши: на тач-устройствах ориентацию задаёт сама система. */
-@media (hover: hover) and (pointer: fine) {
-  .orientation-toggle {
-    display: flex;
-  }
 }
 
 .orientation-toggle:hover {
