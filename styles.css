@@ -314,21 +314,17 @@ body, button {
     min-height: 100vh;
   }
 
-/* Поля — вырез устройства, а в телеграме ещё и его собственные кнопки поверх страницы.
-   Их размер знает только он сам и сообщает числами (script.js, записатьОтступыТелеграма);
-   вне телеграма переменных нет, и остаётся прежний env(). max(), а не сумма: вырез
-   устройства входит в оба счёта, и складывать его дважды значит отъесть его дважды. */
+/* Поля — только вырез устройства. Собственные кнопки телеграма в полном экране лежат
+   ПОВЕРХ страницы, и места им здесь не отводится нарочно: отступ под них ужимал кадр на
+   айпаде с 679x1180 до 627x1090. Пусть лучше перекрывают угол — там морда в рамке, а не
+   доска. */
 #screenWrapper {
   position: fixed;
   inset: 0;
   box-sizing: border-box;
   overflow: hidden;
   height: 100vh;
-  padding:
-    max(env(safe-area-inset-top), var(--tg-inset-top, 0px))
-    max(env(safe-area-inset-right), var(--tg-inset-right, 0px))
-    max(env(safe-area-inset-bottom), var(--tg-inset-bottom, 0px))
-    max(env(safe-area-inset-left), var(--tg-inset-left, 0px));
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 @supports (height: 100dvh) {
