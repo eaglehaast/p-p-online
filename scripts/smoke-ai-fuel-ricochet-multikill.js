@@ -48,6 +48,8 @@ const context = {
   AI_FUEL_HARPY_MIN_SAFETY_GAIN: 0.2,
   AI_FUEL_HARPY_DEEP_FORWARD_RATIO: 0.8,
   AI_FUEL_EXTEND_MIN_EXTRA_TARGETS: 1,
+  AI_FUEL_SURPLUS_MIN_STOCK: 2,
+  AI_FUEL_SURPLUS_MAX_LANDING_RISK_DELTA: 0.05,
   INVENTORY_ITEM_TYPES,
   getEffectiveFlightRangeCells: (p) => (p?.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.FUEL] ? 60 : 30),
   getAiSelectedPlanIntentText: (plan) =>
@@ -87,9 +89,25 @@ const fuelReason = ({ landingY = 300, extend = null, fuel = 1 } = {}) => {
 assert(fuelReason({ extend: { baseCount: 3, boostedCount: 5 } }) === 'ricochet_sweep_extend_more_targets',
   '1: fuel should extend a ricochet sweep that catches more targets boosted.');
 
-// 2. No extra targets with fuel (5 == 5) -> NO fuel.
+// 2. No extra targets with fuel (5 == 5) and a SINGLE can -> NO fuel (keep the reserve).
 assert(fuelReason({ extend: { baseCount: 5, boostedCount: 5 } }) === null,
   '2: no fuel when the boosted ricochet sweep catches no more than the base.');
+
+// 2a. Same targets but a SURPLUS of fuel -> spend it on the longer verified flight.
+// The boosted route was re-simulated (same targets, landing no more exposed) and flies
+// twice as far, so the can bought real distance instead of rotting in the bag.
+assert(fuelReason({ extend: { baseCount: 5, boostedCount: 5, baseLandingRisk: 0.2, boostedLandingRisk: 0.2 }, fuel: 2 })
+  === 'fuel_surplus_longer_sweep',
+  '2a: with a spare can, an equal-count boosted sweep must still spend fuel.');
+
+// 2b. Surplus, but the longer route lands under a heavier response -> keep the base move.
+assert(fuelReason({ extend: { baseCount: 5, boostedCount: 5, baseLandingRisk: 0.1, boostedLandingRisk: 0.9 }, fuel: 3 })
+  === null,
+  '2b: surplus fuel must not buy a longer flight that lands more exposed.');
+
+// 2c. Surplus, but the longer route LOSES targets -> no fuel.
+assert(fuelReason({ extend: { baseCount: 5, boostedCount: 4 }, fuel: 3 }) === null,
+  '2c: surplus fuel must not buy a longer flight that drops targets.');
 
 // 3. Extra targets, but NO fuel in inventory -> NO fuel.
 assert(fuelReason({ extend: { baseCount: 3, boostedCount: 5 }, fuel: 0 }) === null,
